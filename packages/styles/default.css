@@ -1,0 +1,29 @@
+@layer scribe.base, scribe.behavior;
+
+@layer scribe.base {
+  :where(.scribe) {
+    color: var(--scribe-foreground, inherit);
+    background: var(--scribe-background, transparent);
+    font-family: var(--scribe-font-body, inherit);
+  }
+}
+
+@layer scribe.behavior {
+  :where(.scribe .scribe-table-scroll) {
+    max-inline-size: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  :where(.scribe .scribe-table-scroll > table) {
+    min-inline-size: 100%;
+    inline-size: max-content;
+    border-collapse: collapse;
+  }
+
+  :where(.scribe pre) {
+    max-inline-size: 100%;
+    overflow-x: auto;
+  }
+}
+

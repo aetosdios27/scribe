@@ -1,0 +1,25 @@
+{
+  "name": "@scribe/seam-next",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build"
+  },
+  "dependencies": {
+    "@mdx-js/loader": "3.1.1",
+    "@mdx-js/react": "3.1.1",
+    "@next/mdx": "16.2.10",
+    "@scribe/mdx": "workspace:*",
+    "@scribe/react": "workspace:*",
+    "@scribe/styles": "workspace:*",
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/mdx": "2.0.13",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "typescript": "6.0.2"
+  }
+}

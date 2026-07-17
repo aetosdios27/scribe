@@ -1,0 +1,12 @@
+{
+  "name": "@scribe/styles",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": ["default.css"],
+  "exports": {
+    "./default.css": "./default.css"
+  },
+  "sideEffects": ["*.css"]
+}
+

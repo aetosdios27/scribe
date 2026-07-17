@@ -1,0 +1,26 @@
+# The vocabulary of a BitTorrent peer
+
+The ordinary Markdown path uses the shared Scribe renderer.
+
+| State | Meaning |
+| :--- | :--- |
+| `choked` | The peer will not upload pieces to us. |
+| `interested` | We want at least one piece from the peer. |
+
+```ts filename="peer.ts" lineNumbers highlight="2" focus="1-2"
+const state = "choked"
+console.log(state)
+```
+
+<h2 id="literal-elements">Literal JSX and HTML</h2>
+
+<table>
+  <caption>Literal peer states</caption>
+  <thead>
+    <tr><th>State</th><th>Meaning</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>unchoked</code></td><td>Requests may be served.</td></tr>
+  </tbody>
+</table>
+
