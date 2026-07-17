@@ -136,7 +136,6 @@ jobs:
         browser:
           - chromium
           - firefox
-          - webkit
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

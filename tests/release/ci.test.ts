@@ -21,13 +21,23 @@ describe("public CI contract", () => {
     for (const value of ["ubuntu-latest", "windows-latest", "macos-latest"]) {
       expect(workflow).toContain(value);
     }
-    for (const value of ["chromium", "firefox", "webkit"]) {
+    for (const value of ["chromium", "firefox"]) {
       expect(workflow).toContain(value);
     }
+    expect(workflow).not.toMatch(/^\s+- webkit$/mu);
     expect(workflow).toContain("fetch-depth: 0");
     expect(workflow).toContain("oven-sh/setup-bun@v2");
     expect(workflow).toContain('bun-version: "1.3.13"');
     expect(workflow).not.toMatch(/npm[_-]?token|NODE_AUTH_TOKEN|changesets\/action|npm publish/iu);
+  });
+
+  it("documents WebKit as unverified rather than a release gate", async () => {
+    const releasing = await text("RELEASING.md");
+
+    expect(releasing).toContain("WebKit and Safari behavior are not verified in this alpha");
+    expect(releasing).toContain("bun run test:browser:chromium");
+    expect(releasing).toContain("bun run test:browser:firefox");
+    expect(releasing).not.toContain("Run portable Chromium, Firefox, and WebKit behavior tests");
   });
 
   it("builds public packages before workspace typechecks resolve their dist exports", async () => {

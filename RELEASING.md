@@ -90,16 +90,20 @@ The curated bootstrap fragment generated `0.1.0-alpha.2` from the already prepar
 
 ## Compatibility verification model
 
-GitHub CI smoke-tests package installation, declarations, builds, and the CLI on Linux, Windows, and macOS. Portable browser behavior runs against Playwright-managed Chromium, Firefox, and WebKit. Scribe targets current modern browser engines; Chromium-family products are covered primarily through the Chromium engine suite.
+GitHub CI smoke-tests package installation, declarations, builds, and the CLI on Linux, Windows, and macOS. Required portable browser behavior runs against Playwright-managed Chromium and Firefox. WebKit and Safari behavior are not verified in this alpha, so do not claim Safari compatibility. The local WebKit command remains available for investigation but is not a release gate. Chromium-family products are covered primarily through the Chromium engine suite.
 
 Helium Chromium 150 remains the canonical pixel-regression environment on the maintainer’s controlled machine. Contributors and Scribe users do not need Helium: it is not packaged or used at runtime. Host fonts can rasterize differently across operating systems, so portable tests guarantee semantic behavior and layout invariants rather than identical glyph pixels.
 
 Run the portable suites with:
 
 ```bash
-bun run test:browser
 bun run test:browser:chromium
 bun run test:browser:firefox
+```
+
+The optional WebKit diagnostic command is:
+
+```bash
 bun run test:browser:webkit
 ```
 
@@ -139,7 +143,7 @@ After versioning, run every gate from the repository root:
 - [ ] Run isolated packed Vite and Next consumers with Bun and npm: `bun run release:consumers`
 - [ ] Check the packaged CLI version and help from the packed consumer: `bunx scb --version` and `bunx scb --help`
 - [ ] Validate valid and invalid article fixtures through the packaged CLI
-- [ ] Run portable Chromium, Firefox, and WebKit behavior tests: `bun run test:browser`
+- [ ] Run required portable browser behavior: `bun run test:browser:chromium` and `bun run test:browser:firefox`
 - [ ] Run the canonical Helium Chromium 150 visual suite in required mode: `bun run release:visual`
 - [ ] Visually inspect every PNG under `tests/visual/screenshots/` without regenerating baselines
 - [ ] Inspect browser bundles for Shiki, Oniguruma, grammar, theme, MDX, unified, remark, rehype, Node, and WASM payloads: `bun run release:bundle-scan`
