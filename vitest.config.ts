@@ -5,10 +5,10 @@ import { configDefaults, defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@scribe/mdx": fileURLToPath(new URL("./packages/mdx/src/index.ts", import.meta.url))
+      "@scribe-sdk/mdx": fileURLToPath(new URL("./packages/mdx/src/index.ts", import.meta.url))
     }
   },
   test: {
-    exclude: [...configDefaults.exclude, "tests/visual/**"]
+    exclude: [...configDefaults.exclude, "tests/browser/**", "tests/visual/**"]
   }
 });

@@ -1,5 +1,5 @@
 {
-  "name": "@scribe/seam-next",
+  "name": "@scribe-sdk/seam-next",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,9 +9,9 @@
     "@mdx-js/loader": "3.1.1",
     "@mdx-js/react": "3.1.1",
     "@next/mdx": "16.2.10",
-    "@scribe/mdx": "workspace:*",
-    "@scribe/react": "workspace:*",
-    "@scribe/styles": "workspace:*",
+    "@scribe-sdk/mdx": "workspace:*",
+    "@scribe-sdk/react": "workspace:*",
+    "@scribe-sdk/styles": "workspace:*",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7"

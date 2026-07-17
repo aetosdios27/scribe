@@ -1,7 +1,7 @@
 import { StrictMode, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
-import { Banner, Publication, createScribeComponents } from "@scribe/react";
-import "@scribe/styles/default.css";
+import { Banner, Publication, createScribeComponents } from "@scribe-sdk/react";
+import "@scribe-sdk/styles/default.css";
 import "../../../fixtures/hosts.css";
 
 import Article from "../../content/article.mdx";
@@ -16,7 +16,7 @@ const hostile = params.get("hostile") === "true";
 const fixture = params.get("fixture") ?? "article";
 
 function FixturePublication(props: ComponentProps<typeof Publication>) {
-  return <Publication {...props} data-theme={theme} />;
+  return <Publication {...props} data-theme={theme} data-fixture-wrapper="override" />;
 }
 
 const components = createScribeComponents({ components: { wrapper: FixturePublication } });

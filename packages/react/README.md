@@ -1,44 +1,44 @@
 # Scribe
 
-Scribe is an open-source publishing SDK that turns ordinary HTML, JSX, and MDX into beautiful technical articles on websites you already own.
+Scribe is an open-source publishing SDK that turns ordinary Markdown, MDX, semantic HTML, and JSX into beautiful technical articles on websites you already own.
 
 > Just write. Scribe handles the rest.
 
-Scribe is for developers who already own a React or Next.js website and want publication-grade typography, code, tables, banners, callouts, figures, responsive behavior, and accessibility without assembling a publishing design system themselves. It transforms semantic article content at build time and renders it through a small React component map plus scoped CSS.
+Scribe is for developers who already own a React website built with Next.js or Vite and want publication-grade typography, code, tables, banners, callouts, figures, responsive behavior, and accessibility without assembling a publishing design system themselves. It transforms semantic article content at build time and renders it through a small React component map plus scoped CSS.
 
-Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor, proprietary content format, collaboration service, or replacement for React, Next.js, MDX, routing, deployment, analytics, or content storage. The supported prerelease surface is intentionally limited to React 19.2.7, Next.js 16.2.10, Vite 8.1.3, and MDX 3.1.1.
+Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor, proprietary content format, collaboration service, or replacement for React, Next.js, MDX, routing, deployment, analytics, or content storage. The first prerelease is tested against React 19.2.7, Next.js 16.2.10, Vite 8.1.3, and MDX 3.1.1. Broader compatibility will be validated through real integrations.
 
 ## Packages
 
 | Package | Purpose | Public entry points |
 | --- | --- | --- |
-| `@scribe/react` | Publication boundary, component map, and editorial primitives | package root |
-| `@scribe/styles` | Scoped behavioral publishing CSS | `@scribe/styles/default.css` |
-| `@scribe/mdx` | Shared compile-time MDX configuration and validation | package root, `/next`, `/remark`, `/rehype` |
-| `@scribe/cli` | The `scb validate` command | `scb` binary |
+| `@scribe-sdk/react` | Publication boundary, component map, and editorial primitives | package root |
+| `@scribe-sdk/styles` | Scoped behavioral publishing CSS | `@scribe-sdk/styles/default.css` |
+| `@scribe-sdk/mdx` | Shared compile-time MDX configuration and validation | package root, `/next`, `/remark`, `/rehype` |
+| `@scribe-sdk/cli` | The `scb validate` command | `scb` binary |
 
-Each installed package includes the same canonical `SKILL.md`. Agents can discover it at `node_modules/@scribe/<package>/SKILL.md`; the repository source of truth is [`SKILL.md`](./SKILL.md).
+Each installed package includes the same canonical `SKILL.md`. Agents can discover it at `node_modules/@scribe-sdk/<package>/SKILL.md`; the repository source of truth is [`SKILL.md`](./SKILL.md).
 
 ## Install
 
 With Bun:
 
 ```bash
-bun add @scribe/react@alpha @scribe/styles@alpha @scribe/mdx@alpha
-bun add --dev @scribe/cli@alpha
+bun add @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alpha
+bun add --dev @scribe-sdk/cli@alpha
 ```
 
 With npm:
 
 ```bash
-npm install @scribe/react@alpha @scribe/styles@alpha @scribe/mdx@alpha
-npm install --save-dev @scribe/cli@alpha
+npm install @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alpha
+npm install --save-dev @scribe-sdk/cli@alpha
 ```
 
 Import the stylesheet once from your application shell:
 
 ```tsx
-import "@scribe/styles/default.css";
+import "@scribe-sdk/styles/default.css";
 ```
 
 Scribe ships no fonts and requires no Tailwind configuration.
@@ -55,7 +55,7 @@ Configure the shared Scribe compiler in `next.config.mjs`:
 
 ```js
 import createMDX from "@next/mdx";
-import { createScribeNextMdxOptions } from "@scribe/mdx/next";
+import { createScribeNextMdxOptions } from "@scribe-sdk/mdx/next";
 
 const withMDX = createMDX({
   options: createScribeNextMdxOptions()
@@ -69,8 +69,8 @@ export default withMDX({
 Add `mdx-components.tsx` at the application root:
 
 ```tsx
-import { createScribeComponents } from "@scribe/react";
-import type { ScribeComponents } from "@scribe/react";
+import { createScribeComponents } from "@scribe-sdk/react";
+import type { ScribeComponents } from "@scribe-sdk/react";
 
 export function useMDXComponents(components: ScribeComponents): ScribeComponents {
   return createScribeComponents({ components });
@@ -80,7 +80,7 @@ export function useMDXComponents(components: ScribeComponents): ScribeComponents
 Import the CSS from the root layout and render an article normally:
 
 ```tsx
-import "@scribe/styles/default.css";
+import "@scribe-sdk/styles/default.css";
 import Article from "./article.mdx";
 
 export default function Page() {
@@ -102,7 +102,7 @@ Configure `vite.config.ts`:
 
 ```ts
 import mdx from "@mdx-js/rollup";
-import { createScribeMdxOptions } from "@scribe/mdx";
+import { createScribeMdxOptions } from "@scribe-sdk/mdx";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -117,8 +117,8 @@ export default defineConfig({
 Pass the map to the compiled article:
 
 ```tsx
-import { createScribeComponents } from "@scribe/react";
-import "@scribe/styles/default.css";
+import { createScribeComponents } from "@scribe-sdk/react";
+import "@scribe-sdk/styles/default.css";
 import Article from "./article.mdx";
 
 const components = createScribeComponents();
@@ -130,7 +130,7 @@ export function App() {
 
 ## Render the first article
 
-Copy [`examples/starter-article.mdx`](./examples/starter-article.mdx) into the host’s content directory and [`examples/starter-diagram.svg`](./examples/starter-diagram.svg) into its public directory. It demonstrates ordinary Markdown, a banner, a callout, a code fence, a responsive table, and a figure without requiring custom article CSS.
+Copy [`examples/starter-article.mdx`](https://github.com/aetosdios27/scribe/blob/main/examples/starter-article.mdx) into the host’s content directory and [`examples/starter-diagram.svg`](https://github.com/aetosdios27/scribe/blob/main/examples/starter-diagram.svg) into its public directory. It demonstrates ordinary Markdown, a banner, a callout, a code fence, a responsive table, and a figure without requiring custom article CSS.
 
 Ordinary Markdown and semantic HTML receive the best default rendering:
 
@@ -154,10 +154,10 @@ Headings receive stable slug IDs at compile time and an unobtrusive accessible a
 
 ```tsx
 import type { ReactNode } from "react";
-import { Publication } from "@scribe/react";
+import { Publication } from "@scribe-sdk/react";
 
 export function Article({ children }: { children: ReactNode }) {
-  return <Publication data-theme="dark">{children}</Publication>;
+  return <Publication>{children}</Publication>;
 }
 ```
 
@@ -273,7 +273,7 @@ Set tokens on the publication boundary or an ancestor. Scribe first reads common
 | `--scribe-rule` | horizontal rule thickness | `1px` | `2px` |
 | `--scribe-leading` | prose line-height number | `1.78` | `1.72` |
 | `--scribe-code-size` | inline and block code scale | `0.875em` | `0.9em` |
-| `--scribe-shadow` | restrained code-frame shadow | `0 1.25rem 3rem` with translucent black | `none` |
+| `--scribe-shadow` | restrained code-frame shadow | `0 1.25rem 3rem color-mix(in oklab, #000 12%, transparent)` | `none` |
 
 Scribe follows `prefers-color-scheme` when the host provides no explicit mode. Set `data-theme="light"` or `data-theme="dark"` on `.scribe` when the host already has a runtime toggle. Scribe owns color-scheme-aware article styles; the host owns the toggle, persistence, and application chrome.
 
@@ -288,6 +288,13 @@ bunx scb validate ./content/article.mdx
 bunx scb validate ./content/article.mdx --strict
 ```
 
+With npm:
+
+```bash
+npx scb validate ./content/article.mdx
+npx scb validate ./content/article.mdx --strict
+```
+
 `scb validate` checks MDX syntax, Scribe code metadata, supported static component metadata, compile-time highlighting, and article-level diagnostics. It does not execute or validate the complete consumer application.
 
 - Exit `0`: validation succeeded; warnings may have been printed.
@@ -296,7 +303,7 @@ bunx scb validate ./content/article.mdx --strict
 
 Diagnostics include the file, position when available, severity, stable code, and remediation. Unsupported languages use warning `SCB1003` and plaintext fallback unless strict mode is enabled. Run `scb --help` for the complete supported CLI surface.
 
-If rendering differs between the Vite and Next builds, confirm that both use the matching `@scribe/mdx` version and the shared helper. If a table is not scrollable, confirm that the stylesheet is imported and the article renders beneath `.scribe`. Do not add host CSS solely to conceal a Scribe defect; reduce the case and report it at <https://github.com/aetosdios27/scribe/issues>.
+If rendering differs between the Vite and Next builds, confirm that both use the matching `@scribe-sdk/mdx` version and the shared helper. If a table is not scrollable, confirm that the stylesheet is imported and the article renders beneath `.scribe`. Do not add host CSS solely to conceal a Scribe defect; reduce the case and report it at <https://github.com/aetosdios27/scribe/issues>.
 
 ## Responsibility boundary
 

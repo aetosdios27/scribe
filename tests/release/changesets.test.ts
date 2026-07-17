@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
-const publicPackages = ["@scribe/react", "@scribe/styles", "@scribe/mdx", "@scribe/cli"] as const;
+const publicPackages = ["@scribe-sdk/react", "@scribe-sdk/styles", "@scribe-sdk/mdx", "@scribe-sdk/cli"] as const;
 const packageDirectories = ["react", "styles", "mdx", "cli"] as const;
 
 describe("Changesets release policy", () => {
@@ -55,8 +55,8 @@ describe("Changesets release policy", () => {
 
     expect(versions).toEqual(new Set(["0.1.0-alpha.2"]));
     expect(manifests.every((manifest) => manifest.license === "Apache-2.0")).toBe(true);
-    expect(manifests.find((manifest) => manifest.name === "@scribe/cli")?.dependencies).toEqual({
-      "@scribe/mdx": "0.1.0-alpha.2"
+    expect(manifests.find((manifest) => manifest.name === "@scribe-sdk/cli")?.dependencies).toEqual({
+      "@scribe-sdk/mdx": "0.1.0-alpha.2"
     });
     expect(JSON.stringify(manifests)).not.toContain("workspace:");
   });

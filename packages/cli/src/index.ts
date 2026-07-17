@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { compileScribeMdx } from "@scribe/mdx";
+import { compileScribeMdx } from "@scribe-sdk/mdx";
 
 export const version = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
@@ -31,9 +31,13 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     process.stdout.write(`${version}\n`);
     return 0;
   }
-  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
+  if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(help);
     return 0;
+  }
+  if (args.length === 0) {
+    process.stderr.write("Expected a command. Run `scb --help` for usage.\n");
+    return 2;
   }
 
   const [command, ...rest] = args;

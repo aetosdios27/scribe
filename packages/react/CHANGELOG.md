@@ -1,4 +1,4 @@
-# @scribe/react
+# @scribe-sdk/react
 
 ## 0.1.0-alpha.2
 

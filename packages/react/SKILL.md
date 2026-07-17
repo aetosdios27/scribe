@@ -23,7 +23,7 @@ Scribe is not a CMS, hosted platform, website builder, rich-text editor, proprie
 4. Find one representative article containing headings, code, tables, and images.
 5. Confirm installed Scribe packages and keep their prerelease versions aligned.
 
-Expected packages are `@scribe/react`, `@scribe/styles`, `@scribe/mdx`, and development-only `@scribe/cli`. Read the installed Scribe README and `SKILL.md` before integrating. Depending on the installed package, these are available under paths such as `node_modules/@scribe/react/README.md` and `node_modules/@scribe/react/SKILL.md`. Use the packaged copies rather than relying on remembered APIs.
+Expected packages are `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/mdx`, and development-only `@scribe-sdk/cli`. Read the installed Scribe README and `SKILL.md` before integrating. Depending on the installed package, these are available under paths such as `node_modules/@scribe-sdk/react/README.md` and `node_modules/@scribe-sdk/react/SKILL.md`. Use the packaged copies rather than relying on remembered APIs.
 
 ## Integrate the compiler
 
@@ -31,7 +31,7 @@ For Next.js, configure the existing `@next/mdx` integration:
 
 ```js
 import createMDX from "@next/mdx";
-import { createScribeNextMdxOptions } from "@scribe/mdx/next";
+import { createScribeNextMdxOptions } from "@scribe-sdk/mdx/next";
 
 const withMDX = createMDX({ options: createScribeNextMdxOptions() });
 export default withMDX({
@@ -42,8 +42,8 @@ export default withMDX({
 Create or update `mdx-components.tsx`:
 
 ```tsx
-import { createScribeComponents } from "@scribe/react";
-import type { ScribeComponents } from "@scribe/react";
+import { createScribeComponents } from "@scribe-sdk/react";
+import type { ScribeComponents } from "@scribe-sdk/react";
 
 export function useMDXComponents(components: ScribeComponents): ScribeComponents {
   return createScribeComponents({ components });
@@ -54,7 +54,7 @@ For Vite, place the MDX plugin before React:
 
 ```ts
 import mdx from "@mdx-js/rollup";
-import { createScribeMdxOptions } from "@scribe/mdx";
+import { createScribeMdxOptions } from "@scribe-sdk/mdx";
 import react from "@vitejs/plugin-react";
 
 plugins: [
@@ -67,7 +67,7 @@ Pass `createScribeComponents()` as the compiled article’s `components` prop in
 
 Preserve the host’s existing MDX options and plugins. Append the `remarkPlugins` and `rehypePlugins` arrays returned by the appropriate Scribe helper to the host’s existing arrays instead of replacing unrelated remark or rehype behavior. Do not create a second MDX compilation pipeline.
 
-Import `@scribe/styles/default.css` once from the host application shell. Do not copy Scribe CSS into the host.
+Import `@scribe-sdk/styles/default.css` once from the host application shell. Do not copy Scribe CSS into the host.
 
 ## Compose articles
 

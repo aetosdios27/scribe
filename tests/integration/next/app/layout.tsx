@@ -1,4 +1,4 @@
-import "@scribe/styles/default.css";
+import "@scribe-sdk/styles/default.css";
 import "../../../fixtures/hosts.css";
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

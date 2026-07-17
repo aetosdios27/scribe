@@ -1,5 +1,5 @@
 {
-  "name": "@scribe/cli",
+  "name": "@scribe-sdk/cli",
   "version": "0.1.0-alpha.2",
   "description": "The scb command-line validator for Scribe MDX articles.",
   "author": "aetosdios27",
@@ -23,7 +23,7 @@
     "prepack": "node ../../scripts/sync-package-docs.mjs --check"
   },
   "dependencies": {
-    "@scribe/mdx": "0.1.0-alpha.2"
+    "@scribe-sdk/mdx": "0.1.0-alpha.2"
   },
   "keywords": [
     "scribe",

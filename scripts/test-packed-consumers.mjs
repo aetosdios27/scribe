@@ -2,15 +2,17 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { executable, packageBin, releaseCacheDirectory, requiresCommandShell } from "./lib/platform.mjs";
+
 const root = process.cwd();
 const release = join(root, ".scribe-release");
 const consumers = join(release, "consumers");
 const version = JSON.parse(await readFile(join(root, "packages", "react", "package.json"), "utf8")).version;
 const tarballs = {
-  mdx: `../../scribe-mdx-${version}.tgz`,
-  react: `../../scribe-react-${version}.tgz`,
-  styles: `../../scribe-styles-${version}.tgz`,
-  cli: `../../scribe-cli-${version}.tgz`
+  mdx: `../../scribe-sdk-mdx-${version}.tgz`,
+  react: `../../scribe-sdk-react-${version}.tgz`,
+  styles: `../../scribe-sdk-styles-${version}.tgz`,
+  cli: `../../scribe-sdk-cli-${version}.tgz`
 };
 const results = [];
 
@@ -20,6 +22,7 @@ await createViteConsumer();
 await createNextConsumer();
 
 process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
+await writeFile(join(release, "packed-consumers.json"), `${JSON.stringify(results, null, 2)}\n`);
 
 async function createViteConsumer() {
   const directory = join(consumers, "bun-vite");
@@ -34,17 +37,17 @@ async function createViteConsumer() {
     },
     dependencies: {
       "@mdx-js/rollup": "3.1.1",
-      "@scribe/cli": `file:${tarballs.cli}`,
-      "@scribe/mdx": `file:${tarballs.mdx}`,
-      "@scribe/react": `file:${tarballs.react}`,
-      "@scribe/styles": `file:${tarballs.styles}`,
+      "@scribe-sdk/cli": `file:${tarballs.cli}`,
+      "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
+      "@scribe-sdk/react": `file:${tarballs.react}`,
+      "@scribe-sdk/styles": `file:${tarballs.styles}`,
       "@vitejs/plugin-react": "6.0.3",
       react: "19.2.7",
       "react-dom": "19.2.7",
       vite: "8.1.3"
     },
     overrides: {
-      "@scribe/mdx": `file:${tarballs.mdx}`
+      "@scribe-sdk/mdx": `file:${tarballs.mdx}`
     },
     devDependencies: {
       "@typescript/native": "npm:typescript@7.0.2",
@@ -55,16 +58,16 @@ async function createViteConsumer() {
   await write(directory, "index.html", '<div id="root"></div><script type="module" src="/src/main.tsx"></script>\n');
   await write(directory, "tsconfig.json", tsconfig());
   await write(directory, "src/mdx.d.ts", 'declare module "*.mdx" { const Component: (props: { components?: Record<string, unknown> }) => import("react").ReactNode; export default Component; }\n');
-  await write(directory, "src/mdx-options.ts", 'import { createScribeMdxOptions } from "@scribe/mdx"; const options = createScribeMdxOptions(); export const pluginCount = options.remarkPlugins.length + options.rehypePlugins.length;\n');
+  await write(directory, "src/mdx-options.ts", 'import { createScribeMdxOptions } from "@scribe-sdk/mdx"; const options = createScribeMdxOptions(); export const pluginCount = options.remarkPlugins.length + options.rehypePlugins.length;\n');
   await write(directory, "vite.config.ts", `import mdx from "@mdx-js/rollup";
-import { createScribeMdxOptions } from "@scribe/mdx";
+import { createScribeMdxOptions } from "@scribe-sdk/mdx";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 export default defineConfig({ plugins: [{ ...mdx(createScribeMdxOptions()), enforce: "pre" }, react({ include: /\\.(?:js|jsx|md|mdx|ts|tsx)$/ })] });
 `);
   await write(directory, "src/main.tsx", `import { createRoot } from "react-dom/client";
-import { createScribeComponents } from "@scribe/react";
-import "@scribe/styles/default.css";
+import { createScribeComponents } from "@scribe-sdk/react";
+import "@scribe-sdk/styles/default.css";
 import Article from "./article.mdx";
 const root = document.querySelector("#root");
 if (!root) throw new Error("Missing root");
@@ -77,8 +80,8 @@ createRoot(root).render(<Article components={createScribeComponents()} />);
   run("bun", ["install", "--frozen-lockfile"], directory);
   run("bun", ["run", "typecheck"], directory);
   run("bun", ["run", "build"], directory);
-  run("node", ["--input-type=module", "-e", "import('@scribe/react').then((api) => { const expected = ['Banner','Callout','CodeFrame','Figure','Publication','ScribeImage','createScribeComponents']; if (JSON.stringify(Object.keys(api).sort()) !== JSON.stringify(expected)) process.exit(1) })"], directory);
-  run("node", ["--input-type=module", "-e", "import('@scribe/react/components').then(() => process.exit(1)).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') process.exit(1) })"], directory);
+  run("node", ["--input-type=module", "-e", "import('@scribe-sdk/react').then((api) => { const expected = ['Banner','Callout','CodeFrame','Figure','Publication','ScribeImage','createScribeComponents']; if (JSON.stringify(Object.keys(api).sort()) !== JSON.stringify(expected)) process.exit(1) })"], directory);
+  run("node", ["--input-type=module", "-e", "import('@scribe-sdk/react/components').then(() => process.exit(1)).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') process.exit(1) })"], directory);
   await assertPackagedSkill(directory);
   const cliVersion = run(bin(directory, "scb"), ["--version"], directory);
   if (cliVersion.stdout.trim() !== version) throw new Error(`Bun Vite CLI reported ${cliVersion.stdout.trim()}, expected ${version}.`);
@@ -100,10 +103,10 @@ async function createNextConsumer() {
       "@mdx-js/loader": "3.1.1",
       "@mdx-js/react": "3.1.1",
       "@next/mdx": "16.2.10",
-      "@scribe/cli": `file:${tarballs.cli}`,
-      "@scribe/mdx": `file:${tarballs.mdx}`,
-      "@scribe/react": `file:${tarballs.react}`,
-      "@scribe/styles": `file:${tarballs.styles}`,
+      "@scribe-sdk/cli": `file:${tarballs.cli}`,
+      "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
+      "@scribe-sdk/react": `file:${tarballs.react}`,
+      "@scribe-sdk/styles": `file:${tarballs.styles}`,
       next: "16.2.10",
       react: "19.2.7",
       "react-dom": "19.2.7"
@@ -127,27 +130,27 @@ async function createNextConsumer() {
   await write(directory, "next-env.d.ts", '/// <reference types="next" />\n/// <reference types="next/image-types/global" />\n');
   await write(directory, "mdx.d.ts", 'declare module "*.mdx" { const Component: (props: { components?: Record<string, unknown> }) => import("react").ReactNode; export default Component; }\n');
   await write(directory, "next.config.mjs", `import createMDX from "@next/mdx";
-import { createScribeNextMdxOptions } from "@scribe/mdx/next";
+import { createScribeNextMdxOptions } from "@scribe-sdk/mdx/next";
 import { fileURLToPath } from "node:url";
 const withMDX = createMDX({ options: createScribeNextMdxOptions() });
 export default withMDX({ output: "export", pageExtensions: ["js", "jsx", "md", "mdx", "ts", "tsx"], turbopack: { root: fileURLToPath(new URL(".", import.meta.url)) } });
 `);
-  await write(directory, "mdx-components.tsx", `import { createScribeComponents } from "@scribe/react";
-import type { ScribeComponents } from "@scribe/react";
+  await write(directory, "mdx-components.tsx", `import { createScribeComponents } from "@scribe-sdk/react";
+import type { ScribeComponents } from "@scribe-sdk/react";
 export function useMDXComponents(components: ScribeComponents): ScribeComponents { return createScribeComponents({ components }); }
 `);
   await write(directory, "app/layout.tsx", `import type { ReactNode } from "react";
-import "@scribe/styles/default.css";
+import "@scribe-sdk/styles/default.css";
 export default function Layout({ children }: { children: ReactNode }) { return <html lang="en"><body>{children}</body></html>; }
 `);
   await write(directory, "app/page.tsx", 'import Article from "./article.mdx"; export default function Page() { return <Article />; }\n');
   await write(directory, "app/article.mdx", article());
   await write(directory, "invalid.mdx", '<Callout variant="warnng">Typo</Callout>\n');
 
-  await runStreaming("npm", ["install", "--cache", "/tmp/scribe-npm-cache", "--prefer-offline", "--no-audit", "--no-fund"], directory);
-  run("npm", ["run", "typecheck"], directory);
-  run("npm", ["run", "build"], directory);
-  run("node", ["--input-type=module", "-e", "import('@scribe/cli/dist/index.mjs').then(() => process.exit(1)).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') process.exit(1) })"], directory);
+  await runStreaming(executable("npm"), ["install", "--cache", releaseCacheDirectory(), "--prefer-offline", "--no-audit", "--no-fund"], directory);
+  run(executable("npm"), ["run", "typecheck"], directory);
+  run(executable("npm"), ["run", "build"], directory);
+  run("node", ["--input-type=module", "-e", "import('@scribe-sdk/cli/dist/index.mjs').then(() => process.exit(1)).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') process.exit(1) })"], directory);
   await assertPackagedSkill(directory);
   const cliVersion = run(bin(directory, "scb"), ["--version"], directory);
   if (cliVersion.stdout.trim() !== version) throw new Error(`npm Next CLI reported ${cliVersion.stdout.trim()}, expected ${version}.`);
@@ -160,7 +163,7 @@ export default function Layout({ children }: { children: ReactNode }) { return <
 function run(command, args, cwd, requireSuccess = true) {
   const label = `${command} ${args.join(" ")}`;
   process.stderr.write(`→ ${label}\n`);
-  const result = spawnSync(command, args, { cwd, encoding: "utf8", env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" } });
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", shell: requiresCommandShell(command), env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" } });
   results.push({ command: [command, ...args].join(" "), cwd, status: result.status, stdout: result.stdout.trim(), stderr: result.stderr.trim() });
   if (requireSuccess && result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed in ${cwd}:\n${result.stdout}\n${result.stderr}`);
@@ -175,6 +178,7 @@ async function runStreaming(command, args, cwd) {
   const child = spawn(command, args, {
     cwd,
     env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" },
+    shell: requiresCommandShell(command),
     stdio: ["ignore", "pipe", "pipe"]
   });
   let stdout = "";
@@ -192,7 +196,7 @@ async function runStreaming(command, args, cwd) {
 }
 
 function bin(directory, name) {
-  return join(directory, "node_modules", ".bin", name);
+  return packageBin(directory, name);
 }
 
 async function write(directory, relativePath, content) {
@@ -203,13 +207,13 @@ async function write(directory, relativePath, content) {
 
 async function assertPackagedSkill(directory) {
   for (const name of ["mdx", "react", "styles", "cli"]) {
-    const packageDirectory = join(directory, "node_modules", "@scribe", name);
+    const packageDirectory = join(directory, "node_modules", "@scribe-sdk", name);
     const skill = await readFile(join(packageDirectory, "SKILL.md"), "utf8");
     if (!skill.includes("Treat unexpected integration workarounds as possible Scribe defects.")) {
-      throw new Error(`@scribe/${name} did not install the canonical SKILL.md.`);
+      throw new Error(`@scribe-sdk/${name} did not install the canonical SKILL.md.`);
     }
     const manifest = JSON.parse(await readFile(join(packageDirectory, "package.json"), "utf8"));
-    if (manifest.version !== version) throw new Error(`@scribe/${name} installed at ${manifest.version}, expected ${version}.`);
+    if (manifest.version !== version) throw new Error(`@scribe-sdk/${name} installed at ${manifest.version}, expected ${version}.`);
   }
 }
 

@@ -1,4 +1,4 @@
-# @scribe/cli
+# @scribe-sdk/cli
 
 ## 0.1.0-alpha.2
 
@@ -9,4 +9,4 @@
 ### Patch Changes
 
 - Updated dependencies
-  - @scribe/mdx@0.1.0-alpha.2
+  - @scribe-sdk/mdx@0.1.0-alpha.2

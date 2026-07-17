@@ -4,10 +4,10 @@
   "commit": false,
   "fixed": [
     [
-      "@scribe/react",
-      "@scribe/styles",
-      "@scribe/mdx",
-      "@scribe/cli"
+      "@scribe-sdk/react",
+      "@scribe-sdk/styles",
+      "@scribe-sdk/mdx",
+      "@scribe-sdk/cli"
     ]
   ],
   "linked": [],

@@ -1,5 +1,5 @@
 import mdx from "@mdx-js/rollup";
-import { createScribeMdxOptions } from "@scribe/mdx";
+import { createScribeMdxOptions } from "@scribe-sdk/mdx";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 

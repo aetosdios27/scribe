@@ -20,11 +20,11 @@ describe("publishable package manifests", () => {
     expect(manifest.overrides).toEqual({ postcss: "8.5.19" });
   });
 
-  it.each(packageNames)("hardens @scribe/%s for npm publication", async (directory) => {
+  it.each(packageNames)("hardens @scribe-sdk/%s for npm publication", async (directory) => {
     const manifest = await readJson(join(root, "packages", directory, "package.json"));
 
     expect(manifest).toMatchObject({
-      name: `@scribe/${directory}`,
+      name: `@scribe-sdk/${directory}`,
       version,
       type: "module",
       license: "Apache-2.0",
@@ -58,7 +58,7 @@ describe("publishable package manifests", () => {
     await expect(access(join(root, "RELEASE_NOTES.md"))).rejects.toThrow();
     expect(releasing).toContain("bunx changeset publish --tag alpha --no-git-tag");
     expect(releasing).toContain("Post-publication smoke tests");
-    expect(releasing).toContain("npm view @scribe/react dist-tags");
+    expect(releasing).toContain("npm view @scribe-sdk/react dist-tags");
     expect(releasing).not.toMatch(/\/home\/|\\Users\\|_authToken|npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}/u);
   });
 
@@ -91,7 +91,7 @@ describe("publishable package manifests", () => {
     const manifest = await readJson(join(root, "packages/cli/package.json"));
     expect(manifest.bin).toEqual({ scb: "./dist/index.mjs" });
     expect(manifest.exports).toEqual({});
-    expect(manifest.dependencies).toEqual({ "@scribe/mdx": version });
+    expect(manifest.dependencies).toEqual({ "@scribe-sdk/mdx": version });
     expect(manifest.engines).toEqual({ node: ">=20.19.0" });
   });
 });

@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
 
 const root = process.cwd();
@@ -31,7 +31,10 @@ if (findings.length > 0) {
   throw new Error(`Browser runtime leaks detected:\n${findings.join("\n")}`);
 }
 
-process.stdout.write(`${JSON.stringify({ searched: targets, runtimeLeaks: [], hydratedCopyChunks: copyChunks }, null, 2)}\n`);
+const report = `${JSON.stringify({ searched: targets, runtimeLeaks: [], hydratedCopyChunks: copyChunks }, null, 2)}\n`;
+await mkdir(join(root, ".scribe-release"), { recursive: true });
+await writeFile(join(root, ".scribe-release", "bundle-scan.json"), report);
+process.stdout.write(report);
 
 async function files(directory) {
   const found = [];

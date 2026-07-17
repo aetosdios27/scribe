@@ -1,22 +1,6 @@
-import { chromium, expect, test as base, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
-const test = base.extend({
-  context: async ({}, use) => {
-    const browser = await chromium.launch({
-      executablePath: "/usr/bin/helium",
-      args: ["--disable-gpu"]
-    });
-    const context = await browser.newContext({
-      baseURL: "http://127.0.0.1:4173",
-      deviceScaleFactor: 1,
-      locale: "en-US",
-      timezoneId: "UTC"
-    });
-    await use(context);
-    await context.close();
-    await browser.close();
-  }
-});
+import { expect, test } from "./helium.fixture.js";
 
 async function openArticle(
   page: Page,
@@ -46,7 +30,7 @@ async function openArticle(
   await expect(page.locator(".scribe")).toBeVisible();
 }
 
-test.describe("canonical editorial article", () => {
+test.describe("canonical Helium editorial article", () => {
   for (const theme of ["light", "dark"] as const) {
     test(`desktop ${theme}`, async ({ page }) => {
       await openArticle(page, { theme });
@@ -70,50 +54,5 @@ test.describe("canonical editorial article", () => {
     await openArticle(page, { fixture: "banner-no-image" });
     await expect(page.locator(".scribe-banner__media")).toHaveCount(0);
     await expect(page).toHaveScreenshot("banner-without-image.png", { fullPage: true });
-  });
-});
-
-test.describe("article behavior", () => {
-  test("keeps both table forms semantic and keyboard-scrollable on mobile", async ({ page }) => {
-    await openArticle(page, { viewport: { width: 390, height: 844 } });
-    const regions = page.getByRole("region", { name: "Scrollable article table" });
-    await expect(regions).toHaveCount(2);
-    await expect(regions.first().locator("table")).toBeVisible();
-    expect(await regions.first().evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await regions.first().focus();
-    await expect(regions.first()).toBeFocused();
-  });
-
-  test("copies static code and announces feedback", async ({ page, context }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    await openArticle(page);
-    const button = page.getByRole("button", { name: /Copy .*session_state_transitions\.rs code/u });
-    await button.click();
-    await expect(button).toHaveAttribute("data-state", "copied");
-    await expect(button).toContainText("Copied");
-    await expect(button.locator("[aria-live='polite']")).toHaveText("Code copied to clipboard.");
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("pub enum PeerEvent");
-  });
-
-  test("preserves heading anchors, line states, banner media, and figure semantics", async ({ page }) => {
-    await openArticle(page);
-    await expect(page.locator("h2#two-independent-questions .scribe-heading-anchor")).toHaveAttribute("href", "#two-independent-questions");
-    await expect(page.locator(".scribe-code-frame__filename")).toContainText("session_state_transitions.rs");
-    await expect(page.locator(".line.highlighted")).not.toHaveCount(0);
-    await expect(page.locator(".line.focused")).not.toHaveCount(0);
-    await expect(page.locator(".line.added")).not.toHaveCount(0);
-    await expect(page.locator(".line.removed")).not.toHaveCount(0);
-    await expect(page.locator(".scribe-banner__media img")).toHaveAttribute("alt", /two peers/u);
-    await expect(page.locator("figure figcaption")).toContainText("four-byte length prefix");
-  });
-
-  test("honors reduced motion and basic print behavior", async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await openArticle(page);
-    const duration = await page.locator(".scribe a").first().evaluate((node) => getComputedStyle(node).transitionDuration);
-    expect(Number.parseFloat(duration)).toBeLessThanOrEqual(0.00001);
-    await page.emulateMedia({ media: "print" });
-    await expect(page.locator(".scribe-copy-button")).toHaveCSS("display", "none");
   });
 });

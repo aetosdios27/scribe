@@ -1,5 +1,5 @@
 import createMDX from "@next/mdx";
-import { createScribeNextMdxOptions } from "@scribe/mdx/next";
+import { createScribeNextMdxOptions } from "@scribe-sdk/mdx/next";
 
 const withMDX = createMDX({
   options: createScribeNextMdxOptions()

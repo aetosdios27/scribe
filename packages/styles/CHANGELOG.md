@@ -1,4 +1,4 @@
-# @scribe/styles
+# @scribe-sdk/styles
 
 ## 0.1.0-alpha.2
 

@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const publicPackages = [
-  { name: "@scribe/react", directory: "react" },
-  { name: "@scribe/styles", directory: "styles" },
-  { name: "@scribe/mdx", directory: "mdx" },
-  { name: "@scribe/cli", directory: "cli" }
+  { name: "@scribe-sdk/react", directory: "react" },
+  { name: "@scribe-sdk/styles", directory: "styles" },
+  { name: "@scribe-sdk/mdx", directory: "mdx" },
+  { name: "@scribe-sdk/cli", directory: "cli" }
 ];
 const expectedNames = publicPackages.map(({ name }) => name);
 const manifests = await Promise.all(publicPackages.map(async ({ directory }) =>
@@ -53,10 +53,12 @@ assert(!/export const version\s*=\s*["'][^"']+["']/u.test(cliSource), "The CLI v
 
 for (const filename of ["README.md", "SKILL.md"]) {
   const content = await readFile(join(root, filename), "utf8");
-  const referencedVersions = [...content.matchAll(/@scribe\/(?:react|styles|mdx|cli)@([0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+)/gu)]
+  const referencedVersions = [...content.matchAll(/@scribe-sdk\/(?:react|styles|mdx|cli)@([0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+)/gu)]
     .map((match) => match[1]);
   const conflicting = referencedVersions.filter((referenced) => referenced !== version);
   assert(conflicting.length === 0, `${filename} references a conflicting Scribe version: ${[...new Set(conflicting)].join(", ")}.`);
+  const retiredScope = ["@scribe", "/"].join("");
+  assert(!content.includes(retiredScope), `${filename} references the retired ${retiredScope.slice(0, -1)} package scope.`);
 }
 
 process.stdout.write(`Release alignment verified for ${expectedNames.join(", ")} at ${version} in alpha prerelease mode.\n`);

@@ -1,4 +1,4 @@
-# @scribe/mdx
+# @scribe-sdk/mdx
 
 ## 0.1.0-alpha.2
 

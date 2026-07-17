@@ -1,5 +1,5 @@
 {
-  "name": "@scribe/seam-vite",
+  "name": "@scribe-sdk/seam-vite",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,9 +8,9 @@
   },
   "dependencies": {
     "@mdx-js/rollup": "3.1.1",
-    "@scribe/mdx": "workspace:*",
-    "@scribe/react": "workspace:*",
-    "@scribe/styles": "workspace:*",
+    "@scribe-sdk/mdx": "workspace:*",
+    "@scribe-sdk/react": "workspace:*",
+    "@scribe-sdk/styles": "workspace:*",
     "@vitejs/plugin-react": "6.0.3",
     "react": "19.2.7",
     "react-dom": "19.2.7",

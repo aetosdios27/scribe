@@ -1,5 +1,5 @@
 {
-  "name": "@scribe/styles",
+  "name": "@scribe-sdk/styles",
   "version": "0.1.0-alpha.2",
   "description": "Scoped, host-adaptive publishing CSS for Scribe technical articles.",
   "author": "aetosdios27",

@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-linux:
+    name: Release verification (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify documentation copies
+        run: bun run docs:check
+      - name: Verify portable repository boundaries
+        run: bun run portability:check
+      - name: Verify release and package alignment
+        run: bun run release:check
+      - name: Typecheck with TypeScript 7
+        run: bun run typecheck
+      - name: Typecheck with TypeScript 6
+        run: node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+      - name: Run unit, transformation, release, and surface tests
+        run: bun run test
+      - name: Build public packages
+        run: bun run build
+      - name: Build Vite fixture
+        run: bun run build
+        working-directory: tests/integration/vite
+      - name: Build Next.js fixture
+        run: bun run build
+        working-directory: tests/integration/next
+      - name: Dry-run package contents
+        run: bun run release:pack:dry
+      - name: Pack npm tarballs
+        run: bun run release:pack
+      - name: Inspect npm tarballs
+        run: bun run release:inspect
+      - name: Test fresh packed consumers
+        run: bun run release:consumers
+      - name: Scan browser bundles
+        run: bun run release:bundle-scan
+      - name: Audit production dependencies
+        run: bun audit --production
+      - name: Check repository whitespace
+        run: git diff --check
+      - name: Confirm verification leaves tracked files unchanged
+        run: git diff --exit-code
+      - name: Upload release diagnostics on failure
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: verify-linux-diagnostics
+          path: |
+            .scribe-release/*.json
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  portable-os:
+    name: Portability (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify documentation copies
+        run: bun run docs:check
+      - name: Verify portable repository boundaries
+        run: bun run portability:check
+      - name: Verify release and package alignment
+        run: bun run release:check
+      - name: Typecheck with TypeScript 7
+        run: bun run typecheck
+      - name: Typecheck with TypeScript 6
+        run: node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+      - name: Build public packages
+        run: bun run build
+      - name: Pack npm tarballs
+        run: bun run release:pack
+      - name: Install tarballs and smoke-test CLI
+        run: bun run test:portability
+      - name: Upload portability diagnostics on failure
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: portability-${{ matrix.os }}
+          path: .scribe-release/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  browser-engines:
+    name: Browser behavior (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser:
+          - chromium
+          - firefox
+          - webkit
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build public packages
+        run: bun run build
+      - name: Install Playwright ${{ matrix.browser }}
+        run: bunx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run ${{ matrix.browser }} behavior suite
+        run: bun run test:browser:${{ matrix.browser }}
+      - name: Upload browser diagnostics on failure
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-${{ matrix.browser }}-diagnostics
+          path: |
+            playwright-report/portable
+            test-results/playwright-portable
+          if-no-files-found: ignore
+          retention-days: 7

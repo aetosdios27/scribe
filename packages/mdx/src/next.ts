@@ -4,8 +4,8 @@ export function createScribeNextMdxOptions(
   options: ScribeMdxOptions = {}
 ): SerializableMdxOptions {
   return {
-    remarkPlugins: ["@scribe/mdx/remark"],
-    rehypePlugins: [["@scribe/mdx/rehype", { strict: options.strict === true }]]
+    remarkPlugins: ["@scribe-sdk/mdx/remark"],
+    rehypePlugins: [["@scribe-sdk/mdx/rehype", { strict: options.strict === true }]]
   };
 }
 

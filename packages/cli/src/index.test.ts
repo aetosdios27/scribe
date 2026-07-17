@@ -22,6 +22,14 @@ it("prints readable help and succeeds", async () => {
   expect(write.mock.calls.join("\n")).toContain("scb validate <article.mdx> [--strict]");
 });
 
+it("uses status 2 when no command is supplied", async () => {
+  vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+  expect(await main([])).toBe(2);
+  expect(stderr.mock.calls.join("\n")).toContain("Expected a command");
+});
+
 it("validates a file and reports unsupported languages as non-fatal warnings", async () => {
   const path = await fixture("```not-a-real-language\nhello\n```\n");
   const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);

@@ -23,7 +23,7 @@ Add one fragment for each meaningful consumer-facing change:
 bunx changeset
 ```
 
-Select every affected public package. The fixed group keeps `@scribe/react`, `@scribe/styles`, `@scribe/mdx`, and `@scribe/cli` version-aligned even when a fragment directly names only part of the group.
+Select every affected public package. The fixed group keeps `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/mdx`, and `@scribe-sdk/cli` version-aligned even when a fragment directly names only part of the group.
 
 Scribe’s pre-1.0 semver policy is:
 
@@ -88,6 +88,35 @@ bun run release:check
 
 The curated bootstrap fragment generated `0.1.0-alpha.2` from the already prepared `0.1.0-alpha.1` manifests. In prerelease mode Changesets retains that fragment and records it as consumed in `.changeset/pre.json`. Future alpha fragments advance the synchronized prerelease sequence. Use an isolated repository copy for destructive workflow rehearsals.
 
+## Compatibility verification model
+
+GitHub CI smoke-tests package installation, declarations, builds, and the CLI on Linux, Windows, and macOS. Portable browser behavior runs against Playwright-managed Chromium, Firefox, and WebKit. Scribe targets current modern browser engines; Chromium-family products are covered primarily through the Chromium engine suite.
+
+Helium Chromium 150 remains the canonical pixel-regression environment on the maintainer’s controlled machine. Contributors and Scribe users do not need Helium: it is not packaged or used at runtime. Host fonts can rasterize differently across operating systems, so portable tests guarantee semantic behavior and layout invariants rather than identical glyph pixels.
+
+Run the portable suites with:
+
+```bash
+bun run test:browser
+bun run test:browser:chromium
+bun run test:browser:firefox
+bun run test:browser:webkit
+```
+
+When Helium is installed locally, run the six canonical snapshots with:
+
+```bash
+bun run test:visual:helium
+```
+
+That contributor convenience command exits successfully with a clear skip message when Helium is absent. Release verification must instead use the strict command:
+
+```bash
+bun run release:visual
+```
+
+The release command fails clearly when Helium is unavailable. Do not update the Helium baselines to address a portable-engine difference; first determine whether the difference violates a semantic or layout invariant.
+
 ## Verification gates
 
 After versioning, run every gate from the repository root:
@@ -96,6 +125,7 @@ After versioning, run every gate from the repository root:
 - [ ] Install exactly: `bun install --frozen-lockfile`
 - [ ] Verify canonical package docs: `bun run docs:check`
 - [ ] Verify fixed-group alignment and release policy: `bun run release:check`
+- [ ] Scan for stale scopes, fixed machine paths, and misplaced Helium references: `bun run portability:check`
 - [ ] Run TypeScript 7 strict checking: `bun run typecheck`
 - [ ] Run TypeScript 6 with library checking enabled: `node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`
 - [ ] Run unit, transformation, diagnostics, and release tests: `bun run test`
@@ -105,10 +135,12 @@ After versioning, run every gate from the repository root:
 - [ ] Inspect npm dry runs: `bun run release:pack:dry`
 - [ ] Create local tarballs: `bun run release:pack`
 - [ ] Inspect tarball contents, manifests, declarations, README, SKILL, LICENSE, and repository-only exclusions: `bun run release:inspect`
+- [ ] Install the packed tarballs and smoke-test portable CLI paths: `bun run test:portability`
 - [ ] Run isolated packed Vite and Next consumers with Bun and npm: `bun run release:consumers`
-- [ ] Check the packaged CLI version and help: `./.scribe-release/consumers/bun-vite/node_modules/.bin/scb --version` and `./.scribe-release/consumers/bun-vite/node_modules/.bin/scb --help`
+- [ ] Check the packaged CLI version and help from the packed consumer: `bunx scb --version` and `bunx scb --help`
 - [ ] Validate valid and invalid article fixtures through the packaged CLI
-- [ ] Run Helium Chromium 150 behavior and visual tests: `bun run test:visual`
+- [ ] Run portable Chromium, Firefox, and WebKit behavior tests: `bun run test:browser`
+- [ ] Run the canonical Helium Chromium 150 visual suite in required mode: `bun run release:visual`
 - [ ] Visually inspect every PNG under `tests/visual/screenshots/` without regenerating baselines
 - [ ] Inspect browser bundles for Shiki, Oniguruma, grammar, theme, MDX, unified, remark, rehype, Node, and WASM payloads: `bun run release:bundle-scan`
 - [ ] Confirm `SKILL.md` exists in every intended package tarball
@@ -119,7 +151,7 @@ After versioning, run every gate from the repository root:
 
 ## Publish
 
-Before publication, confirm `npm whoami` reports the intended account and that it may publish public packages in the `@scribe` scope. Keep credentials and one-time passwords outside the repository.
+Before publication, confirm `npm whoami` reports the intended account and that it may publish public packages in the `@scribe-sdk` scope. Keep credentials and one-time passwords outside the repository.
 
 The installed Changesets CLI supports `publish --tag <name> --no-git-tag`. After all gates pass, the owner may publish the synchronized packages with:
 
@@ -127,7 +159,7 @@ The installed Changesets CLI supports `publish --tag <name> --no-git-tag`. After
 bunx changeset publish --tag alpha --no-git-tag
 ```
 
-The root equivalent is `bun run release:packages`. `--tag alpha` prevents the prerelease from becoming `latest`; `--no-git-tag` preserves the current policy that package publication does not automatically create Git tags. Changesets discovers unpublished workspace versions and handles the internal `@scribe/mdx` dependency used by `@scribe/cli`.
+The root equivalent is `bun run release:packages`. `--tag alpha` prevents the prerelease from becoming `latest`; `--no-git-tag` preserves the current policy that package publication does not automatically create Git tags. Changesets discovers unpublished workspace versions and handles the internal `@scribe-sdk/mdx` dependency used by `@scribe-sdk/cli`.
 
 Do not execute this command during release preparation.
 
@@ -136,27 +168,27 @@ Do not execute this command during release preparation.
 Verify registry metadata and confirm all four packages resolve to the same alpha version:
 
 ```bash
-npm view @scribe/react dist-tags
-npm view @scribe/styles dist-tags
-npm view @scribe/mdx dist-tags
-npm view @scribe/cli dist-tags
-npm view @scribe/react versions --json
-npm view @scribe/styles versions --json
-npm view @scribe/mdx versions --json
-npm view @scribe/cli versions --json
+npm view @scribe-sdk/react dist-tags
+npm view @scribe-sdk/styles dist-tags
+npm view @scribe-sdk/mdx dist-tags
+npm view @scribe-sdk/cli dist-tags
+npm view @scribe-sdk/react versions --json
+npm view @scribe-sdk/styles versions --json
+npm view @scribe-sdk/mdx versions --json
+npm view @scribe-sdk/cli versions --json
 ```
 
 In a fresh consumer, install only the published alpha packages:
 
 ```bash
-bun add @scribe/react@alpha @scribe/styles@alpha @scribe/mdx@alpha
-bun add --dev @scribe/cli@alpha
+bun add @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alpha
+bun add --dev @scribe-sdk/cli@alpha
 bunx scb --version
 bunx scb --help
 bunx scb validate path/to/article.mdx
 ```
 
-Run that consumer’s strict typecheck and production build. Confirm each installed `node_modules/@scribe/*/package.json` reports the same version before creating any Git tag or GitHub release.
+Run that consumer’s strict typecheck and production build. Confirm each installed `node_modules/@scribe-sdk/*/package.json` reports the same version before creating any Git tag or GitHub release.
 
 ## Stable release later
 
