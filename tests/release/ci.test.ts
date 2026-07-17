@@ -73,7 +73,9 @@ describe("public CI contract", () => {
     expect(helium).toContain('testDir: "./tests/visual"');
     expect(helium).not.toContain(["/usr/bin", "/helium"].join(""));
     expect(portableSuite).not.toContain("document.fonts.ready");
+    expect(portableSuite).not.toContain("image.decode()");
     expect(visualSuite).toContain("document.fonts.ready");
+    expect(visualSuite).toContain("image.decode()");
   });
 
   it("contains no stale scope or maintainer path and isolates the Helium executable", async () => {

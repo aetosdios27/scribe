@@ -30,9 +30,6 @@ async function openArticle(
     fixture: options.fixture ?? "article"
   });
   await page.goto(`/?${query}`);
-  await page.locator("img").evaluateAll(async (images: HTMLImageElement[]) => {
-    await Promise.all(images.map((image) => image.decode()));
-  });
   await expect(page.locator(".scribe")).toBeVisible();
 }
 
