@@ -157,13 +157,13 @@ After versioning, run every gate from the repository root:
 
 Before publication, confirm `npm whoami` reports the intended account and that it may publish public packages in the `@scribe-sdk` scope. Keep credentials and one-time passwords outside the repository.
 
-The installed Changesets CLI supports `publish --tag <name> --no-git-tag`. After all gates pass, the owner may publish the synchronized packages with:
+While prerelease mode is active, the installed Changesets CLI reads the `alpha` dist-tag from `.changeset/pre.json` and rejects a custom `--tag` argument. After all gates pass, the owner may publish the synchronized packages with:
 
 ```bash
-bunx changeset publish --tag alpha --no-git-tag
+bunx changeset publish --no-git-tag
 ```
 
-The root equivalent is `bun run release:packages`. `--tag alpha` prevents the prerelease from becoming `latest`; `--no-git-tag` preserves the current policy that package publication does not automatically create Git tags. Changesets discovers unpublished workspace versions and handles the internal `@scribe-sdk/mdx` dependency used by `@scribe-sdk/cli`.
+The root equivalent is `bun run release:packages`. Changesets reads the `alpha` dist-tag from `.changeset/pre.json`; `--no-git-tag` preserves the current policy that package publication does not automatically create Git tags. Changesets discovers unpublished workspace versions and handles the internal `@scribe-sdk/mdx` dependency used by `@scribe-sdk/cli`. Verify the resulting dist-tags immediately and do not proceed to tagging if `latest` changes.
 
 Do not execute this command during release preparation.
 

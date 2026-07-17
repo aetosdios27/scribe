@@ -56,7 +56,8 @@ describe("publishable package manifests", () => {
     const releasing = await readFile(join(root, "RELEASING.md"), "utf8");
 
     await expect(access(join(root, "RELEASE_NOTES.md"))).rejects.toThrow();
-    expect(releasing).toContain("bunx changeset publish --tag alpha --no-git-tag");
+    expect(releasing).toContain("bunx changeset publish --no-git-tag");
+    expect(releasing).toContain("reads the `alpha` dist-tag from `.changeset/pre.json`");
     expect(releasing).toContain("Post-publication smoke tests");
     expect(releasing).toContain("npm view @scribe-sdk/react dist-tags");
     expect(releasing).not.toMatch(/\/home\/|\\Users\\|_authToken|npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}/u);

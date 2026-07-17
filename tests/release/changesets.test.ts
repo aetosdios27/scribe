@@ -76,7 +76,7 @@ describe("Changesets release policy", () => {
       changeset: "changeset",
       "changeset:status": "changeset status",
       "version:packages": "changeset version",
-      "release:packages": "changeset publish --tag alpha --no-git-tag",
+      "release:packages": "changeset publish --no-git-tag",
       "release:check": "node scripts/check-release-alignment.mjs"
     });
     expect(manifest.devDependencies["@changesets/cli"]).toBe("2.31.1");
@@ -90,7 +90,8 @@ describe("Changesets release policy", () => {
     expect(releasing).toContain("bunx changeset status");
     expect(releasing).toContain("bunx changeset pre enter alpha");
     expect(releasing).toContain("bunx changeset version");
-    expect(releasing).toContain("bunx changeset publish --tag alpha --no-git-tag");
+    expect(releasing).toContain("bunx changeset publish --no-git-tag");
+    expect(releasing).not.toContain("changeset publish --tag alpha");
     expect(releasing).toContain("bunx changeset pre exit");
     expect(releasing).toContain("observable user impact");
     expect(releasing).toContain("packages/*/CHANGELOG.md");
