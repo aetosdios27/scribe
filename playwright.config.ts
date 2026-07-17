@@ -19,7 +19,7 @@ export default defineConfig({
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },
     { name: "firefox", use: { browserName: "firefox" } },
-    { name: "webkit", use: { browserName: "webkit" } }
+    { name: "webkit", workers: 1, use: { browserName: "webkit" } }
   ],
   webServer: {
     command: "bun run dev -- --host 127.0.0.1 --port 4173",

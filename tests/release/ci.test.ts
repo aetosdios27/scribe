@@ -66,7 +66,7 @@ describe("public CI contract", () => {
     expect(portable).toContain('testDir: "./tests/browser"');
     expect(portable).toContain('{ name: "chromium"');
     expect(portable).toContain('{ name: "firefox"');
-    expect(portable).toContain('{ name: "webkit"');
+    expect(portable).toContain('{ name: "webkit", workers: 1');
     expect(portable).not.toContain("helium");
     expect(portable).not.toContain("toHaveScreenshot");
     expect(helium).toContain('name: "helium-chromium-150"');
