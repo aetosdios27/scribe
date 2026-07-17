@@ -80,6 +80,7 @@ test.describe("article behavior", () => {
     await expect(regions).toHaveCount(2);
     await expect(regions.first().locator("table")).toBeVisible();
     expect(await regions.first().evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await regions.first().focus();
     await expect(regions.first()).toBeFocused();
   });

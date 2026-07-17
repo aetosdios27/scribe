@@ -1,0 +1,41 @@
+<Banner
+  eyebrow="Protocol field notes"
+  title="The two questions every peer answers"
+  description="Permission and demand are independent state in a BitTorrent connection."
+  metadata="6 min read · Rust"
+/>
+
+# Peer state is not connection state
+
+A connected peer can be both `choked` and `interested`. The first word describes whether piece requests may move; the second describes whether any available piece would be useful.
+
+<Callout variant="insight" title="Keep the axes independent">
+  Model permission and demand separately. Combining them creates invalid transitions and makes scheduling policy difficult to test.
+</Callout>
+
+## The state vocabulary
+
+| State | Owner | Meaning |
+| --- | --- | --- |
+| `choked` | remote peer | Requests must pause. |
+| `unchoked` | remote peer | Requests may be scheduled. |
+| `interested` | local peer | The remote bitfield contains a missing piece. |
+
+## Encode transitions, not side effects
+
+```rust filename="src/peer/state.rs" lineNumbers highlight="2-5" focus="1-7" add="5" remove="3"
+pub enum PeerEvent {
+    Choke,
+    Unchoke,
+    Interested,
+    NotInterested,
+}
+```
+
+The decoder should return a transition. A scheduler can then decide what work follows without coupling socket reads to allocation policy.
+
+<Figure caption="Permission and demand stay independent until scheduling combines them." wide>
+  <img src="/starter-diagram.svg" alt="A two-axis diagram of peer permission and demand" />
+</Figure>
+
+> A connection answers who is reachable. Peer state answers whether bytes should move.

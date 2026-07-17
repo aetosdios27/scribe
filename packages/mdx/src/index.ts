@@ -1,27 +1,17 @@
 import { compile } from "@mdx-js/mdx";
 
-import { parseCodeMetadata } from "./code-meta.js";
 import { createScribeMdxOptions } from "./options.js";
-import type { ScribeMdxOptions } from "./types.js";
+import type { ScribeCompiledMdx, ScribeMdxOptions, ScribeMdxSource } from "./types.js";
 
-export { parseCodeMetadata } from "./code-meta.js";
-export type {
-  LineRange,
-  MetadataIssue,
-  ParsedCodeMetadata,
-  ScribeCodeMetadata
-} from "./code-meta.js";
 export { createScribeMdxOptions } from "./options.js";
-export type { ScribeMdxOptions, SerializableMdxOptions } from "./types.js";
+export type { ScribeMdxOptions } from "./types.js";
 
 export function compileScribeMdx(
-  file: Parameters<typeof compile>[0],
+  file: ScribeMdxSource,
   options: ScribeMdxOptions = {}
-) {
-  return compile(file, {
+): Promise<ScribeCompiledMdx> {
+  return compile(file as Parameters<typeof compile>[0], {
     ...createScribeMdxOptions(options),
     outputFormat: "program"
   });
 }
-
-void parseCodeMetadata;

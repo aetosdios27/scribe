@@ -66,14 +66,14 @@ const defaults: ScribeComponents = {
 };
 
 export interface CreateScribeComponentsOptions {
-  readonly components?: ScribeComponents;
+  readonly components?: Readonly<Record<string, unknown>>;
 }
 
 export function createScribeComponents(
-  options: CreateScribeComponentsOptions | ScribeComponents = {}
+  options: CreateScribeComponentsOptions | Readonly<Record<string, unknown>> = {}
 ): ScribeComponents {
-  const components: ScribeComponents = (
+  const components = (
     "components" in options ? options.components ?? {} : options
-  ) as ScribeComponents;
-  return { ...defaults, ...components };
+  );
+  return { ...defaults, ...components } as ScribeComponents;
 }

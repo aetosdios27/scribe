@@ -25,6 +25,7 @@ export interface ParsedCodeMetadata {
 }
 
 const namedFields = new Set(["filename", "highlight", "focus", "add", "remove"]);
+const acceptedSyntax = 'Expected: filename="...", lineNumbers, highlight="1,3-5", focus="1,3-5", add="1,3-5", remove="1,3-5".';
 
 export function parseCodeMetadata(
   raw: string | undefined,
@@ -47,7 +48,7 @@ export function parseCodeMetadata(
 
     if (!field) {
       const end = nextWhitespace(source, cursor);
-      issues.push(issue("SCB1001", "Expected a named Scribe code field.", cursor, end));
+      issues.push(issue("SCB1001", `Expected a named Scribe code field. ${acceptedSyntax}`, cursor, end));
       cursor = end;
       continue;
     }
@@ -69,7 +70,7 @@ export function parseCodeMetadata(
 
     if (!namedFields.has(field)) {
       const end = consumeOptionalValue(source, cursor);
-      issues.push(issue("SCB1001", `Unknown Scribe code field \`${field}\`.`, fieldStart, end));
+      issues.push(issue("SCB1001", `Unknown Scribe code field \`${field}\`. ${acceptedSyntax}`, fieldStart, end));
       cursor = end;
       continue;
     }
@@ -77,7 +78,7 @@ export function parseCodeMetadata(
     if (source[cursor] !== "=" || source[cursor + 1] !== '"') {
       const end = nextWhitespace(source, cursor);
       issues.push(
-        issue("SCB1001", `\`${field}\` requires a double-quoted value.`, fieldStart, end)
+        issue("SCB1001", `\`${field}\` requires a double-quoted value. ${acceptedSyntax}`, fieldStart, end)
       );
       cursor = end;
       continue;
@@ -87,7 +88,7 @@ export function parseCodeMetadata(
     const valueStart = cursor;
     while (cursor < source.length && source[cursor] !== '"') cursor += 1;
     if (cursor >= source.length) {
-      issues.push(issue("SCB1001", `Unclosed value for \`${field}\`.`, fieldStart, source.length));
+      issues.push(issue("SCB1001", `Unclosed value for \`${field}\`. ${acceptedSyntax}`, fieldStart, source.length));
       break;
     }
 
@@ -126,7 +127,7 @@ function parseRanges(
       issues.push(
         issue(
           "SCB1002",
-          `Invalid \`${field}\` range \`${part}\`; use positive lines within 1-${lineCount}.`,
+          `Invalid \`${field}\` range \`${part}\`; use comma-separated lines or inclusive ranges within 1-${lineCount}, for example \`${field}="1,3-5"\`.`,
           valueStart,
           valueStart + raw.length
         )

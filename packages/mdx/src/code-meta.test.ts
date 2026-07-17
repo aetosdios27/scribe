@@ -34,5 +34,8 @@ describe("parseCodeMetadata", () => {
       "SCB1001",
       "SCB1002"
     ]);
+    expect(result.issues[1]?.message).toContain(
+      'Expected: filename="...", lineNumbers, highlight="1,3-5", focus="1,3-5", add="1,3-5", remove="1,3-5".'
+    );
   });
 });

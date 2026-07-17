@@ -7,19 +7,36 @@
     "packages/*",
     "tests/integration/*"
   ],
+  "overrides": {
+    "postcss": "8.5.19"
+  },
   "scripts": {
     "build": "tsdown --workspace",
+    "changeset": "changeset",
+    "changeset:status": "changeset status",
+    "docs:check": "node scripts/sync-package-docs.mjs --check",
+    "docs:sync": "node scripts/sync-package-docs.mjs",
+    "release:inspect": "node scripts/inspect-tarballs.mjs .scribe-release",
+    "release:bundle-scan": "node scripts/scan-browser-bundles.mjs",
+    "release:check": "node scripts/check-release-alignment.mjs",
+    "release:consumers": "node scripts/test-packed-consumers.mjs",
+    "release:pack": "node scripts/pack-packages.mjs",
+    "release:pack:dry": "node scripts/pack-packages.mjs --dry-run",
+    "release:packages": "changeset publish --tag alpha --no-git-tag",
     "test": "vitest run",
+    "test:release": "node scripts/check-release-alignment.mjs && vitest run tests/release",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
-    "typecheck": "node ./node_modules/@typescript/native/bin/tsc --noEmit -p tsconfig.json"
+    "typecheck": "node ./node_modules/@typescript/native/bin/tsc --noEmit -p tsconfig.json",
+    "version:packages": "changeset version"
   },
   "devDependencies": {
+    "@changesets/cli": "2.31.1",
     "@playwright/test": "1.61.1",
     "@scribe/mdx": "workspace:*",
-    "@typescript/native": "npm:typescript@7.0.2",
-    "@types/react": "19.2.17",
     "@types/node": "22.20.1",
+    "@types/react": "19.2.17",
+    "@typescript/native": "npm:typescript@7.0.2",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "tsdown": "0.22.7",

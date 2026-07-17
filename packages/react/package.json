@@ -1,9 +1,19 @@
 {
   "name": "@scribe/react",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0-alpha.2",
+  "description": "Host-adaptive React primitives for publication-grade technical articles.",
+  "author": "aetosdios27",
+  "license": "Apache-2.0",
   "type": "module",
-  "files": ["dist"],
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist",
+    "README.md",
+    "SKILL.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
@@ -12,16 +22,33 @@
     }
   },
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "prepack": "node ../../scripts/sync-package-docs.mjs --check"
   },
+  "sideEffects": false,
   "peerDependencies": {
-    "react": ">=19.0.0"
+    "react": "19.2.7"
   },
   "devDependencies": {
-    "@types/mdx": "2.0.13",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "react": "19.2.7",
     "react-dom": "19.2.7"
+  },
+  "keywords": [
+    "scribe",
+    "mdx",
+    "react",
+    "publishing",
+    "technical-writing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aetosdios27/scribe.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/aetosdios27/scribe#readme",
+  "bugs": {
+    "url": "https://github.com/aetosdios27/scribe/issues"
   }
 }

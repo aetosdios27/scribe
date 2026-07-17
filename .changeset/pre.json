@@ -1,0 +1,13 @@
+{
+  "mode": "pre",
+  "tag": "alpha",
+  "initialVersions": {
+    "@scribe/cli": "0.1.0-alpha.1",
+    "@scribe/mdx": "0.1.0-alpha.1",
+    "@scribe/react": "0.1.0-alpha.1",
+    "@scribe/styles": "0.1.0-alpha.1"
+  },
+  "changesets": [
+    "bright-pages-publish"
+  ]
+}

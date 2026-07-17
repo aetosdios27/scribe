@@ -8,3 +8,4 @@ test-results/
 *.tgz
 .scribe-pack/
 .scribe-local/
+.scribe-release/

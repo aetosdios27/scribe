@@ -1,12 +1,40 @@
 {
   "name": "@scribe/styles",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0-alpha.2",
+  "description": "Scoped, host-adaptive publishing CSS for Scribe technical articles.",
+  "author": "aetosdios27",
+  "license": "Apache-2.0",
   "type": "module",
-  "files": ["default.css"],
+  "style": "./default.css",
+  "files": [
+    "default.css",
+    "README.md",
+    "SKILL.md",
+    "LICENSE"
+  ],
   "exports": {
     "./default.css": "./default.css"
   },
-  "sideEffects": ["*.css"]
+  "sideEffects": [
+    "./default.css"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/sync-package-docs.mjs --check"
+  },
+  "keywords": [
+    "scribe",
+    "mdx",
+    "css",
+    "publishing",
+    "technical-writing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aetosdios27/scribe.git",
+    "directory": "packages/styles"
+  },
+  "homepage": "https://github.com/aetosdios27/scribe#readme",
+  "bugs": {
+    "url": "https://github.com/aetosdios27/scribe/issues"
+  }
 }
-

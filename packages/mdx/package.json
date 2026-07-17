@@ -1,12 +1,22 @@
 {
   "name": "@scribe/mdx",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0-alpha.2",
+  "description": "Compile-time MDX pipeline for Scribe tables, diagnostics, anchors, and Shiki output.",
+  "author": "aetosdios27",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
   },
-  "files": ["dist"],
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist",
+    "README.md",
+    "SKILL.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
@@ -30,8 +40,10 @@
     }
   },
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "prepack": "node ../../scripts/sync-package-docs.mjs --check"
   },
+  "sideEffects": false,
   "dependencies": {
     "@mdx-js/mdx": "3.1.1",
     "hast-util-to-string": "3.0.1",
@@ -44,5 +56,21 @@
   },
   "devDependencies": {
     "@types/hast": "3.0.4"
+  },
+  "keywords": [
+    "scribe",
+    "mdx",
+    "shiki",
+    "publishing",
+    "technical-writing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aetosdios27/scribe.git",
+    "directory": "packages/mdx"
+  },
+  "homepage": "https://github.com/aetosdios27/scribe#readme",
+  "bugs": {
+    "url": "https://github.com/aetosdios27/scribe/issues"
   }
 }

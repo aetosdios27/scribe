@@ -39,12 +39,39 @@ opaque value
       ruleId: "SCB1003",
       source: "scribe"
     });
+    expect(file.messages[0]?.reason).toBe(
+      'Unsupported code language "definitely-not-a-language"; falling back to plaintext. Use a Shiki bundled language or remove the language tag.'
+    );
     expect(String(file)).toContain("data-scribe-fallback");
   });
 
   it("upgrades unsupported languages to errors only in strict mode", async () => {
     await expect(
       compileScribeMdx("```definitely-not-a-language\nopaque value\n```", { strict: true })
-    ).rejects.toMatchObject({ ruleId: "SCB1003", source: "scribe" });
+    ).rejects.toMatchObject({
+      reason: 'Unsupported code language "definitely-not-a-language". Strict mode requires a Shiki bundled language or an unlabelled plaintext fence.',
+      ruleId: "SCB1003",
+      source: "scribe"
+    });
+  });
+
+  it("rejects an unknown static Callout variant during compilation", async () => {
+    await expect(
+      compileScribeMdx('<Callout variant="warnng">Mind the typo.</Callout>')
+    ).rejects.toMatchObject({
+      reason: 'Unknown Callout variant "warnng". Expected one of: note, insight, warning.',
+      ruleId: "SCB1101",
+      source: "scribe"
+    });
+  });
+
+  it("rejects a static Banner image without alternative text", async () => {
+    await expect(
+      compileScribeMdx('<Banner title="Peer states" image="/peer.svg" />')
+    ).rejects.toMatchObject({
+      reason: 'Banner image "/peer.svg" requires a non-empty imageAlt value.',
+      ruleId: "SCB1102",
+      source: "scribe"
+    });
   });
 });

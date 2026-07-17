@@ -27,20 +27,107 @@ interface ParentNode {
 
 const specialLanguages = new Set(["text", "txt", "plain", "plaintext", "ansi"]);
 
-const rehypeScribe: Plugin<[ScribeMdxOptions?], Root> = function rehypeScribe(options = {}) {
+const rehypeScribe: Plugin<[ScribeMdxOptions?]> = function rehypeScribe(options = {}) {
   const slug = rehypeSlug.call(this);
 
   return async (tree, file) => {
-    normalizeTables(tree);
-    const targets = collectCodeTargets(tree);
+    const root = tree as Root;
+    validateScribeComponents(root, file);
+    normalizeTables(root);
+    const targets = collectCodeTargets(root);
     for (const target of targets) {
       await highlightTarget(target, file, options);
     }
-    if (slug) await slug(tree);
+    if (slug) await slug(root);
   };
 };
 
 export default rehypeScribe;
+
+const calloutVariants = ["note", "insight", "warning"] as const;
+
+function validateScribeComponents(tree: Root, file: VFile): void {
+  visit(tree, (node) => {
+    if (!isMdxComponent(node)) return;
+
+    if (node.name === "Callout") {
+      const variant = staticAttribute(node, "variant");
+      if (variant.kind === "string" && !calloutVariants.includes(variant.value as typeof calloutVariants[number])) {
+        fail(
+          file,
+          node,
+          "SCB1101",
+          `Unknown Callout variant "${variant.value}". Expected one of: ${calloutVariants.join(", ")}.`
+        );
+      }
+    }
+
+    if (node.name === "Banner") {
+      const image = staticAttribute(node, "image");
+      const imageAlt = staticAttribute(node, "imageAlt");
+      if (image.kind === "string" && image.value.length > 0 && imageAlt.kind !== "expression" && (imageAlt.kind !== "string" || imageAlt.value.trim().length === 0)) {
+        fail(
+          file,
+          node,
+          "SCB1102",
+          `Banner image "${image.value}" requires a non-empty imageAlt value.`
+        );
+      }
+    }
+  });
+}
+
+interface MdxComponentNode {
+  readonly type: "mdxJsxFlowElement" | "mdxJsxTextElement";
+  readonly name: string | null;
+  readonly attributes: ReadonlyArray<{
+    readonly type?: string;
+    readonly name?: string;
+    readonly value?: unknown;
+  }>;
+  readonly position?: Element["position"];
+}
+
+type StaticAttribute =
+  | { readonly kind: "absent" }
+  | { readonly kind: "boolean" }
+  | { readonly kind: "expression" }
+  | { readonly kind: "string"; readonly value: string };
+
+function isMdxComponent(node: unknown): node is MdxComponentNode {
+  if (!node || typeof node !== "object") return false;
+  const candidate = node as Partial<MdxComponentNode>;
+  return (
+    (candidate.type === "mdxJsxFlowElement" || candidate.type === "mdxJsxTextElement") &&
+    typeof candidate.name === "string" &&
+    Array.isArray(candidate.attributes)
+  );
+}
+
+function staticAttribute(node: MdxComponentNode, name: string): StaticAttribute {
+  const attribute = node.attributes.find(
+    (candidate) => candidate.type === "mdxJsxAttribute" && candidate.name === name
+  );
+  if (!attribute) return { kind: "absent" };
+  if (attribute.value === null || attribute.value === undefined) return { kind: "boolean" };
+  if (typeof attribute.value === "string") return { kind: "string", value: attribute.value };
+  return { kind: "expression" };
+}
+
+function fail(
+  file: VFile,
+  node: Pick<MdxComponentNode, "position">,
+  ruleId: "SCB1101" | "SCB1102",
+  reason: string
+): never {
+  const message = file.message(reason, {
+    place: node.position,
+    source: "scribe",
+    ruleId
+  });
+  message.fatal = true;
+  throw message;
+}
 
 interface TableTarget {
   readonly node: unknown;
@@ -145,8 +232,11 @@ async function highlightTarget(
   const supported = isSupportedLanguage(declaredLanguage);
 
   if (!supported) {
+    const reason = options.strict === true
+      ? `Unsupported code language "${declaredLanguage}". Strict mode requires a Shiki bundled language or an unlabelled plaintext fence.`
+      : `Unsupported code language "${declaredLanguage}"; falling back to plaintext. Use a Shiki bundled language or remove the language tag.`;
     const message = file.message(
-      `Shiki does not support \`${declaredLanguage}\`; Scribe rendered this block as plaintext.`,
+      reason,
       {
         place: target.code.position,
         source: "scribe",

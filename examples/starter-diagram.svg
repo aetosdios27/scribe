@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" role="img" aria-labelledby="title description">
+  <title id="title">Peer permission and demand</title>
+  <description id="description">A restrained two-axis diagram separating choking permission from interest demand.</description>
+  <rect width="960" height="420" fill="#111214"/>
+  <path d="M152 332H836M152 332V72" stroke="#6f747c" stroke-width="2"/>
+  <path d="m836 332-16-9v18ZM152 72l-9 16h18Z" fill="#6f747c"/>
+  <rect x="188" y="106" width="276" height="190" rx="12" fill="#181b20" stroke="#3d424b"/>
+  <rect x="524" y="106" width="276" height="190" rx="12" fill="#1c1a26" stroke="#7663d9"/>
+  <circle cx="326" cy="202" r="30" fill="#30353d"/>
+  <circle cx="662" cy="202" r="30" fill="#7663d9"/>
+  <g fill="#f2f1ed" font-family="ui-monospace, monospace" text-anchor="middle">
+    <text x="326" y="208" font-size="18">choked</text>
+    <text x="662" y="208" font-size="18">ready</text>
+    <text x="494" y="384" font-size="16" fill="#aeb2b9">permission →</text>
+    <text x="80" y="204" font-size="16" fill="#aeb2b9" transform="rotate(-90 80 204)">demand →</text>
+  </g>
+</svg>

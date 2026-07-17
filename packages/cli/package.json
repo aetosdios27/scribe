@@ -1,23 +1,44 @@
 {
   "name": "@scribe/cli",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0-alpha.2",
+  "description": "The scb command-line validator for Scribe MDX articles.",
+  "author": "aetosdios27",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "SKILL.md",
+    "LICENSE"
+  ],
   "bin": {
     "scb": "./dist/index.mjs"
   },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.mts",
-      "import": "./dist/index.mjs",
-      "default": "./dist/index.mjs"
-    }
-  },
+  "exports": {},
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "prepack": "node ../../scripts/sync-package-docs.mjs --check"
+  },
+  "dependencies": {
+    "@scribe/mdx": "0.1.0-alpha.2"
+  },
+  "keywords": [
+    "scribe",
+    "mdx",
+    "cli",
+    "validation",
+    "technical-writing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aetosdios27/scribe.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/aetosdios27/scribe#readme",
+  "bugs": {
+    "url": "https://github.com/aetosdios27/scribe/issues"
   }
 }
