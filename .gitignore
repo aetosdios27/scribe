@@ -3,6 +3,8 @@ dist/
 .next/
 out/
 coverage/
+playwright-report/
+test-results/
 *.tgz
 .scribe-pack/
 .scribe-local/

@@ -10,9 +10,12 @@
   "scripts": {
     "build": "tsdown --workspace",
     "test": "vitest run",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
     "typecheck": "node ./node_modules/@typescript/native/bin/tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@scribe/mdx": "workspace:*",
     "@typescript/native": "npm:typescript@7.0.2",
     "@types/react": "19.2.17",

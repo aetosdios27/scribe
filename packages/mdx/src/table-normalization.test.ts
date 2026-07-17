@@ -19,3 +19,13 @@ it("normalizes Markdown and literal JSX tables into one responsive wrapper each"
   expect(output.match(/scribe-table-scroll/g)).toHaveLength(2);
   expect(output.match(/Scrollable article table/g)).toHaveLength(2);
 });
+
+it("does not double-wrap a table that already has the Scribe overflow region", async () => {
+  const file = await compileScribeMdx(`
+<div className="scribe-table-scroll" role="region" tabIndex={0}>
+  <table><tbody><tr><td>ready</td></tr></tbody></table>
+</div>
+`);
+
+  expect(String(file).match(/scribe-table-scroll/g)).toHaveLength(1);
+});

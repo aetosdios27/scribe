@@ -8,6 +8,8 @@ export interface ScribeCodeMetadata {
   readonly lineNumbers: boolean;
   readonly highlight: readonly LineRange[];
   readonly focus: readonly LineRange[];
+  readonly add: readonly LineRange[];
+  readonly remove: readonly LineRange[];
 }
 
 export interface MetadataIssue {
@@ -22,7 +24,7 @@ export interface ParsedCodeMetadata {
   readonly issues: readonly MetadataIssue[];
 }
 
-const namedFields = new Set(["filename", "highlight", "focus"]);
+const namedFields = new Set(["filename", "highlight", "focus", "add", "remove"]);
 
 export function parseCodeMetadata(
   raw: string | undefined,
@@ -95,16 +97,18 @@ export function parseCodeMetadata(
 
   const highlight = parseRanges("highlight", values.get("highlight"), lineCount, source, issues);
   const focus = parseRanges("focus", values.get("focus"), lineCount, source, issues);
+  const add = parseRanges("add", values.get("add"), lineCount, source, issues);
+  const remove = parseRanges("remove", values.get("remove"), lineCount, source, issues);
   const filename = values.get("filename");
   const value: ScribeCodeMetadata = filename === undefined
-    ? { lineNumbers, highlight, focus }
-    : { filename, lineNumbers, highlight, focus };
+    ? { lineNumbers, highlight, focus, add, remove }
+    : { filename, lineNumbers, highlight, focus, add, remove };
 
   return { value, issues };
 }
 
 function parseRanges(
-  field: "highlight" | "focus",
+  field: "highlight" | "focus" | "add" | "remove",
   raw: string | undefined,
   lineCount: number,
   source: string,

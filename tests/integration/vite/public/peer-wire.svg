@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 760" role="img">
+  <rect width="900" height="760" fill="#102321"/>
+  <g fill="none" stroke="#8ac7b8" stroke-width="2" opacity=".72">
+    <path d="M-40 138C170 20 248 254 460 138S760 30 960 152"/>
+    <path d="M-40 616C170 498 248 732 460 616S760 508 960 630"/>
+  </g>
+  <g fill="#173c37" stroke="#b8ded3" stroke-width="3">
+    <rect x="95" y="245" width="250" height="270" rx="22"/>
+    <rect x="555" y="245" width="250" height="270" rx="22"/>
+  </g>
+  <g fill="#dcece7" font-family="ui-monospace, monospace" font-size="24">
+    <text x="155" y="305">peer A</text><text x="615" y="305">peer B</text>
+  </g>
+  <g stroke="#f0a56e" stroke-width="8" stroke-linecap="round">
+    <path d="M350 342h194"/><path d="m520 320 25 22-25 22"/>
+    <path d="M550 430H356"/><path d="m380 408-25 22 25 22"/>
+  </g>
+  <g fill="#8ac7b8"><circle cx="168" cy="400" r="34"/><circle cx="732" cy="400" r="34"/></g>
+</svg>

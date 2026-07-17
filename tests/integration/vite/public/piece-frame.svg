@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" role="img">
+  <rect width="1200" height="420" rx="24" fill="#0f1719"/>
+  <g font-family="ui-monospace, monospace" font-size="24" fill="#d7e4e2">
+    <text x="58" y="78">piece message · 13 + block length bytes</text>
+  </g>
+  <g stroke="#70817e" stroke-width="2">
+    <rect x="58" y="132" width="206" height="150" fill="#243634"/><rect x="264" y="132" width="104" height="150" fill="#935a3b"/>
+    <rect x="368" y="132" width="205" height="150" fill="#24423d"/><rect x="573" y="132" width="205" height="150" fill="#285148"/>
+    <rect x="778" y="132" width="364" height="150" fill="#2c6558"/>
+  </g>
+  <g font-family="ui-monospace, monospace" font-size="22" fill="#f4f7f6" text-anchor="middle">
+    <text x="161" y="205">length</text><text x="316" y="205">id 7</text><text x="470" y="205">piece</text>
+    <text x="675" y="205">offset</text><text x="960" y="205">block bytes</text>
+  </g>
+  <g font-family="ui-monospace, monospace" font-size="18" fill="#94aaa6" text-anchor="middle">
+    <text x="161" y="326">4 bytes</text><text x="316" y="326">1 byte</text><text x="470" y="326">4 bytes</text>
+    <text x="675" y="326">4 bytes</text><text x="960" y="326">variable</text>
+  </g>
+</svg>

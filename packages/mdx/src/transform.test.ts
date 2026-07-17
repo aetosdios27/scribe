@@ -7,7 +7,7 @@ describe("compileScribeMdx", () => {
     const file = await compileScribeMdx(`
 # Peer state
 
-\`\`\`ts filename="peer.ts" lineNumbers highlight="2" focus="1-2"
+\`\`\`ts filename="peer.ts" lineNumbers highlight="2" focus="1-2" add="2" remove="1"
 const state = "choked"
 console.log(state)
 \`\`\`
@@ -19,6 +19,10 @@ console.log(state)
     expect(output).toContain("data-scribe-filename");
     expect(output).toContain("highlighted");
     expect(output).toContain("focused");
+    expect(output).toContain("added");
+    expect(output).toContain("removed");
+    expect(output).not.toMatch(/className: "line",\s+className:/u);
+    expect(output).toContain('className: "line focused removed"');
     expect(output).not.toMatch(/from ["']shiki/);
   });
 

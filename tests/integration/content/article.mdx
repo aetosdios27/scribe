@@ -1,26 +1,93 @@
-# The vocabulary of a BitTorrent peer
+<Banner
+  eyebrow="Building Styx · Part 3"
+  title="The vocabulary of a BitTorrent peer"
+  description="Before implementing the wire protocol, we need to understand the small set of states that decide whether bytes are allowed to move."
+  image="/peer-wire.svg"
+  imageAlt="A diagram of two peers exchanging framed messages"
+  imagePosition="center"
+  metadata="12 min read · Systems programming · Rust"
+/>
 
-The ordinary Markdown path uses the shared Scribe renderer.
+<p className="scribe-lead">BitTorrent’s peer protocol sounds more violent than it is. A peer can be <code>choked</code>, <code>interested</code>, or both—and none of those words describe the TCP connection itself.</p>
 
-| State | Meaning |
-| :--- | :--- |
-| `choked` | The peer will not upload pieces to us. |
-| `interested` | We want at least one piece from the peer. |
+The vocabulary describes **permission and demand**. Once those axes are separated, the state machine becomes small enough to hold in your head and strict enough to encode directly in Rust.
 
-```ts filename="peer.ts" lineNumbers highlight="2" focus="1-2"
-const state = "choked"
-console.log(state)
+> A connection tells us who is reachable. Peer state tells us whether either side currently has a reason—and permission—to exchange pieces.
+
+## Two independent questions
+
+Every established peer connection carries four booleans. They answer two questions in both directions:
+
+1. **May data move?**
+   - The remote peer may choke or unchoke us.
+   - We make the same allocation decision for the remote peer.
+2. **Would data be useful?**
+   - We become interested when the peer owns a missing piece.
+   - They become interested when we advertise something useful.
+
+<Callout variant="insight" title="Choking is allocation, not punishment">
+  A peer can keep a healthy connection open while refusing piece requests. That lets it preserve protocol context while reallocating upload capacity every few seconds.
+</Callout>
+
+The ordinary Markdown table below is intentionally wide. Scribe keeps the semantic table intact and gives it a keyboard-focusable overflow region instead of turning rows into cards.
+
+| Local state | Remote state | Can request | Can upload | Trigger | Wire message | Stored as | Typical lifetime | Notes |
+| :--- | :--- | :---: | :---: | :--- | :--- | :--- | ---: | :--- |
+| interested | unchoked | yes | — | useful bitfield | `interested` | `peer.remote_choking` | 30 s | Start selecting blocks |
+| interested | choked | no | — | allocation change | `choke` | `peer.remote_choking` | 10 s | Keep the connection warm |
+| not interested | unchoked | no | — | pieces completed | `not_interested` | `peer.am_interested` | 120 s | No useful pieces remain |
+| choked | interested | — | no | upload slots full | `choke` | `peer.am_choking` | 10 s | Requests must be rejected |
+
+The implementation uses a deliberately long identifier—`pending_block_requests_by_remote_peer_and_piece_index`—to prove that prose and cells survive hostile content without widening the article.
+
+## Encoding the transition
+
+The wire decoder should return a transition, not mutate the scheduler directly. That keeps message framing deterministic and makes allocation policy independently testable.
+
+```rust filename="crates/styx-wire/src/peer/session_state_transitions.rs" lineNumbers highlight="4-10" focus="3-12" remove="6" add="8-9"
+pub enum PeerEvent {
+    Choke,
+    Unchoke,
+    Interested,
+    NotInterested,
+    Have { piece: u32 },
+    Bitfield { bytes: Vec<u8> },
+    Request { piece: u32, offset: u32, length: u32 },
+    Cancel { piece: u32, offset: u32, length: u32 },
+    Piece { piece: u32, offset: u32, block: Vec<u8> },
+}
+
+let pending_block_requests_by_remote_peer_and_piece_index = requests.partition_point(|request| request.piece <= announced_piece);
 ```
 
-<h2 id="literal-elements">Literal JSX and HTML</h2>
+<Callout variant="warning" title="Frames may outlive assumptions">
+  A peer can disconnect between reading the length prefix and reading the payload. Never hold a scheduler lock across socket I/O, and never assume a partial frame can be resumed on a new connection.
+</Callout>
+
+### Literal semantic markup still works
+
+Scribe does not require proprietary table components. This literal JSX table receives the same responsive behavior as GFM:
 
 <table>
-  <caption>Literal peer states</caption>
+  <caption>Peer-wire control messages and their payload widths</caption>
   <thead>
-    <tr><th>State</th><th>Meaning</th></tr>
+    <tr><th>Message</th><th>ID</th><th>Payload</th><th>Direction</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>unchoked</code></td><td>Requests may be served.</td></tr>
+    <tr><td><code>choke</code></td><td align="right">0</td><td>none</td><td>both</td></tr>
+    <tr><td><code>have</code></td><td align="right">4</td><td>piece index: 4 bytes</td><td>both</td></tr>
+    <tr><td><code>request</code></td><td align="right">6</td><td>piece, offset, length: 12 bytes</td><td>both</td></tr>
   </tbody>
 </table>
 
+## Seeing the frame
+
+<Figure caption="The four-byte length prefix covers the message identifier and payload, but not the prefix itself." wide>
+  <img src="/piece-frame.svg" alt="Byte layout of a BitTorrent piece message" />
+</Figure>
+
+The protocol’s austerity is the feature. Once the state vocabulary is explicit, the rest is careful byte accounting. The [original BitTorrent protocol notes](https://www.bittorrent.org/beps/bep_0003.html#peer-protocol) remain terse enough to read in one sitting, while this deliberately long URL tests wrapping: https://example.com/research/protocols/bittorrent/peer-wire/implementations/with/a/very/long/unbroken/reference?piece=4294967295&offset=16384.
+
+---
+
+The next step is turning these transitions into a request pipeline that never asks two peers for the same block—until endgame mode makes duplication the correct choice.

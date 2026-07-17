@@ -5,7 +5,7 @@ import { parseCodeMetadata } from "./code-meta.js";
 describe("parseCodeMetadata", () => {
   it("parses the explicit phase-one metadata surface", () => {
     const result = parseCodeMetadata(
-      'filename="peer.rs" lineNumbers highlight="2-4,6" focus="3"',
+      'filename="peer.rs" lineNumbers highlight="2-4,6" focus="3" add="5" remove="1"',
       6
     );
 
@@ -17,7 +17,9 @@ describe("parseCodeMetadata", () => {
         { start: 2, end: 4 },
         { start: 6, end: 6 }
       ],
-      focus: [{ start: 3, end: 3 }]
+      focus: [{ start: 3, end: 3 }],
+      add: [{ start: 5, end: 5 }],
+      remove: [{ start: 1, end: 1 }]
     });
   });
 
@@ -34,4 +36,3 @@ describe("parseCodeMetadata", () => {
     ]);
   });
 });
-

@@ -51,7 +51,7 @@ interface TableTarget {
 function normalizeTables(tree: Root): void {
   const targets: TableTarget[] = [];
   visit(tree, (node, index, parent) => {
-    if (index === undefined || !parent || !isTableNode(node)) return;
+    if (index === undefined || !parent || !isTableNode(node) || isTableWrapper(parent)) return;
     targets.push({
       node,
       parent: parent as unknown as ParentNode,
@@ -73,6 +73,36 @@ function normalizeTables(tree: Root): void {
     };
     parent.children[index] = wrapper;
   }
+}
+
+function isTableWrapper(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  const candidate = node as {
+    type?: string;
+    tagName?: string;
+    name?: string | null;
+    properties?: { className?: unknown; class?: unknown };
+    attributes?: Array<{ type?: string; name?: string; value?: unknown }>;
+  };
+  const isDiv =
+    (candidate.type === "element" && candidate.tagName === "div") ||
+    ((candidate.type === "mdxJsxFlowElement" || candidate.type === "mdxJsxTextElement") &&
+      candidate.name === "div");
+  if (!isDiv) return false;
+
+  const propertyClass = candidate.properties?.className ?? candidate.properties?.class;
+  if (classListContains(propertyClass, "scribe-table-scroll")) return true;
+  return candidate.attributes?.some(
+    (attribute) =>
+      attribute.type === "mdxJsxAttribute" &&
+      (attribute.name === "className" || attribute.name === "class") &&
+      classListContains(attribute.value, "scribe-table-scroll")
+  ) === true;
+}
+
+function classListContains(value: unknown, expected: string): boolean {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\s+/u) : [];
+  return values.includes(expected);
 }
 
 function isTableNode(node: unknown): boolean {
@@ -192,6 +222,8 @@ function lineStateTransformer(metadata: ScribeCodeMetadata) {
     line(node: Element, line: number) {
       if (containsLine(metadata.highlight, line)) addClass(node, "highlighted");
       if (containsLine(metadata.focus, line)) addClass(node, "focused");
+      if (containsLine(metadata.add, line)) addClass(node, "added");
+      if (containsLine(metadata.remove, line)) addClass(node, "removed");
     }
   };
 }
@@ -201,8 +233,12 @@ function containsLine(ranges: readonly LineRange[], line: number): boolean {
 }
 
 function addClass(node: Element, className: string): void {
-  const classes = Array.isArray(node.properties.className)
-    ? node.properties.className
-    : [];
+  const current = node.properties.className ?? node.properties.class;
+  const classes = Array.isArray(current)
+    ? current
+    : typeof current === "string"
+      ? current.split(/\s+/u).filter(Boolean)
+      : [];
+  delete node.properties.class;
   node.properties.className = [...classes, className];
 }

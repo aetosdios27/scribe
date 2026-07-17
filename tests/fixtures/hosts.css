@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+}
+
+.fixture-shell {
+  min-block-size: 100vh;
+  background: #f4f1eb;
+  color: #24221f;
+}
+
+.fixture-shell[data-theme="dark"] {
+  background: #121416;
+  color: #e7e4dd;
+}
+
+.fixture-neutral .scribe {
+  --font-body: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  --font-heading: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --accent: #a9472f;
+  --radius: 0.35rem;
+}
+
+.fixture-branded {
+  background: #e9f1ee;
+  color: #102b2a;
+}
+
+.fixture-branded[data-theme="dark"] {
+  background: #071918;
+  color: #d7ebe5;
+}
+
+.fixture-branded .scribe {
+  --font-body: ui-sans-serif, system-ui, sans-serif;
+  --font-heading: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Liberation Mono", "Courier New", monospace;
+  --foreground: currentColor;
+  --background: transparent;
+  --accent: #087f72;
+  --border: color-mix(in oklab, currentColor 22%, transparent);
+  --radius: 1.15rem;
+  --scribe-content-width: 66ch;
+}
+
+.fixture-hostile table {
+  border-collapse: collapse;
+}
+
+.fixture-hostile pre {
+  padding: 0;
+  white-space: pre-wrap;
+}
+
+.fixture-hostile button {
+  font: inherit;
+}
+
+.fixture-outside-proof {
+  padding: 0.65rem 1rem;
+  border-block-end: 1px dashed currentColor;
+  font: 0.75rem/1.4 ui-monospace, monospace;
+  opacity: 0.7;
+}
