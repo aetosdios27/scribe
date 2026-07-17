@@ -16,3 +16,7 @@ export function releaseCacheDirectory() {
 export function requiresCommandShell(command, platform = process.platform) {
   return platform === "win32" && command.toLowerCase().endsWith(".cmd");
 }
+
+export function normalizeRepositoryPath(path) {
+  return path.replaceAll("\\", "/");
+}

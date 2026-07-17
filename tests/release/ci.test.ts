@@ -30,6 +30,18 @@ describe("public CI contract", () => {
     expect(workflow).not.toMatch(/npm[_-]?token|NODE_AUTH_TOKEN|changesets\/action|npm publish/iu);
   });
 
+  it("builds public packages before workspace typechecks resolve their dist exports", async () => {
+    const workflow = await text(".github/workflows/ci.yml");
+    const verifyLinux = workflow.slice(workflow.indexOf("  verify-linux:"), workflow.indexOf("  portable-os:"));
+    const portableOs = workflow.slice(workflow.indexOf("  portable-os:"), workflow.indexOf("  browser-engines:"));
+
+    for (const job of [verifyLinux, portableOs]) {
+      expect(job.indexOf("Build public packages")).toBeGreaterThan(-1);
+      expect(job.indexOf("Typecheck with TypeScript 7")).toBeGreaterThan(-1);
+      expect(job.indexOf("Build public packages")).toBeLessThan(job.indexOf("Typecheck with TypeScript 7"));
+    }
+  });
+
   it("exposes separate portable browser and canonical Helium commands", async () => {
     const manifest = JSON.parse(await text("package.json"));
 
@@ -48,6 +60,8 @@ describe("public CI contract", () => {
   it("keeps portable Playwright independent from Helium", async () => {
     const portable = await text("playwright.config.ts");
     const helium = await text("playwright.helium.config.ts");
+    const portableSuite = await text("tests/browser/article.spec.ts");
+    const visualSuite = await text("tests/visual/article.spec.ts");
 
     expect(portable).toContain('testDir: "./tests/browser"');
     expect(portable).toContain('{ name: "chromium"');
@@ -58,6 +72,8 @@ describe("public CI contract", () => {
     expect(helium).toContain('name: "helium-chromium-150"');
     expect(helium).toContain('testDir: "./tests/visual"');
     expect(helium).not.toContain(["/usr/bin", "/helium"].join(""));
+    expect(portableSuite).not.toContain("document.fonts.ready");
+    expect(visualSuite).toContain("document.fonts.ready");
   });
 
   it("contains no stale scope or maintainer path and isolates the Helium executable", async () => {

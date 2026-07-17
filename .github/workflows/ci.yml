@@ -35,14 +35,14 @@ jobs:
         run: bun run portability:check
       - name: Verify release and package alignment
         run: bun run release:check
+      - name: Build public packages
+        run: bun run build
       - name: Typecheck with TypeScript 7
         run: bun run typecheck
       - name: Typecheck with TypeScript 6
         run: node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
       - name: Run unit, transformation, release, and surface tests
         run: bun run test
-      - name: Build public packages
-        run: bun run build
       - name: Build Vite fixture
         run: bun run build
         working-directory: tests/integration/vite
@@ -106,12 +106,12 @@ jobs:
         run: bun run portability:check
       - name: Verify release and package alignment
         run: bun run release:check
+      - name: Build public packages
+        run: bun run build
       - name: Typecheck with TypeScript 7
         run: bun run typecheck
       - name: Typecheck with TypeScript 6
         run: node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
-      - name: Build public packages
-        run: bun run build
       - name: Pack npm tarballs
         run: bun run release:pack
       - name: Install tarballs and smoke-test CLI
