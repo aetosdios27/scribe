@@ -19,6 +19,8 @@ test("keeps Markdown canonical while constrained Rich Text edits update the mirr
   await expect(page.locator(".save-contract")).toContainText("Explicit save writes to");
   await expect(page.locator(".save-contract code")).toHaveText("tests/fixtures/studio-article.mdx");
   await expect(preview.locator(".scribe-banner__title")).toHaveText("Peer wire field notes");
+  await expect(page.locator("iframe#preview")).toHaveCSS("width", "1280px");
+  await expect(page.locator(".preview-device__label")).toContainText("Laptop · 1280 × 800");
   await expect(preview.getByText("Banner image not found")).toBeVisible();
   await expect(preview.locator("h1#peer-state-transitions")).toBeVisible();
   await expect(page.getByRole("toolbar", { name: "Markdown formatting" })).toHaveCount(0);
@@ -69,7 +71,8 @@ test("keeps Markdown canonical while constrained Rich Text edits update the mirr
   await expect(page.getByRole("toolbar", { name: "Rich Text formatting" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Mobile" }).click();
-  await expect(page.locator("iframe#preview")).toHaveCSS("width", "390px");
+  await expect(page.locator("iframe#preview")).toHaveCSS("width", "414px");
+  await expect(page.locator(".preview-device__label")).toContainText("Mobile · 414 × 896");
   await page.getByRole("button", { name: "Dark" }).click();
   await expect(preview.locator(".scribe[data-theme='dark']")).toBeVisible();
 

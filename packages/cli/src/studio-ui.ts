@@ -127,11 +127,47 @@ function MarkdownPanel({ state, source, setSource, textareaRef }) {
   </section>;
 }
 
+const previewPresets = {
+  desktop: { label: "Laptop", width: 1280, height: 800 },
+  tablet: { label: "Tablet", width: 820, height: 1180 },
+  mobile: { label: "Mobile", width: 414, height: 896 }
+};
+
 function PreviewPanel({ theme, viewport, previewVersion, compact = false }) {
   const src = "/preview?theme=" + theme + "&version=" + previewVersion;
+  const preset = previewPresets[viewport];
+  const stageRef = useRef(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const update = () => {
+      const available = Math.max(1, stage.clientWidth - 36);
+      setScale(Math.min(1, available / preset.width));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [preset.width]);
+
+  const percentage = Math.round(scale * 100);
+  const dimensions = {
+    "--preview-width": preset.width + "px",
+    "--preview-height": preset.height + "px",
+    "--preview-scale": scale,
+    "--preview-scaled-width": preset.width * scale + "px",
+    "--preview-scaled-height": preset.height * scale + "px"
+  };
   return <section className={cn("studio-panel preview-panel", compact && "preview-panel--compact")} aria-label="Production preview">
     {!compact && <PanelHeading icon={Maximize2} title="Preview" state="Production renderer" />}
-    <div className="preview-stage" data-viewport={viewport}><iframe id="preview" title="Scribe article preview" src={src} /></div>
+    <div ref={stageRef} className="preview-stage" data-viewport={viewport}>
+      <div className="preview-device" style={dimensions}>
+        <span className="preview-device__label">{preset.label} · {preset.width} × {preset.height} · {percentage}%</span>
+        <div className="preview-device__frame"><iframe id="preview" title="Scribe article preview" src={src} /></div>
+      </div>
+    </div>
   </section>;
 }
 
@@ -590,10 +626,10 @@ svg { inline-size: 1rem; block-size: 1rem; stroke-width: 1.8; }
 .source-panel:focus-within { box-shadow:inset 2px 0 var(--studio-acid); }
 .diagnostics { position:absolute; z-index:3; inset-inline:.85rem; inset-block-end:.85rem; max-block-size:26%; overflow:auto; margin:0; padding:.7rem .8rem; border:1px solid #59322d; border-radius:.45rem; color:#ffaaa0; background:#1a0e0ddb; box-shadow:0 .8rem 2.4rem #0009; font:.68rem/1.55 var(--studio-mono); white-space:pre-wrap; backdrop-filter:blur(14px); }
 .preview-stage { min-inline-size:0; min-block-size:0; display:grid; place-items:start center; overflow:auto; padding:1.1rem; background-color:#111; background-image:linear-gradient(45deg,#151515 25%,transparent 25%),linear-gradient(-45deg,#151515 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#151515 75%),linear-gradient(-45deg,transparent 75%,#151515 75%); background-size:18px 18px; background-position:0 0,0 9px,9px -9px,-9px 0; }
-#preview { display:block; inline-size:min(100%,var(--preview-width,100%)); block-size:100%; min-block-size:32rem; border:1px solid #2e2e2e; border-radius:.42rem; background:#fff; box-shadow:0 1.2rem 4rem #000b; transition:inline-size 180ms cubic-bezier(.2,.8,.2,1); }
-.preview-stage[data-viewport=desktop] { --preview-width:100%; }
-.preview-stage[data-viewport=tablet] { --preview-width:768px; }
-.preview-stage[data-viewport=mobile] { --preview-width:390px; }
+.preview-device { display:grid; gap:.45rem; inline-size:var(--preview-scaled-width); min-inline-size:0; }
+.preview-device__label { color:#a7a79f; font:600 .6rem/1 var(--studio-mono); letter-spacing:.055em; text-align:center; text-transform:uppercase; }
+.preview-device__frame { position:relative; inline-size:var(--preview-scaled-width); block-size:var(--preview-scaled-height); }
+#preview { position:absolute; inset:0 auto auto 0; display:block; inline-size:var(--preview-width); block-size:var(--preview-height); border:1px solid #2e2e2e; border-radius:.42rem; background:#fff; box-shadow:0 1.2rem 4rem #000b; transform:scale(var(--preview-scale)); transform-origin:top left; }
 .preview-panel--compact { border:0; }
 .preview-panel--compact .preview-stage { block-size:100%; }
 .secondary-tabs { display:inline-flex !important; align-items:center; gap:.2rem !important; padding:.15rem; border:1px solid var(--studio-border); border-radius:.4rem; background:var(--studio-control); }
