@@ -29,7 +29,7 @@ import { cva } from "class-variance-authority";
 import { clsx } from "clsx";
 import Lenis from "lenis";
 import {
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bold, Check, ChevronDown, Circle,
+  AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bold, Check, ChevronDown, Circle,
   ClipboardCopy, Code2, Copy, Edit3, ExternalLink, FileCode2, FileText,
   Image, Link, List, ListOrdered, LoaderCircle, LockKeyhole, Maximize2,
   Italic, Monitor, Moon, MoreHorizontal, Plus, Redo2, RotateCcw, Save,
@@ -160,7 +160,9 @@ const editorIconMap = {
   open_in_new: ExternalLink, edit: Edit3, content_copy: Copy, more_horiz: MoreHorizontal,
   more_vert: MoreHorizontal, close: X, settings: Settings, delete_big: Trash2,
   delete_small: Trash2, add_row: Plus, add_column: Plus, insert_col_left: ArrowLeft,
-  insert_row_above: ArrowUp, insert_row_below: ArrowDown, insert_col_right: ArrowRight, check: Check
+  insert_row_above: ArrowUp, insert_row_below: ArrowDown, insert_col_right: ArrowRight,
+  format_align_left: AlignLeft, format_align_center: AlignCenter, format_align_right: AlignRight,
+  check: Check
 };
 
 function editorIcon(name) {

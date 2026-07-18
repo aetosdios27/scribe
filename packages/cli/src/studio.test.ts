@@ -78,6 +78,9 @@ it("starts on loopback, loads the source, and reports metadata", async () => {
   expect(client).toContain("lucide-react");
   expect(client).toContain("Scribe Studio");
   expect(client).toContain("Rich Text");
+  expect(client).toContain("format_align_left: AlignLeft");
+  expect(client).toContain("format_align_center: AlignCenter");
+  expect(client).toContain("format_align_right: AlignRight");
   expect(client).not.toContain('aria-label="Markdown formatting"');
 
   const styles = await (await fetch(`${handle.origin}/@scribe-studio/styles.css`)).text();
