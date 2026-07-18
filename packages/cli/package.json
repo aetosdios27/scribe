@@ -23,11 +23,23 @@
     "prepack": "node ../../scripts/sync-package-docs.mjs --check"
   },
   "dependencies": {
+    "@base-ui/react": "1.6.0",
+    "@fontsource/ibm-plex-mono": "5.2.7",
+    "@fontsource/ibm-plex-sans": "5.2.8",
+    "@fontsource/ibm-plex-serif": "5.2.7",
+    "@mdx-js/mdx": "3.1.1",
     "@mdx-js/rollup": "3.1.1",
+    "@mdxeditor/editor": "4.0.4",
     "@scribe-sdk/mdx": "0.1.0-alpha.5",
     "@scribe-sdk/react": "0.1.0-alpha.5",
     "@scribe-sdk/styles": "0.1.0-alpha.5",
     "@vitejs/plugin-react": "6.0.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lenis": "1.3.25",
+    "lucide-react": "1.25.0",
+    "sonner": "2.0.7",
+    "tailwind-merge": "3.6.0",
     "vite": "8.1.3"
   },
   "peerDependencies": {

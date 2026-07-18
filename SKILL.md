@@ -195,7 +195,7 @@ Use Studio for a source-authoritative local editing loop when helpful:
 bunx scb studio path/to/article.mdx --mode foundation
 ```
 
-Studio saves explicitly, detects external changes, and renders through Scribe’s real pipeline. It is local-only and not a WYSIWYG editor. Use `--host-css` only for one explicit local CSS file and account for framework preprocessing limitations.
+Studio detects the project style mode with the same rules as `scb init`; use `--mode` only as a deliberate override. Markdown mode edits source beside the production renderer. Rich Text mode is a constrained visual helper whose accepted edits serialize to the canonical Markdown draft; its Markdown mirror is read-only, and unsupported MDX remains a byte-identical protected block that must be edited in Markdown mode. Studio saves explicitly to the displayed article path, warns before closing with unwritten changes, detects external conflicts, and writes atomically. Frontmatter supplies a generated Banner when it includes a title and no explicit Banner exists. Absolute image paths resolve from the project `public` directory, and missing assets remain visible in the preview. Studio is local-only and not a WYSIWYG editor, CMS, or page builder. Use `--host-css` only for one explicit local CSS file and account for framework preprocessing limitations.
 
 ## Diagnose the boundary
 

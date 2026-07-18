@@ -1,0 +1,44 @@
+---
+title: "Protected field notes"
+image: "/field-notes.png"
+---
+
+import BenchmarkChart from "./BenchmarkChart.js";
+
+export const experimental = true;
+
+# Editable heading
+
+Editable paragraph.
+
+A protected expression stays here: {experimental}.
+
+Text before <Badge tone="acid">protected inline JSX</Badge> text after.
+
+<Callout variant="insight" title="Protected JSX flow">
+  This whole component remains source-owned.
+</Callout>
+
+<aside data-kind="raw-html">
+  HTML-like MDX remains protected.
+</aside>
+
+{/* a protected MDX comment */}
+
+:::unknown-directive
+Keep this custom syntax intact.
+:::
+
+| state | meaning |
+| --- | --- |
+| ready | editable GFM table |
+
+```rust filename="src/peer.rs" highlight="2" lineNumbers
+fn decode() {
+    println!("protected metadata");
+}
+```
+
+<table>
+  <tbody><tr><td>protected JSX table</td></tr></tbody>
+</table>

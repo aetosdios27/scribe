@@ -42,6 +42,13 @@ export interface InitPlan {
   readonly manualSteps: readonly string[];
 }
 
+export interface StyleModeResolution {
+  readonly inspection: ProjectInspection;
+  readonly mode?: StyleMode;
+  readonly reason: string;
+  readonly ambiguities: readonly string[];
+}
+
 export interface InitDependencies {
   readonly cwd?: string;
   readonly version: string;
@@ -126,28 +133,7 @@ export async function planInit(root: string, explicitMode: StyleMode | undefined
     throw new Error(`Could not inspect ${resolve(root)}: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  const ambiguities: string[] = [];
-  let mode = explicitMode;
-  let reason = explicitMode === undefined ? "" : `Selected explicitly with --mode ${explicitMode}.`;
-
-  if (inspection.reactVersion === undefined || (!inspection.hasNext && !inspection.hasVite)) {
-    ambiguities.push("Scribe init supports React projects using Next.js or Vite; run it from that project root.");
-  } else if (mode === undefined && inspection.tailwindMajor !== undefined && (inspection.hasTypographyPlugin || inspection.hasProseUsage)) {
-    mode = "tailwind";
-    reason = `Tailwind ${inspection.tailwindMajor} with an existing prose contract was detected.`;
-  } else if (mode === undefined && inspection.tailwindMajor !== undefined) {
-    ambiguities.push("Tailwind is installed, but no Typography or .prose contract was found. Choose --mode foundation, default, or tailwind explicitly.");
-  } else if (mode === undefined && (inspection.hasEstablishedTypography || inspection.hasProseUsage)) {
-    mode = "foundation";
-    reason = "Existing article typography and density rules were detected.";
-  } else if (mode === undefined) {
-    mode = "default";
-    reason = "No established article typography was detected.";
-  }
-
-  if (inspection.hasNext && inspection.hasVite) {
-    ambiguities.push("Both Next.js and Vite were detected. Run init from the intended application root or integrate the compiler manually.");
-  }
+  const { mode, reason, ambiguities } = recommendStyleMode(inspection, explicitMode);
 
   const commands: string[][] = [];
   const missingRuntime = ["@scribe-sdk/react", "@scribe-sdk/styles", "@scribe-sdk/mdx"]
@@ -206,6 +192,53 @@ export async function planInit(root: string, explicitMode: StyleMode | undefined
   }
 
   return { inspection, ...(mode === undefined ? {} : { mode }), reason, ambiguities, commands, changes, manualSteps };
+}
+
+export async function resolveProjectStyleMode(
+  root: string,
+  explicitMode?: StyleMode
+): Promise<StyleModeResolution> {
+  const inspection = await inspectProject(root);
+  if (explicitMode !== undefined) {
+    return {
+      inspection,
+      mode: explicitMode,
+      reason: `Selected explicitly with --mode ${explicitMode}.`,
+      ambiguities: []
+    };
+  }
+  const recommendation = recommendStyleMode(inspection, explicitMode);
+  return { inspection, ...recommendation };
+}
+
+export function recommendStyleMode(
+  inspection: ProjectInspection,
+  explicitMode?: StyleMode
+): Omit<StyleModeResolution, "inspection"> {
+  const ambiguities: string[] = [];
+  let mode = explicitMode;
+  let reason = explicitMode === undefined ? "" : `Selected explicitly with --mode ${explicitMode}.`;
+
+  if (inspection.reactVersion === undefined || (!inspection.hasNext && !inspection.hasVite)) {
+    ambiguities.push("Scribe project detection supports React projects using Next.js or Vite; run the command from that project root.");
+  } else if (mode === undefined && inspection.tailwindMajor !== undefined && (inspection.hasTypographyPlugin || inspection.hasProseUsage)) {
+    mode = "tailwind";
+    reason = `Tailwind ${inspection.tailwindMajor} with an existing prose contract was detected.`;
+  } else if (mode === undefined && inspection.tailwindMajor !== undefined) {
+    ambiguities.push("Tailwind is installed, but no Typography or .prose contract was found. Choose --mode foundation, default, or tailwind explicitly.");
+  } else if (mode === undefined && (inspection.hasEstablishedTypography || inspection.hasProseUsage)) {
+    mode = "foundation";
+    reason = "Existing article typography and density rules were detected.";
+  } else if (mode === undefined) {
+    mode = "default";
+    reason = "No established article typography was detected.";
+  }
+
+  if (inspection.hasNext && inspection.hasVite) {
+    ambiguities.push("Both Next.js and Vite were detected. Run the command from the intended application root or pass --mode after confirming the integration boundary.");
+  }
+
+  return { ...(mode === undefined ? {} : { mode }), reason, ambiguities };
 }
 
 export async function runInit(args: readonly string[], dependencies: InitDependencies): Promise<number> {

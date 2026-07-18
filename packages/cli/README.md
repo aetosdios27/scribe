@@ -266,6 +266,8 @@ Standard article attributes are forwarded. The MDX-only `components` prop is con
 
 `title` is required. `description`, `eyebrow`, `metadata`, `accent`, `imagePosition`, and children are optional. A static `image` requires a non-empty `imageAlt`. Omit both image properties for a text-only banner.
 
+Leading YAML frontmatter is metadata, not article prose. When it contains `title` and the document has no explicit `<Banner>`, Scribe creates the Banner at compile time from `title`, `description` or `brief`, `eyebrow`, `series` or `project`, `date`, `year`, `tags`, `image`, `imageAlt`, `accent`, and `imagePosition`. An explicit `<Banner>` always wins.
+
 ### Callout
 
 ```mdx
@@ -398,7 +400,13 @@ npx scb studio ./content/article.mdx
 npx scb studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
 ```
 
-Studio defaults to the `default` style mode and port `4317`. It provides a source pane, real Scribe preview, explicit save, unsaved and external-change conflict states, validation diagnostics, style modes, light/dark previews, and desktop/tablet/mobile widths. It binds to `127.0.0.1`, opens the browser unless `--no-open` is supplied, performs no telemetry, and keeps the file as the source of truth. It is not a WYSIWYG editor and never stores a proprietary document.
+Studio detects the project style mode using the same rules as `scb init`; pass `--mode` only to override that result deliberately. An ambiguous project exits with guidance instead of silently choosing a visual preset. Port `4317` remains the default.
+
+Studio has exactly two authoring modes. Markdown mode keeps the source editable beside the production renderer and has no formatting toolbar. Rich Text mode is a constrained visual helper for ordinary Markdown; it provides a minimal toolbar, writes accepted edits back to the canonical Markdown draft, and shows a read-only Markdown mirror by default. Its secondary pane can switch to the same production renderer. Unsupported MDX, frontmatter, HTML, JSX, expressions, and metadata-bearing code fences remain byte-identical protected blocks with an **Edit in Markdown** action. Rich Text may refuse to edit a construct; it never pretends to support one and silently rewrites the source.
+
+Studio saves explicitly: edits remain an in-memory draft until **Save** or <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd> writes atomically to the article path shown in the interface. Closing or reloading with unwritten changes triggers a browser warning. External changes reload clean drafts and produce a conflict instead of overwriting dirty drafts. YAML frontmatter is excluded from article prose and supplies a generated `Banner` when it contains a title and the article has no explicit `<Banner>`. Absolute image paths such as `/article-banner.jpg` resolve from the project `public` directory; a missing asset is shown as an explicit preview block instead of disappearing silently.
+
+Studio binds to `127.0.0.1`, opens the browser unless `--no-open` is supplied, performs no telemetry, and keeps the file as the source of truth. It is not a WYSIWYG editor, CMS, or page builder and never stores a proprietary document.
 
 MDX is executable local project content; open only files you trust. `--host-css` loads one explicit local stylesheet. It does not crawl the application or reproduce framework processing automatically: Tailwind directives, CSS imports, asset URLs, and fonts may require a separately compiled CSS artifact. Studio writes only after Save, uses an atomic replacement, preserves LF/CRLF line endings, and refuses to overwrite an externally changed file until the conflict is resolved.
 

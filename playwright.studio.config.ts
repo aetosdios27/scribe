@@ -11,7 +11,10 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure"
   },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  projects: [
+    { name: "chromium", use: { browserName: "chromium" } },
+    { name: "firefox", use: { browserName: "firefox" } }
+  ],
   webServer: {
     command: "node packages/cli/dist/index.mjs studio tests/fixtures/studio-article.mdx --mode default --port 4319 --no-open",
     cwd: ".",

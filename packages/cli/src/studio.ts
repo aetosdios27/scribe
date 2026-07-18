@@ -5,13 +5,16 @@ import { createRequire } from "node:module";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import mdx from "@mdx-js/rollup";
 import { compileScribeMdx, createScribeMdxOptions } from "@scribe-sdk/mdx";
 import react from "@vitejs/plugin-react";
 import { createServer as createViteServer, normalizePath, type Plugin, type ViteDevServer } from "vite";
 
-import type { StyleMode } from "./init.js";
+import { resolveProjectStyleMode, type StyleMode } from "./init.js";
+import { acceptRichCandidate, createRichProjection, type RichProjection } from "./rich-preservation.js";
+import { studioClientModule, studioStyles, type StudioClientImports } from "./studio-ui.js";
 
 const studioRequire = createRequire(import.meta.url);
 
@@ -19,6 +22,7 @@ export interface StudioOptions {
   readonly root: string;
   readonly path: string;
   readonly mode: StyleMode;
+  readonly modeReason?: string;
   readonly hostCss?: string;
   readonly port: number;
   readonly open: boolean;
@@ -31,7 +35,7 @@ export interface StudioHandle {
 
 export interface StudioArguments {
   readonly path: string;
-  readonly mode: StyleMode;
+  readonly mode?: StyleMode;
   readonly hostCss?: string;
   readonly port: number;
   readonly open: boolean;
@@ -43,16 +47,20 @@ interface StudioArgumentError {
 }
 
 interface StudioState {
+  sourcePath: string;
   diskSource: string;
   draftSource: string;
   previewSource: string;
   diskVersion: string;
   previewVersion: number;
   mode: StyleMode;
+  modeReason: string;
   lineEnding: "\n" | "\r\n";
   dirty: boolean;
   conflict: boolean;
   diagnostics: StudioDiagnostic[];
+  revision: number;
+  richProjection: RichProjection | undefined;
 }
 
 interface StudioDiagnostic {
@@ -73,7 +81,7 @@ Usage:
   scb studio <article.mdx> [options]
 
 Options:
-  --mode <mode>     Preview with foundation, default, or tailwind CSS.
+  --mode <mode>     Override detected foundation, default, or tailwind CSS.
   --host-css <path> Load one explicit local host stylesheet.
   --port <number>   Use a specific loopback port (default: 4317).
   --no-open         Do not open the system browser automatically.
@@ -82,7 +90,7 @@ Options:
 
 export function parseStudioArguments(args: readonly string[]): StudioArguments | StudioArgumentError {
   let path: string | undefined;
-  let mode: StyleMode = "default";
+  let mode: StyleMode | undefined;
   let hostCss: string | undefined;
   let port = 4317;
   let open = true;
@@ -112,10 +120,10 @@ export function parseStudioArguments(args: readonly string[]): StudioArguments |
     else return { error: "Expected exactly one Markdown or MDX source file." };
   }
 
-  if (help) return { path: path ?? "", mode, port, open, help, ...(hostCss === undefined ? {} : { hostCss }) };
+  if (help) return { path: path ?? "", port, open, help, ...(mode === undefined ? {} : { mode }), ...(hostCss === undefined ? {} : { hostCss }) };
   if (path === undefined) return { error: "Expected one Markdown or MDX source file." };
   if (!articleExtensions.has(extname(path).toLowerCase())) return { error: "Studio source must use a .md or .mdx extension." };
-  return { path, mode, port, open, help, ...(hostCss === undefined ? {} : { hostCss }) };
+  return { path, port, open, help, ...(mode === undefined ? {} : { mode }), ...(hostCss === undefined ? {} : { hostCss }) };
 }
 
 export async function startStudio(options: StudioOptions): Promise<StudioHandle> {
@@ -134,16 +142,20 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
 
   const diskSource = await readUtf8(sourcePath);
   const state: StudioState = {
+    sourcePath: normalizePath(relative(root, sourcePath)),
     diskSource,
     draftSource: diskSource,
     previewSource: diskSource,
     diskVersion: fingerprint(diskSource),
     previewVersion: 1,
     mode: options.mode,
+    modeReason: options.modeReason ?? "Selected explicitly by the Studio caller.",
     lineEnding: diskSource.includes("\r\n") ? "\r\n" : "\n",
     dirty: false,
     conflict: false,
-    diagnostics: await diagnosticsFor(sourcePath, diskSource)
+    diagnostics: await diagnosticsFor(sourcePath, diskSource),
+    revision: 1,
+    richProjection: undefined
   };
 
   const articleId = `${sourcePath}.scribe-studio.mdx`;
@@ -167,8 +179,32 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
       port: options.port,
       strictPort: options.port !== 0,
       open: false,
-      hmr: { server: httpServer },
+      hmr: false,
       fs: { strict: true, allow: [root, ...Object.values(runtime).map(dirname)] }
+    },
+    resolve: {
+      alias: studioAliases(runtime),
+      dedupe: ["react", "react-dom"]
+    },
+    optimizeDeps: {
+      include: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "react/jsx-runtime",
+        "react/jsx-dev-runtime",
+        "@base-ui/react/button",
+        "@base-ui/react/toggle",
+        "@base-ui/react/toggle-group",
+        "@base-ui/react/tooltip",
+        "@mdxeditor/editor",
+        "class-variance-authority",
+        "clsx",
+        "lenis",
+        "lucide-react",
+        "sonner",
+        "tailwind-merge"
+      ]
     },
     plugins: [studioPlugin, { ...mdx(createScribeMdxOptions()), enforce: "pre" }, react()]
   });
@@ -194,6 +230,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
       state.previewSource = source;
       state.diagnostics = await diagnosticsFor(sourcePath, source);
       state.previewVersion += 1;
+      state.revision += 1;
+      state.richProjection = undefined;
       invalidateArticle(server, articleId);
     } else {
       state.conflict = true;
@@ -239,12 +277,28 @@ export async function runStudio(
     return 0;
   }
 
+  let mode: StyleMode;
+  let modeReason: string;
+  try {
+    const resolution = await resolveProjectStyleMode(dependencies.cwd ?? process.cwd(), parsed.mode);
+    if (resolution.mode === undefined || resolution.ambiguities.length > 0) {
+      stderr(`${resolution.ambiguities.join("\n")}\n`);
+      return 2;
+    }
+    mode = resolution.mode;
+    modeReason = resolution.reason;
+  } catch (error) {
+    stderr(`Could not detect the Studio style mode: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 2;
+  }
+
   let handle: StudioHandle;
   try {
     handle = await startStudio({
       root: dependencies.cwd ?? process.cwd(),
       path: parsed.path,
-      mode: parsed.mode,
+      mode,
+      modeReason,
       port: parsed.port,
       open: parsed.open,
       ...(parsed.hostCss === undefined ? {} : { hostCss: parsed.hostCss })
@@ -273,46 +327,106 @@ function createStudioPlugin(context: {
   readonly state: StudioState;
 }): Plugin {
   const previewId = "\0scribe-studio-preview.tsx";
+  const virtualDirectory = dirname(fileURLToPath(import.meta.url));
+  const clientId = normalizePath(resolve(virtualDirectory, "studio-client.virtual.tsx"));
+  const stylesId = normalizePath(resolve(virtualDirectory, "studio-styles.virtual.css"));
   return {
     name: "scribe-studio",
     enforce: "pre",
     resolveId(id) {
       if (id === "/@scribe-studio/preview.tsx") return previewId;
+      if (id === "/@scribe-studio/client.tsx") return clientId;
+      if (id === "/@scribe-studio/styles.css") return stylesId;
       if (id === "virtual:scribe-studio-article") return context.articleId;
       return undefined;
     },
     load(id) {
       if (id === context.articleId) return context.state.previewSource;
       if (id === previewId) return previewModule(context.state.mode, context.runtime, context.hostCss);
+      if (id === clientId) return studioClientModule(context.runtime);
+      if (id === stylesId) return studioStyles();
       return undefined;
     },
     configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
         const url = new URL(request.url ?? "/", "http://127.0.0.1");
+        if (url.pathname === "/__scribe/api/asset" && request.method === "GET") {
+          return json(response, 200, { exists: await publicAssetExists(context.root, url.searchParams.get("path")) });
+        }
         if (url.pathname === "/__scribe/api/document" && request.method === "GET") {
           return json(response, 200, publicState(context.state));
         }
+        if (url.pathname === "/__scribe/api/rich-projection" && request.method === "GET") {
+          if (context.state.diagnostics.some(({ severity }) => severity === "error")) {
+            return json(response, 422, {
+              error: "Fix Markdown diagnostics before entering Rich Text mode.",
+              ...publicState(context.state)
+            });
+          }
+          try {
+            const projection = await ensureRichProjection(context.state);
+            return json(response, 200, {
+              projectionMarkdown: projection.projectionMarkdown,
+              islands: projection.islands,
+              revision: context.state.revision
+            });
+          } catch (error) {
+            return json(response, 422, { error: error instanceof Error ? error.message : String(error), ...publicState(context.state) });
+          }
+        }
         if (url.pathname === "/__scribe/api/draft" && request.method === "PUT") {
           try {
-            const body = await readJsonBody(request) as { source?: unknown; mode?: unknown };
-            if (typeof body.source !== "string" || !styleModes.has(body.mode as StyleMode)) {
-              return json(response, 400, { error: "Draft requires string source and a valid style mode." });
+            const body = await readJsonBody(request) as { source?: unknown };
+            if (typeof body.source !== "string") {
+              return json(response, 400, { error: "Draft requires string source." });
             }
-            context.state.draftSource = normalizeLineEndings(body.source, context.state.lineEnding);
-            context.state.mode = body.mode as StyleMode;
-            context.state.dirty = context.state.draftSource !== context.state.diskSource;
-            context.state.diagnostics = await diagnosticsFor(context.sourcePath, context.state.draftSource);
+            await applyDraft(context, server, previewId, normalizeLineEndings(body.source, context.state.lineEnding));
+            context.state.revision += 1;
+            context.state.richProjection = undefined;
             const hasErrors = context.state.diagnostics.some(({ severity }) => severity === "error");
-            if (!hasErrors) {
-              context.state.previewSource = context.state.draftSource;
-              context.state.previewVersion += 1;
-              invalidateArticle(server, context.articleId);
-              const preview = server.moduleGraph.getModuleById(previewId);
-              if (preview) server.moduleGraph.invalidateModule(preview);
-            }
             return json(response, 200, { ok: !hasErrors, ...publicState(context.state) });
           } catch (error) {
             return json(response, 400, { error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        if (url.pathname === "/__scribe/api/rich-draft" && request.method === "PUT") {
+          try {
+            const body = await readJsonBody(request) as { source?: unknown; revision?: unknown };
+            if (typeof body.source !== "string" || !Number.isInteger(body.revision)) {
+              return json(response, 400, { error: "Rich Text draft requires string source and an integer revision." });
+            }
+            if (body.revision !== context.state.revision) {
+              return json(response, 409, {
+                ok: false,
+                code: "SCB_RICH_STALE_PROJECTION",
+                error: "The Markdown draft changed after Rich Text mode opened. Reload Rich Text from the current draft.",
+                ...publicState(context.state)
+              });
+            }
+            const projection = await ensureRichProjection(context.state);
+            const result = await acceptRichCandidate(projection, body.source, context.sourcePath);
+            if (!result.ok) {
+              return json(response, 422, {
+                ok: false,
+                code: result.code,
+                error: result.message,
+                ...(result.islandId === undefined ? {} : { islandId: result.islandId }),
+                projectionMarkdown: projection.projectionMarkdown,
+                islands: projection.islands,
+                ...publicState(context.state)
+              });
+            }
+            await applyDraft(context, server, previewId, normalizeLineEndings(result.markdown, context.state.lineEnding));
+            context.state.revision += 1;
+            context.state.richProjection = await createRichProjection(context.state.draftSource);
+            return json(response, 200, {
+              ok: true,
+              projectionMarkdown: context.state.richProjection.projectionMarkdown,
+              islands: context.state.richProjection.islands,
+              ...publicState(context.state)
+            });
+          } catch (error) {
+            return json(response, 422, { ok: false, error: error instanceof Error ? error.message : String(error), ...publicState(context.state) });
           }
         }
         if (url.pathname === "/__scribe/api/save" && request.method === "PUT") {
@@ -338,6 +452,8 @@ function createStudioPlugin(context: {
           context.state.conflict = false;
           context.state.diagnostics = await diagnosticsFor(context.sourcePath, context.state.diskSource);
           context.state.previewVersion += 1;
+          context.state.revision += 1;
+          context.state.richProjection = undefined;
           invalidateArticle(server, context.articleId);
           return json(response, 200, { ok: true, ...publicState(context.state) });
         }
@@ -359,15 +475,50 @@ function createStudioPlugin(context: {
   };
 }
 
-interface StudioRuntimePaths {
+interface StudioRuntimePaths extends StudioClientImports {
   readonly scribeReact: string;
   readonly foundation: string;
   readonly default: string;
   readonly tailwind: string;
+  readonly plexSans400: string;
+  readonly plexSans500: string;
+  readonly plexSans600: string;
+  readonly plexSerif400: string;
+  readonly plexSerif400Italic: string;
+  readonly plexSerif600: string;
+  readonly plexMono400: string;
+  readonly plexMono500: string;
+  readonly plexMono600: string;
 }
 
 function studioRuntimePaths(): StudioRuntimePaths {
   return {
+    react: studioImportPath("react"),
+    reactDom: studioImportPath("react-dom/client"),
+    reactDomRoot: studioImportPath("react-dom"),
+    reactJsxRuntime: studioImportPath("react/jsx-runtime"),
+    reactJsxDevRuntime: studioImportPath("react/jsx-dev-runtime"),
+    baseButton: studioImportPath("@base-ui/react/button"),
+    baseToggle: studioImportPath("@base-ui/react/toggle"),
+    baseToggleGroup: studioImportPath("@base-ui/react/toggle-group"),
+    baseTooltip: studioImportPath("@base-ui/react/tooltip"),
+    cva: studioImportPath("class-variance-authority"),
+    clsx: studioImportPath("clsx"),
+    lenis: studioImportPath("lenis"),
+    lucide: studioImportPath("lucide-react"),
+    sonner: studioImportPath("sonner"),
+    tailwindMerge: studioImportPath("tailwind-merge"),
+    mdxEditor: studioImportPath("@mdxeditor/editor"),
+    mdxEditorStyle: studioImportPath("@mdxeditor/editor/style.css"),
+    plexSans400: studioImportPath("@fontsource/ibm-plex-sans/400.css"),
+    plexSans500: studioImportPath("@fontsource/ibm-plex-sans/500.css"),
+    plexSans600: studioImportPath("@fontsource/ibm-plex-sans/600.css"),
+    plexSerif400: studioImportPath("@fontsource/ibm-plex-serif/400.css"),
+    plexSerif400Italic: studioImportPath("@fontsource/ibm-plex-serif/400-italic.css"),
+    plexSerif600: studioImportPath("@fontsource/ibm-plex-serif/600.css"),
+    plexMono400: studioImportPath("@fontsource/ibm-plex-mono/400.css"),
+    plexMono500: studioImportPath("@fontsource/ibm-plex-mono/500.css"),
+    plexMono600: studioImportPath("@fontsource/ibm-plex-mono/600.css"),
     scribeReact: studioRequire.resolve("@scribe-sdk/react"),
     foundation: studioRequire.resolve("@scribe-sdk/styles/foundation.css"),
     default: studioRequire.resolve("@scribe-sdk/styles/default.css"),
@@ -375,108 +526,144 @@ function studioRuntimePaths(): StudioRuntimePaths {
   };
 }
 
+function studioAliases(runtime: StudioRuntimePaths) {
+  return [
+    { find: "react/jsx-dev-runtime", replacement: runtime.reactJsxDevRuntime },
+    { find: "react/jsx-runtime", replacement: runtime.reactJsxRuntime },
+    { find: "react-dom/client", replacement: runtime.reactDom },
+    { find: /^react-dom$/u, replacement: runtime.reactDomRoot },
+    { find: /^react$/u, replacement: runtime.react },
+    { find: "@base-ui/react/button", replacement: runtime.baseButton },
+    { find: "@base-ui/react/toggle", replacement: runtime.baseToggle },
+    { find: "@base-ui/react/toggle-group", replacement: runtime.baseToggleGroup },
+    { find: "@base-ui/react/tooltip", replacement: runtime.baseTooltip },
+    { find: "class-variance-authority", replacement: runtime.cva },
+    { find: "clsx", replacement: runtime.clsx },
+    { find: "lenis", replacement: runtime.lenis },
+    { find: "lucide-react", replacement: runtime.lucide },
+    { find: "sonner", replacement: runtime.sonner },
+    { find: "tailwind-merge", replacement: runtime.tailwindMerge },
+    { find: "@mdxeditor/editor/style.css", replacement: runtime.mdxEditorStyle },
+    { find: "@mdxeditor/editor", replacement: runtime.mdxEditor },
+    { find: "@fontsource/ibm-plex-sans/400.css", replacement: runtime.plexSans400 },
+    { find: "@fontsource/ibm-plex-sans/500.css", replacement: runtime.plexSans500 },
+    { find: "@fontsource/ibm-plex-sans/600.css", replacement: runtime.plexSans600 },
+    { find: "@fontsource/ibm-plex-serif/400.css", replacement: runtime.plexSerif400 },
+    { find: "@fontsource/ibm-plex-serif/400-italic.css", replacement: runtime.plexSerif400Italic },
+    { find: "@fontsource/ibm-plex-serif/600.css", replacement: runtime.plexSerif600 },
+    { find: "@fontsource/ibm-plex-mono/400.css", replacement: runtime.plexMono400 },
+    { find: "@fontsource/ibm-plex-mono/500.css", replacement: runtime.plexMono500 },
+    { find: "@fontsource/ibm-plex-mono/600.css", replacement: runtime.plexMono600 }
+  ];
+}
+
+function studioImportPath(specifier: string): string {
+  return fileURLToPath(import.meta.resolve(specifier));
+}
+
 function previewModule(mode: StyleMode, runtime: StudioRuntimePaths, hostCss?: string): string {
   const hostImport = hostCss === undefined ? "" : `import ${JSON.stringify(`/@fs/${normalizePath(hostCss)}`)};`;
   const moduleImport = (path: string) => JSON.stringify(`/@fs/${normalizePath(path)}`);
   return `import * as React from "react";
 import { createRoot } from "react-dom/client";
-import { Publication, createScribeComponents } from ${moduleImport(runtime.scribeReact)};
+import Lenis from "lenis";
+import { Banner, Publication, ScribeImage, createScribeComponents } from ${moduleImport(runtime.scribeReact)};
+import ${moduleImport(runtime.plexSans400)};
+import ${moduleImport(runtime.plexSans500)};
+import ${moduleImport(runtime.plexSans600)};
+import ${moduleImport(runtime.plexSerif400)};
+import ${moduleImport(runtime.plexSerif400Italic)};
+import ${moduleImport(runtime.plexSerif600)};
+import ${moduleImport(runtime.plexMono400)};
+import ${moduleImport(runtime.plexMono500)};
+import ${moduleImport(runtime.plexMono600)};
 import ${moduleImport(runtime[mode])};
 ${hostImport}
 import Article from "virtual:scribe-studio-article";
 const theme = new URLSearchParams(location.search).get("theme") === "dark" ? "dark" : "light";
 function Wrapper(props) { return React.createElement(Publication, { ...props, "data-theme": theme }); }
-const components = createScribeComponents({ components: { wrapper: Wrapper } });
+function MissingAsset({ path, kind = "image" }) {
+  return React.createElement("div", { className: "scribe-studio-missing-asset", role: "status" },
+    React.createElement("strong", null, kind === "banner" ? "Banner image not found" : "Image not found"),
+    React.createElement("code", null, path)
+  );
+}
+function StudioBanner(props) {
+  const [available, setAvailable] = React.useState(props.image === undefined ? true : null);
+  React.useEffect(() => {
+    if (props.image === undefined) { setAvailable(true); return; }
+    const controller = new AbortController();
+    fetch("/__scribe/api/asset?path=" + encodeURIComponent(props.image), { signal: controller.signal })
+      .then((response) => response.json())
+      .then((result) => setAvailable(result.exists === true))
+      .catch((error) => { if (error.name !== "AbortError") setAvailable(false); });
+    return () => controller.abort();
+  }, [props.image]);
+  if (props.image === undefined || available === true) return React.createElement(Banner, props);
+  const { image, imageAlt, children, ...withoutImage } = props;
+  return React.createElement(Banner, withoutImage, children,
+    available === false
+      ? React.createElement(MissingAsset, { path: image, kind: "banner" })
+      : React.createElement("div", { className: "scribe-studio-missing-asset", "data-loading": "" }, "Checking banner image…")
+  );
+}
+function StudioImage(props) {
+  const [missing, setMissing] = React.useState(false);
+  if (missing) return React.createElement(MissingAsset, { path: props.src || "Unknown source" });
+  return React.createElement(ScribeImage, { ...props, onError: () => setMissing(true) });
+}
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  new Lenis({ autoRaf: true, smoothWheel: true, gestureOrientation: "vertical", anchors: true });
+}
+const components = createScribeComponents({ components: { wrapper: Wrapper, Banner: StudioBanner, img: StudioImage } });
 createRoot(document.querySelector("#preview")).render(React.createElement(Article, { components }));
 `;
 }
 
 function studioHtml(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scribe Studio</title><style>${studioCss()}</style></head><body>
-<main class="studio-shell">
-  <header class="studio-toolbar">
-    <div class="studio-brand"><span class="studio-mark" aria-hidden="true">S</span><div><strong>Scribe Studio</strong><span>Public alpha · local source workspace</span></div></div>
-    <div class="studio-status" data-status="loading"><span class="studio-status__dot"></span><span id="status-text">Loading source…</span></div>
-    <div class="studio-actions"><button id="copy-diagnostics" type="button">Copy diagnostics</button><button id="save" class="studio-save" type="button">Save <kbd>⌘S</kbd></button></div>
-  </header>
-  <section class="studio-controls" aria-label="Preview controls">
-    <label>Style <select id="mode"><option value="foundation">Foundation</option><option value="default">Default</option><option value="tailwind">Tailwind</option></select></label>
-    <div class="segmented" role="group" aria-label="Viewport"><button data-width="100%" aria-pressed="true">Desktop</button><button data-width="768px">Tablet</button><button data-width="390px">Mobile</button></div>
-    <div class="segmented" role="group" aria-label="Appearance"><button data-theme="light" aria-pressed="true">Light</button><button data-theme="dark">Dark</button></div>
-    <span id="document-meta" class="document-meta"></span>
-  </section>
-  <section class="studio-workspace">
-    <div class="source-panel"><div class="panel-label"><span>Source</span><span id="dirty-label">Saved</span></div><textarea id="source" spellcheck="false" aria-label="Article source"></textarea><pre id="diagnostics" class="diagnostics" aria-live="polite"></pre></div>
-    <div class="preview-panel"><div class="panel-label"><span>Preview</span><span id="preview-label">Production renderer</span></div><div class="preview-stage"><iframe id="preview" title="Scribe article preview" src="/preview?theme=light"></iframe></div></div>
-  </section>
-  <div id="conflict" class="conflict" hidden><strong>Source changed outside Studio.</strong><span>Your unsaved draft is preserved.</span><button id="discard" type="button">Reload from disk</button></div>
-</main><script type="module">${studioClient()}</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scribe Studio</title></head><body><div id="scribe-studio"></div><script type="module" src="/@scribe-studio/client.tsx"></script></body></html>`;
 }
 
 function previewHtml(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
-}
-
-function studioClient(): string {
-  return `const source = document.querySelector('#source');
-const mode = document.querySelector('#mode');
-const frame = document.querySelector('#preview');
-const status = document.querySelector('.studio-status');
-const statusText = document.querySelector('#status-text');
-const diagnostics = document.querySelector('#diagnostics');
-const dirtyLabel = document.querySelector('#dirty-label');
-const conflict = document.querySelector('#conflict');
-const meta = document.querySelector('#document-meta');
-let diskVersion = '';
-let previewVersion = 0;
-let timer;
-async function request(path, options) { const response = await fetch(path, options); const body = await response.json(); return { response, body }; }
-function apply(state, replaceSource = false) {
-  diskVersion = state.diskVersion;
-  mode.value = state.mode;
-  if (replaceSource) source.value = state.source;
-  dirtyLabel.textContent = state.conflict ? 'Conflict' : state.dirty ? 'Unsaved' : 'Saved';
-  conflict.hidden = !state.conflict;
-  diagnostics.textContent = state.diagnostics.map((item) => (item.line ? item.line + ':' + (item.column || 1) + ' ' : '') + '[' + item.severity + ' ' + item.code + '] ' + item.message).join('\\n');
-  const lines = source.value.split('\\n').length; const words = source.value.trim() ? source.value.trim().split(/\\s+/).length : 0;
-  meta.textContent = lines + ' lines · ' + words + ' words';
-  const hasError = state.diagnostics.some((item) => item.severity === 'error');
-  status.dataset.status = state.conflict ? 'conflict' : hasError ? 'error' : state.dirty ? 'dirty' : 'ready';
-  statusText.textContent = state.conflict ? 'External change' : hasError ? 'Compilation blocked' : state.dirty ? 'Unsaved draft' : 'Ready';
-  if (state.previewVersion !== previewVersion) { previewVersion = state.previewVersion; frame.contentWindow?.location.reload(); }
-}
-async function updateDraft() {
-  const { body } = await request('/__scribe/api/draft', { method: 'PUT', headers: {'content-type':'application/json'}, body: JSON.stringify({ source: source.value, mode: mode.value }) });
-  apply(body);
-}
-source.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(updateDraft, 320); dirtyLabel.textContent = 'Unsaved'; });
-mode.addEventListener('change', updateDraft);
-document.querySelector('#save').addEventListener('click', async () => { await updateDraft(); const { response, body } = await request('/__scribe/api/save', { method:'PUT', headers:{'content-type':'application/json'}, body:JSON.stringify({expectedDiskVersion:diskVersion}) }); apply(body); if (!response.ok) conflict.hidden = false; });
-document.querySelector('#discard').addEventListener('click', async () => { const { body } = await request('/__scribe/api/discard', {method:'POST'}); apply(body, true); });
-document.querySelector('#copy-diagnostics').addEventListener('click', async () => { try { await navigator.clipboard.writeText(diagnostics.textContent || 'No Scribe diagnostics.'); } catch {} });
-document.querySelectorAll('[data-width]').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('[data-width]').forEach((item) => item.setAttribute('aria-pressed', String(item === button))); frame.style.width = button.dataset.width; }));
-document.querySelectorAll('[data-theme]').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('[data-theme]').forEach((item) => item.setAttribute('aria-pressed', String(item === button))); frame.src = '/preview?theme=' + button.dataset.theme; }));
-addEventListener('keydown', (event) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); document.querySelector('#save').click(); } });
-const initial = await request('/__scribe/api/document'); apply(initial.body, true);
-setInterval(async () => { const current = await request('/__scribe/api/document'); if (current.body.diskVersion !== diskVersion || current.body.conflict) apply(current.body, !current.body.dirty); }, 900);
-`;
-}
-
-function studioCss(): string {
-  return `:root{color-scheme:dark;--ink:#e9e8e3;--muted:#91918c;--line:#30312f;--panel:#161716;--raised:#20211f;--accent:#d8ff63}*{box-sizing:border-box}html,body,#root{min-height:100%}body{margin:0;background:#0d0e0d;color:var(--ink);font:13px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}.studio-shell{min-height:100vh;display:grid;grid-template-rows:auto auto 1fr}.studio-toolbar{min-height:66px;display:flex;align-items:center;gap:24px;padding:10px 18px;border-bottom:1px solid var(--line);background:#111210}.studio-brand{display:flex;align-items:center;gap:11px;min-width:230px}.studio-brand strong,.studio-brand span{display:block}.studio-brand>div>span{color:var(--muted);font-size:11px}.studio-mark{display:grid;place-items:center;width:34px;height:34px;background:var(--accent);color:#111;font:800 17px/1 ui-monospace,monospace}.studio-status{display:flex;align-items:center;gap:8px;margin-inline:auto;color:var(--muted)}.studio-status__dot{width:7px;height:7px;border-radius:50%;background:#777}.studio-status[data-status=ready] .studio-status__dot{background:#8fd694}.studio-status[data-status=error] .studio-status__dot,.studio-status[data-status=conflict] .studio-status__dot{background:#ff7b67}.studio-status[data-status=dirty] .studio-status__dot{background:#f3c969}.studio-actions{display:flex;gap:8px}.studio-actions button,.studio-controls button,.studio-controls select,.conflict button{min-height:34px;border:1px solid var(--line);border-radius:5px;background:var(--raised);color:inherit;font:inherit;padding:0 12px}.studio-save{background:var(--accent)!important;color:#111!important;border-color:var(--accent)!important;font-weight:700!important}kbd{margin-left:8px;font:10px ui-monospace,monospace;opacity:.65}.studio-controls{display:flex;align-items:center;gap:18px;padding:9px 18px;border-bottom:1px solid var(--line);background:#131412}.studio-controls label{display:flex;align-items:center;gap:8px;color:var(--muted)}.segmented{display:flex}.segmented button{border-radius:0;margin-left:-1px}.segmented button:first-child{border-radius:5px 0 0 5px}.segmented button:last-child{border-radius:0 5px 5px 0}.segmented button[aria-pressed=true]{color:#111;background:#d8ff63;border-color:#d8ff63}.document-meta{margin-left:auto;color:var(--muted);font:11px ui-monospace,monospace}.studio-workspace{min-height:0;display:grid;grid-template-columns:minmax(320px,.82fr) minmax(420px,1.18fr);height:calc(100vh - 116px)}.source-panel,.preview-panel{min-width:0;min-height:0;display:grid;grid-template-rows:36px 1fr}.source-panel{border-right:1px solid var(--line)}.panel-label{display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid var(--line);color:var(--muted);font:11px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.08em}#source{width:100%;height:100%;resize:none;border:0;outline:0;padding:22px;background:var(--panel);color:#dddcd6;font:14px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2}.source-panel:has(#source:focus){box-shadow:inset 2px 0 var(--accent)}.diagnostics{position:absolute;left:14px;bottom:12px;right:calc(50% + 14px);max-height:25vh;overflow:auto;margin:0;padding:10px 12px;border:1px solid #49312d;background:#1e1513eF;color:#ffad9d;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap}.diagnostics:empty{display:none}.preview-stage{display:grid;place-items:start center;overflow:auto;padding:22px;background:#222320;background-image:linear-gradient(45deg,#252624 25%,transparent 25%),linear-gradient(-45deg,#252624 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#252624 75%),linear-gradient(-45deg,transparent 75%,#252624 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}#preview{display:block;width:100%;min-height:calc(100vh - 190px);border:0;background:white;box-shadow:0 18px 60px #0008;transition:width .2s ease}.conflict{position:fixed;right:18px;bottom:18px;display:grid;gap:4px;max-width:360px;padding:16px;border:1px solid #735043;background:#271b17;box-shadow:0 16px 50px #0008}.conflict[hidden]{display:none}.conflict span{color:#c7a99e}.conflict button{margin-top:8px}@media(max-width:800px){.studio-toolbar{flex-wrap:wrap}.studio-status{order:3;width:100%}.studio-controls{overflow:auto}.studio-workspace{grid-template-columns:1fr;height:auto}.source-panel{height:58vh;border-right:0;border-bottom:1px solid var(--line)}.preview-panel{height:70vh}.diagnostics{right:14px}.document-meta{display:none}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{--font-body:"IBM Plex Sans","Geist Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-heading:var(--font-body);--font-mono:"IBM Plex Mono","Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716;font-family:var(--font-body)}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}.scribe-studio-missing-asset{display:grid;gap:.35rem;align-content:center;min-block-size:7rem;margin-block:1rem;padding:1rem;border:1px dashed color-mix(in oklab,currentColor 30%,transparent);border-radius:.55rem;color:color-mix(in oklab,currentColor 72%,transparent);background:color-mix(in oklab,currentColor 5%,transparent);font:500 .8rem/1.45 var(--font-body)}.scribe-studio-missing-asset strong{color:inherit}.scribe-studio-missing-asset code{overflow-wrap:anywhere;color:inherit;font-family:var(--font-mono)}.scribe-studio-missing-asset[data-loading]{opacity:.65}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
 }
 
 function publicState(state: StudioState) {
   return {
     source: state.draftSource,
+    sourcePath: state.sourcePath,
     diskVersion: state.diskVersion,
     previewVersion: state.previewVersion,
     mode: state.mode,
+    modeReason: state.modeReason,
     dirty: state.dirty,
     conflict: state.conflict,
     diagnostics: state.diagnostics,
+    revision: state.revision,
     frontmatter: frontmatter(state.draftSource)
   };
+}
+
+async function ensureRichProjection(state: StudioState): Promise<RichProjection> {
+  state.richProjection ??= await createRichProjection(state.draftSource);
+  return state.richProjection;
+}
+
+async function applyDraft(
+  context: { readonly sourcePath: string; readonly articleId: string; readonly state: StudioState },
+  server: ViteDevServer,
+  previewId: string,
+  source: string
+): Promise<void> {
+  context.state.draftSource = source;
+  context.state.dirty = source !== context.state.diskSource;
+  context.state.diagnostics = await diagnosticsFor(context.sourcePath, source);
+  if (context.state.diagnostics.some(({ severity }) => severity === "error")) return;
+  context.state.previewSource = source;
+  context.state.previewVersion += 1;
+  invalidateArticle(server, context.articleId);
+  const preview = server.moduleGraph.getModuleById(previewId);
+  if (preview) server.moduleGraph.invalidateModule(preview);
 }
 
 async function diagnosticsFor(path: string, source: string): Promise<StudioDiagnostic[]> {
@@ -531,6 +718,20 @@ function assertWithinWorkspace(root: string, path: string, label: string): void 
   const value = relative(root, path);
   if (value === ".." || value.startsWith(`..${sep}`) || isAbsolute(value)) {
     throw new Error(`${label} is outside the Studio workspace ${root}.`);
+  }
+}
+
+async function publicAssetExists(root: string, requestedPath: string | null): Promise<boolean> {
+  if (requestedPath === null || !requestedPath.startsWith("/") || requestedPath.startsWith("//") || requestedPath.includes("\\")) {
+    return false;
+  }
+  const publicRoot = resolve(root, "public");
+  const assetPath = resolve(publicRoot, `.${requestedPath}`);
+  try {
+    assertWithinWorkspace(publicRoot, assetPath, "Public asset");
+    return (await stat(assetPath)).isFile();
+  } catch {
+    return false;
   }
 }
 

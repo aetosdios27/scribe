@@ -29,6 +29,12 @@ describe("published CSS contract", () => {
     ]) expect(defaultCss).toContain(marker);
   });
 
+  it("keeps technical tables legible and code-frame identity intact in narrow containers", () => {
+    expect(defaultCss).toContain("table tbody tr:nth-child(even) td");
+    expect(defaultCss).toContain("table :is(th, td) + :is(th, td)");
+    expect(defaultCss).not.toMatch(/@container scribe \(max-width: 46rem\)[\s\S]*?\.scribe-code-frame, \.scribe \.scribe-table-scroll\)[\s\S]*?border-inline:\s*0;/u);
+  });
+
   it("does not introduce obvious global element selectors", () => {
     for (const css of [foundationCss, defaultCss, tailwindCss]) {
       expect(css).not.toMatch(/^\s*(?:html|body|pre|table|button|img)\s*[{,]/gmu);

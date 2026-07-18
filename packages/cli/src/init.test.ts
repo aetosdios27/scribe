@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { expect, it, vi } from "vitest";
 
-import { inspectProject, planInit, runInit } from "./init.js";
+import { inspectProject, planInit, resolveProjectStyleMode, runInit } from "./init.js";
 
 async function project(files: Record<string, string>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "scribe-init-test-"));
@@ -68,6 +68,15 @@ it("requires an explicit mode for an ambiguous Tailwind stack", async () => {
   expect(plan.mode).toBeUndefined();
   expect(plan.ambiguities.join(" ")).toContain("--mode");
   expect((await planInit(cwd, "foundation", "0.1.0-alpha.2")).mode).toBe("foundation");
+});
+
+it("lets Studio's explicit mode override bypass framework recommendation ambiguity", async () => {
+  const cwd = await project({ "package.json": JSON.stringify({ private: true }) });
+
+  const resolution = await resolveProjectStyleMode(cwd, "default");
+  expect(resolution.mode).toBe("default");
+  expect(resolution.ambiguities).toEqual([]);
+  expect(resolution.reason).toContain("Selected explicitly");
 });
 
 it("keeps dry runs pure and reports every proposed change", async () => {

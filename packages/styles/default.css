@@ -315,9 +315,13 @@
     vertical-align: top;
   }
 
+  :where(.scribe table :is(th, td) + :is(th, td)) {
+    border-inline-start: 1px solid color-mix(in oklab, var(--scribe-border) 72%, transparent);
+  }
+
   :where(.scribe table th) {
-    color: color-mix(in oklab, var(--scribe-foreground) 88%, var(--scribe-muted));
-    background: var(--scribe-surface-strong);
+    color: color-mix(in oklab, var(--scribe-foreground) 94%, var(--scribe-muted));
+    background: color-mix(in oklab, var(--scribe-foreground) 10%, var(--scribe-background));
     font-size: 0.78rem;
     font-weight: 720;
     letter-spacing: 0.045em;
@@ -329,8 +333,12 @@
     border-block-end: 0;
   }
 
+  :where(.scribe table tbody tr:nth-child(even) td) {
+    background: color-mix(in oklab, var(--scribe-foreground) 2.8%, transparent);
+  }
+
   :where(.scribe table tbody tr:hover td) {
-    background: color-mix(in oklab, var(--scribe-accent) 4%, transparent);
+    background: color-mix(in oklab, var(--scribe-accent) 6%, var(--scribe-surface));
   }
 
   :where(.scribe table :is([align="right"], [data-align="right"])) {
@@ -681,8 +689,16 @@
     }
 
     :where(.scribe .scribe-code-frame, .scribe .scribe-table-scroll) {
-      border-inline: 0;
-      border-radius: 0;
+      inline-size: 100%;
+      border-radius: max(0.45rem, calc(var(--scribe-radius) * 0.8));
+    }
+
+    :where(.scribe .scribe-code-frame__header) {
+      min-block-size: 2.6rem;
+    }
+
+    :where(.scribe .scribe-code-frame__pre .line) {
+      padding-inline-end: max(1rem, var(--scribe-code-block-padding-inline));
     }
   }
 
