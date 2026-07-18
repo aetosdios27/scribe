@@ -41,6 +41,26 @@ Package installation is inert: it does not edit source files, run project detect
 bunx scb init --dry-run
 ```
 
+With npm, run the same locally installed binary through `npx`:
+
+```bash
+npx scb init --dry-run
+```
+
+### CLI reference
+
+Run CLI commands through `bunx scb` or `npx scb` after installing `@scribe-sdk/cli` locally. The examples below use `scb` to show the command surface without repeating both runners.
+
+| Command | Purpose |
+| --- | --- |
+| `scb init [--dry-run] [--mode <mode>] [--yes]` | Inspect and deliberately initialize Scribe in the current React project; mode is `foundation`, `default`, or `tailwind` |
+| `scb validate <article.mdx> [--strict]` | Compile and validate one article without executing the complete host application |
+| `scb studio <article> [--mode <mode>] [--host-css <file>] [--port <number>] [--no-open]` | Open the local, source-authoritative Markdown/MDX Studio; mode is `foundation`, `default`, or `tailwind` |
+| `scb --help` | Show the installed CLI command surface |
+| `scb --version` | Print the installed Scribe version |
+
+Use `scb init --help` or `scb studio --help` for command-specific option summaries. CLI exit codes are consistent: `0` means success, `1` means execution or article-compilation failure, and `2` means invalid usage or unresolved initialization configuration.
+
 ## Choose a style mode
 
 The host owns design; Scribe owns structure and behavior. Import one stylesheet from the application shell:
@@ -71,11 +91,18 @@ Scribe ships no fonts and does not clone Tailwind Typography. In Tailwind mode, 
 
 ## Initialize an existing project
 
-Run initialization deliberately after installation:
+Run initialization deliberately from the host project's root after installation:
 
 ```bash
 bunx scb init --dry-run
 bunx scb init
+```
+
+With npm:
+
+```bash
+npx scb init --dry-run
+npx scb init
 ```
 
 `init` inspects React, Next.js or Vite, Tailwind v3/v4, Typography and `.prose`, existing MDX integrations and plugins, syntax highlighters, global CSS, component maps, and current Scribe wiring. It recommends `foundation`, `default`, or `tailwind`, reports every proposed command and file edit, and asks before mutation. Use `--mode foundation|default|tailwind` to override the recommendation or `--yes` for a reviewed non-interactive plan.
@@ -364,7 +391,14 @@ bunx scb studio ./content/article.mdx
 bunx scb studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
 ```
 
-Studio provides a source pane, real Scribe preview, explicit save, unsaved and external-change conflict states, validation diagnostics, style modes, light/dark previews, and desktop/tablet/mobile widths. It binds to `127.0.0.1`, opens the browser unless `--no-open` is supplied, performs no telemetry, and keeps the file as the source of truth. It is not a WYSIWYG editor and never stores a proprietary document.
+With npm:
+
+```bash
+npx scb studio ./content/article.mdx
+npx scb studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
+```
+
+Studio defaults to the `default` style mode and port `4317`. It provides a source pane, real Scribe preview, explicit save, unsaved and external-change conflict states, validation diagnostics, style modes, light/dark previews, and desktop/tablet/mobile widths. It binds to `127.0.0.1`, opens the browser unless `--no-open` is supplied, performs no telemetry, and keeps the file as the source of truth. It is not a WYSIWYG editor and never stores a proprietary document.
 
 MDX is executable local project content; open only files you trust. `--host-css` loads one explicit local stylesheet. It does not crawl the application or reproduce framework processing automatically: Tailwind directives, CSS imports, asset URLs, and fonts may require a separately compiled CSS artifact. Studio writes only after Save, uses an atomic replacement, preserves LF/CRLF line endings, and refuses to overwrite an externally changed file until the conflict is resolved.
 
