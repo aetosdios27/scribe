@@ -1,4 +1,4 @@
-import { StrictMode, type ComponentProps } from "react";
+import { StrictMode, type ComponentProps, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 import { Banner, Publication, createScribeComponents } from "@scribe-sdk/react";
 import "../../../fixtures/hosts.css";
@@ -14,6 +14,7 @@ const theme = params.get("theme") === "dark" ? "dark" : "light";
 const host = params.get("host") === "branded" ? "branded" : "neutral";
 const hostile = params.get("hostile") === "true";
 const fixture = params.get("fixture") ?? "article";
+const publicationTheme = params.get("publication-theme");
 
 async function loadLinkedStyle(href: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -55,6 +56,13 @@ function BannerWithoutImage() {
 }
 
 function ContinuityContent() {
+  const shikiStyle = {
+    "--shiki-light": "#24292e",
+    "--shiki-dark": "#e1e4e8",
+    "--shiki-light-bg": "#fff",
+    "--shiki-dark-bg": "#24292e"
+  } as CSSProperties;
+
   return (
     <>
       <p>The opening paragraph must retain the host's direct-child rhythm.</p>
@@ -66,7 +74,7 @@ function ContinuityContent() {
         <table><tbody><tr>{["interested", "unchoked", "piece-index", "block-offset", "block-length", "download-rate", "upload-rate", "peer-identifier-with-a-long-token"].map((value) => <td key={value}>{value}</td>)}</tr></tbody></table>
       </div>
       <figure className="scribe-code-frame">
-        <pre className="scribe-code-frame__pre"><code>peer.set_interested(true); // a deliberately long protocol operation remains internally scrollable</code></pre>
+        <pre className="scribe-code-frame__pre shiki" style={shikiStyle}><code><span style={shikiStyle}>peer.set_interested(true); // a deliberately long protocol operation remains internally scrollable</span></code></pre>
       </figure>
     </>
   );
@@ -74,12 +82,13 @@ function ContinuityContent() {
 
 function ContinuityFixture() {
   const proseClass = styleMode.startsWith("tailwind") ? "prose" : "custom-prose";
+  const explicitTheme = publicationTheme === "light" || publicationTheme === "dark" ? publicationTheme : undefined;
   return (
-    <main className="fixture-continuity">
+    <main className={`fixture-continuity${theme === "dark" ? " dark" : ""}`}>
       <div className="fixture-continuity__pair">
         <section className={proseClass} data-continuity="before"><ContinuityContent /></section>
         {styleMode.startsWith("tailwind") ? (
-          <section className={proseClass} data-continuity="after"><Publication><ContinuityContent /></Publication></section>
+          <section className={proseClass} data-continuity="after"><Publication data-theme={explicitTheme}><ContinuityContent /></Publication></section>
         ) : (
           <Publication className={proseClass} data-continuity="after"><ContinuityContent /></Publication>
         )}

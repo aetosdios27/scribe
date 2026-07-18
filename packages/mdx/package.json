@@ -1,6 +1,6 @@
 {
   "name": "@scribe-sdk/mdx",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Compile-time MDX pipeline for Scribe tables, diagnostics, anchors, and Shiki output.",
   "author": "aetosdios27",
   "license": "Apache-2.0",

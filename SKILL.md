@@ -170,7 +170,7 @@ Prefer the host aliases Scribe already inherits: `--font-body`, `--font-heading`
 
 Override documented `--scribe-*` tokens on `.scribe` or an ancestor only when the host needs an explicit mapping. Common adjustments are body, heading and code fonts; background, foreground, muted, border and accent colors; radius; content width; wide width; and gutter. Do not bundle fonts or create a theme system.
 
-Scribe supplies color-scheme-aware styles. The host owns the runtime light/dark toggle. Set `data-theme="light"` or `data-theme="dark"` on `Publication` only when integrating with an existing host toggle.
+Scribe supplies color-scheme-aware styles. The host owns the runtime light/dark toggle. Tailwind mode recognizes Tailwind's conventional ancestor `.dark` class and keeps Shiki's foreground/background pair coherent. Set `data-theme="light"` or `data-theme="dark"` on `Publication` only when integrating with another host toggle; an explicit publication theme takes precedence.
 
 ## Validate
 

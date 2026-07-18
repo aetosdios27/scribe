@@ -67,7 +67,7 @@ For a Tailwind Typography site, keep the existing `.prose` wrapper and load Scri
 @plugin "@tailwindcss/typography";
 ```
 
-Scribe ships no fonts and does not clone Tailwind Typography.
+Scribe ships no fonts and does not clone Tailwind Typography. In Tailwind mode, compiled Shiki foreground and background colors remain paired so the host's prose code background cannot make highlighted code unreadable. Tailwind's conventional ancestor `.dark` class selects the dark pair; an explicit `data-theme="light"` or `data-theme="dark"` on `Publication` takes precedence.
 
 ## Initialize an existing project
 

@@ -1,5 +1,7 @@
 # @scribe-sdk/mdx
 
+## 0.1.0-alpha.5
+
 ## 0.1.0-alpha.4
 
 ### Patch Changes

@@ -9,8 +9,25 @@
 
   :where(.scribe .scribe-code-frame__pre) {
     max-width: 100%;
-    color: var(--shiki-light, var(--tw-prose-pre-code, var(--scribe-foreground)));
-    background-color: var(--tw-prose-pre-bg, transparent) !important;
+    color: var(--shiki-light, var(--tw-prose-pre-code, var(--scribe-foreground))) !important;
+    background-color: var(--shiki-light-bg, var(--tw-prose-pre-bg, transparent)) !important;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :where(.scribe:not([data-theme="light"]) .scribe-code-frame__pre) {
+      color: var(--shiki-dark, var(--shiki-light, var(--tw-prose-pre-code, var(--scribe-foreground)))) !important;
+      background-color: var(--shiki-dark-bg, var(--shiki-light-bg, var(--tw-prose-pre-bg, transparent))) !important;
+    }
+  }
+
+  :where(.dark .scribe:not([data-theme="light"]) .scribe-code-frame__pre),
+  :where(.scribe[data-theme="dark"] .scribe-code-frame__pre) {
+    color: var(--shiki-dark, var(--shiki-light, var(--tw-prose-pre-code, var(--scribe-foreground)))) !important;
+    background-color: var(--shiki-dark-bg, var(--shiki-light-bg, var(--tw-prose-pre-bg, transparent))) !important;
+  }
+
+  :where(.dark .scribe:not([data-theme="light"]) .shiki span) {
+    color: var(--shiki-dark, var(--shiki-light, inherit));
   }
 
   :where(.scribe .scribe-code-frame__pre code)::before,

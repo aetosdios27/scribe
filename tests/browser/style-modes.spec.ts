@@ -85,13 +85,6 @@ for (const mode of ["foundation", "tailwind-v3", "tailwind-v4"] as const) {
     expect(await after.evaluate((node) => Number(node.matches(".scribe")) + node.querySelectorAll(".scribe").length)).toBe(1);
     await expect(after.locator(".scribe-heading-anchor")).toHaveAttribute("href", "#wire-states");
 
-    if (mode.startsWith("tailwind")) {
-      const beforePre = before.locator(".scribe-code-frame__pre");
-      const afterPre = after.locator(".scribe-code-frame__pre");
-      await expect(afterPre).toHaveCSS("color", await beforePre.evaluate((node) => getComputedStyle(node).color));
-      await expect(afterPre).toHaveCSS("background-color", await beforePre.evaluate((node) => getComputedStyle(node).backgroundColor));
-    }
-
     await expect(after.locator(".scribe-table-scroll")).toHaveCSS("overflow-x", "auto");
     await expect(after.locator(".scribe-code-frame__pre")).toHaveCSS("overflow-x", "auto");
     const overflow = await page.evaluate(() => ({
@@ -116,6 +109,45 @@ test("default mode supplies a complete editorial scale for an otherwise raw arti
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
+
+for (const mode of ["tailwind-v3", "tailwind-v4"] as const) {
+  for (const themeCase of [
+    {
+      name: "light host",
+      query: "theme=light",
+      foreground: "rgb(36, 41, 46)",
+      background: "rgb(255, 255, 255)"
+    },
+    {
+      name: "ancestor dark host",
+      query: "theme=dark",
+      foreground: "rgb(225, 228, 232)",
+      background: "rgb(36, 41, 46)"
+    },
+    {
+      name: "explicitly light publication inside a dark host",
+      query: "theme=dark&publication-theme=light",
+      foreground: "rgb(36, 41, 46)",
+      background: "rgb(255, 255, 255)"
+    },
+    {
+      name: "explicitly dark publication inside a light host",
+      query: "theme=light&publication-theme=dark",
+      foreground: "rgb(225, 228, 232)",
+      background: "rgb(36, 41, 46)"
+    }
+  ] as const) {
+    test(`${mode} keeps Shiki foreground and background paired for a ${themeCase.name}`, async ({ page }) => {
+      await page.goto(`/?fixture=continuity&style=${mode}&${themeCase.query}`);
+
+      const article = page.locator("[data-continuity='after']");
+      const pre = article.locator(".scribe-code-frame__pre");
+      await expect(pre).toHaveCSS("color", themeCase.foreground);
+      await expect(pre).toHaveCSS("background-color", themeCase.background);
+      await expect(pre.locator("span").first()).toHaveCSS("color", themeCase.foreground);
+    });
+  }
+}
 
 test("reports the visual-ownership boundary for established hosts", async ({ page }, testInfo) => {
   const modes = ["foundation", "tailwind-v3", "tailwind-v4"] as const;

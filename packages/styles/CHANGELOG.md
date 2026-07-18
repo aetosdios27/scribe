@@ -1,5 +1,11 @@
 # @scribe-sdk/styles
 
+## 0.1.0-alpha.5
+
+### Patch Changes
+
+- Keep compile-time Shiki foreground and background colors paired in Tailwind mode, including Tailwind's ancestor `.dark` convention and explicit publication-theme overrides, so prose code backgrounds cannot make highlighted code unreadable.
+
 ## 0.1.0-alpha.4
 
 ## 0.1.0-alpha.3
