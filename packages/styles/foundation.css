@@ -1,0 +1,383 @@
+@layer scribe.foundation.reset, scribe.foundation.base, scribe.foundation.components, scribe.foundation.utilities;
+
+@layer scribe.foundation.reset {
+  :where(.scribe),
+  :where(.scribe *, .scribe *::before, .scribe *::after) {
+    box-sizing: border-box;
+  }
+
+  :where(.scribe :is(img, svg, video)) {
+    display: block;
+    max-inline-size: 100%;
+  }
+
+  :where(.scribe button) {
+    color: inherit;
+    font: inherit;
+  }
+}
+
+@layer scribe.foundation.base {
+  :where(.scribe) {
+    --scribe-font-body: var(--font-body, inherit);
+    --scribe-font-heading: var(--font-heading, inherit);
+    --scribe-font-code: var(--font-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
+    --scribe-background: var(--background, transparent);
+    --scribe-foreground: var(--foreground, currentColor);
+    --scribe-muted: var(--muted-foreground, color-mix(in oklab, currentColor 62%, transparent));
+    --scribe-border: var(--border, color-mix(in oklab, currentColor 16%, transparent));
+    --scribe-accent: var(--accent, currentColor);
+    --scribe-surface: var(--card, color-mix(in oklab, currentColor 4%, transparent));
+    --scribe-surface-strong: var(--muted, color-mix(in oklab, currentColor 8%, transparent));
+    --scribe-selection: color-mix(in oklab, var(--scribe-accent) 22%, transparent);
+    --scribe-body-size: inherit;
+    --scribe-leading: inherit;
+    --scribe-paragraph-spacing: inherit;
+    --scribe-section-spacing: inherit;
+    --scribe-h1-size: inherit;
+    --scribe-h1-spacing: inherit;
+    --scribe-h2-size: inherit;
+    --scribe-h2-spacing: inherit;
+    --scribe-h3-size: inherit;
+    --scribe-h3-spacing: inherit;
+    --scribe-content-width: 100%;
+    --scribe-wide-width: 100%;
+    --scribe-radius: var(--radius, 0.5rem);
+    --scribe-gutter: 0px;
+    --scribe-rule: 1px;
+    --scribe-code-size: 0.875em;
+    --scribe-control-size: 2rem;
+    --scribe-code-block-padding-block: 1rem;
+    --scribe-code-block-padding-inline: 1rem;
+    --scribe-code-leading: 1.6;
+    --scribe-table-cell-padding-block: 0.625rem;
+    --scribe-table-cell-padding-inline: 0.75rem;
+    container: scribe / inline-size;
+    container-type: inline-size;
+    min-inline-size: 0;
+    overflow-wrap: break-word;
+  }
+
+  :where(.scribe > *) {
+    min-inline-size: 0;
+  }
+
+  :where(.scribe ::selection) {
+    background: var(--scribe-selection);
+  }
+
+  :where(.scribe :focus-visible) {
+    outline: 2px solid color-mix(in oklab, var(--scribe-accent) 78%, currentColor);
+    outline-offset: 3px;
+  }
+
+  :where(.scribe :is(h1, h2, h3, h4, h5, h6)) {
+    position: relative;
+    scroll-margin-block-start: 2rem;
+  }
+
+  :where(.scribe :not(pre) > code) {
+    font-family: var(--scribe-font-code);
+    font-size: var(--scribe-code-size);
+    font-variant-ligatures: none;
+    overflow-wrap: anywhere;
+  }
+}
+
+@layer scribe.foundation.components {
+  :where(.scribe .scribe-heading-anchor) {
+    position: absolute;
+    inset-inline-start: -0.95em;
+    inset-block-start: 0.08em;
+    display: inline-grid;
+    place-items: center;
+    inline-size: 0.8em;
+    block-size: 1em;
+    color: inherit;
+    font-family: var(--scribe-font-code);
+    font-size: 0.72em;
+    text-decoration: none;
+    opacity: 0;
+  }
+
+  :where(.scribe :is(h1, h2, h3, h4, h5, h6):hover .scribe-heading-anchor,
+    .scribe .scribe-heading-anchor:focus-visible) {
+    opacity: 1;
+  }
+
+  :where(.scribe .scribe-table-scroll) {
+    position: relative;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    overflow-x: auto !important;
+    overscroll-behavior-inline: contain;
+    scrollbar-gutter: stable;
+  }
+
+  :where(.scribe .scribe-table-scroll:focus-visible) {
+    outline-offset: 4px;
+  }
+
+  :where(.scribe .scribe-table-scroll > table) {
+    inline-size: max-content !important;
+    min-inline-size: 100%;
+    max-inline-size: none;
+    margin: 0;
+    border-collapse: collapse;
+  }
+
+  :where(.scribe table :is(th, td)) {
+    min-inline-size: 8rem;
+    max-inline-size: 34ch;
+    padding-block: var(--scribe-table-cell-padding-block);
+    padding-inline: var(--scribe-table-cell-padding-inline);
+    overflow-wrap: anywhere;
+    text-align: start;
+    vertical-align: top;
+  }
+
+  :where(.scribe table :is([align="right"], [data-align="right"])) {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  :where(.scribe table :is([align="center"], [data-align="center"])) {
+    text-align: center;
+  }
+
+  :where(.scribe .scribe-code-frame) {
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    margin-inline: 0;
+    overflow: hidden;
+  }
+
+  :where(.scribe .scribe-code-frame__header) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-block-size: calc(var(--scribe-control-size) + 0.75rem);
+  }
+
+  :where(.scribe .scribe-code-frame__identity) {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    min-inline-size: 0;
+    font-family: var(--scribe-font-code);
+  }
+
+  :where(.scribe .scribe-code-frame__filename) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :where(.scribe .scribe-code-frame__language) {
+    flex: none;
+  }
+
+  :where(.scribe .scribe-copy-button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-inline-size: var(--scribe-control-size);
+    min-block-size: var(--scribe-control-size);
+    border: 1px solid transparent;
+    background: transparent;
+    font-family: var(--scribe-font-code);
+    cursor: pointer;
+  }
+
+  :where(.scribe .scribe-copy-button svg) {
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.45;
+  }
+
+  :where(.scribe .scribe-code-frame__pre) {
+    max-inline-size: 100%;
+    margin: 0;
+    padding-block: var(--scribe-code-block-padding-block);
+    overflow-x: auto !important;
+    border: 0;
+    color: var(--shiki-light, var(--scribe-foreground));
+    background: transparent;
+    font-family: var(--scribe-font-code);
+    font-variant-ligatures: none;
+    line-height: var(--scribe-code-leading);
+    tab-size: 2;
+    white-space: pre !important;
+  }
+
+  :where(.scribe .scribe-code-frame__pre code) {
+    display: grid;
+    inline-size: max-content;
+    min-inline-size: 100%;
+    counter-reset: scribe-line;
+    font: inherit;
+  }
+
+  :where(.scribe .scribe-code-frame__pre .line) {
+    position: relative;
+    display: inline-block;
+    min-block-size: calc(var(--scribe-code-leading) * 1em);
+    padding-inline: var(--scribe-code-block-padding-inline);
+  }
+
+  :where(.scribe .scribe-code-frame__pre[data-scribe-line-numbers] .line) {
+    padding-inline-start: max(3.5rem, calc(var(--scribe-code-block-padding-inline) + 2.5rem));
+    counter-increment: scribe-line;
+  }
+
+  :where(.scribe .scribe-code-frame__pre[data-scribe-line-numbers] .line::before) {
+    position: absolute;
+    inset-inline-start: 0;
+    inline-size: 3.25rem;
+    padding-inline-end: 0.75rem;
+    content: counter(scribe-line);
+    text-align: end;
+    user-select: none;
+  }
+
+  :where(.scribe .scribe-code-frame__pre .line.highlighted) {
+    background: color-mix(in oklab, var(--scribe-accent) 10%, transparent);
+    box-shadow: inset 2px 0 color-mix(in oklab, var(--scribe-accent) 74%, transparent);
+  }
+
+  :where(.scribe .scribe-code-frame__pre:has(.line.focused) .line:not(.focused)) {
+    opacity: 0.42;
+  }
+
+  :where(.scribe .scribe-code-frame__pre .line:is(.added, .removed))::after {
+    position: absolute;
+    inset-inline-start: 0.8rem;
+    font-weight: 700;
+    user-select: none;
+  }
+
+  :where(.scribe .scribe-code-frame__pre .line.added)::after {
+    content: "+";
+  }
+
+  :where(.scribe .scribe-code-frame__pre .line.removed)::after {
+    content: "−";
+  }
+
+  :where(.scribe .shiki span) {
+    color: var(--shiki-light, inherit);
+  }
+
+  :where(.scribe .scribe-banner) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    inline-size: 100%;
+    max-inline-size: 100%;
+    overflow: hidden;
+  }
+
+  :where(.scribe .scribe-banner__body) {
+    min-inline-size: 0;
+  }
+
+  :where(.scribe .scribe-banner__metadata) {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  :where(.scribe .scribe-banner__media) {
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+
+  :where(.scribe .scribe-banner__media img) {
+    inline-size: 100%;
+    block-size: auto;
+  }
+
+  :where(.scribe .scribe-callout) {
+    display: grid;
+    grid-template-columns: 0.35rem minmax(0, 1fr);
+    min-inline-size: 0;
+  }
+
+  :where(.scribe .scribe-callout__marker) {
+    inline-size: 0.35rem;
+    block-size: 100%;
+  }
+
+  :where(.scribe .scribe-callout__content > :first-child) {
+    margin-block-start: 0;
+  }
+
+  :where(.scribe .scribe-figure) {
+    max-inline-size: 100%;
+    margin-inline: 0;
+  }
+
+  :where(.scribe .scribe-figure > :is(img, picture, video, svg), .scribe > p > .scribe-image) {
+    inline-size: 100%;
+    block-size: auto;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :where(.scribe:not([data-theme="light"]) .shiki),
+    :where(.scribe:not([data-theme="light"]) .shiki span) {
+      color: var(--shiki-dark, var(--shiki-light, inherit));
+    }
+  }
+
+  :where(.scribe[data-theme="dark"] .shiki),
+  :where(.scribe[data-theme="dark"] .shiki span) {
+    color: var(--shiki-dark, var(--shiki-light, inherit));
+  }
+}
+
+@layer scribe.foundation.utilities {
+  :where(.scribe .scribe-wide) {
+    inline-size: min(var(--scribe-wide-width), 100%);
+    max-inline-size: 100%;
+  }
+
+  :where(.scribe .scribe-visually-hidden) {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    border: 0;
+    white-space: nowrap;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :where(.scribe *, .scribe *::before, .scribe *::after) {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+
+  @media print {
+    :where(.scribe .scribe-copy-button) {
+      display: none;
+    }
+
+    :where(.scribe .scribe-code-frame, .scribe .scribe-table-scroll, .scribe .scribe-figure) {
+      max-inline-size: 100%;
+      break-inside: avoid;
+      box-shadow: none;
+    }
+
+    :where(.scribe .scribe-table-scroll, .scribe .scribe-code-frame__pre) {
+      overflow: visible !important;
+    }
+  }
+}

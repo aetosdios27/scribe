@@ -1,5 +1,3 @@
-import type { ElementType } from "react";
-
 import { Banner, Callout, CodeFrame, Figure, Publication, ScribeImage } from "./components.js";
 import {
   Anchor,
@@ -34,7 +32,8 @@ export type {
   PublicationProps
 } from "./components.js";
 
-export type ScribeComponents = Record<string, NonNullable<ElementType>>;
+/** A framework-neutral MDX component map accepted by MDX 3 renderers. */
+export type ScribeComponents = Record<string, any>;
 
 const defaults: ScribeComponents = {
   wrapper: Publication,

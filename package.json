@@ -8,6 +8,7 @@
     "tests/integration/*"
   ],
   "overrides": {
+    "@types/mdx": "2.0.14",
     "postcss": "8.5.19"
   },
   "scripts": {
@@ -31,6 +32,7 @@
     "test:browser:firefox": "playwright test --config playwright.config.ts --project=firefox",
     "test:browser:webkit": "playwright test --config playwright.config.ts --project=webkit",
     "test:portability": "node scripts/test-portable-cli.mjs",
+    "test:studio:browser": "playwright test --config playwright.studio.config.ts",
     "test:release": "node scripts/check-release-alignment.mjs && vitest run tests/release",
     "test:visual": "node scripts/run-helium-visual.mjs",
     "test:visual:helium": "node scripts/run-helium-visual.mjs",

@@ -34,7 +34,7 @@ describe("public CI contract", () => {
   it("documents WebKit as unverified rather than a release gate", async () => {
     const releasing = await text("RELEASING.md");
 
-    expect(releasing).toContain("WebKit and Safari behavior are not verified in this alpha");
+    expect(releasing).toContain("WebKit and Safari behavior are not verified for this release");
     expect(releasing).toContain("bun run test:browser:chromium");
     expect(releasing).toContain("bun run test:browser:firefox");
     expect(releasing).not.toContain("Run portable Chromium, Firefox, and WebKit behavior tests");
@@ -65,6 +65,13 @@ describe("public CI contract", () => {
       "test:portability": "node scripts/test-portable-cli.mjs",
       "portability:check": "node scripts/check-portability.mjs"
     });
+  });
+
+  it("runs the Studio browser flow in hosted Chromium without making it a visual baseline", async () => {
+    const workflow = await text(".github/workflows/ci.yml");
+
+    expect(workflow).toContain("bun run test:studio:browser");
+    expect(workflow).toContain("matrix.browser == 'chromium'");
   });
 
   it("keeps portable Playwright independent from Helium", async () => {
@@ -116,7 +123,7 @@ async function text(relativePath: string): Promise<string> {
 async function repositoryFiles(directory: string, prefix = ""): Promise<string[]> {
   const files: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if ([".git", ".next", ".scribe-pack", ".scribe-release", "dist", "node_modules", "out", "playwright-report", "test-results"].includes(entry.name)) continue;
+    if ([".git", ".next", ".scribe-local", ".scribe-pack", ".scribe-release", "dist", "node_modules", "out", "playwright-report", "test-results"].includes(entry.name)) continue;
     const relative = join(prefix, entry.name);
     if (entry.isDirectory()) files.push(...await repositoryFiles(join(directory, entry.name), relative));
     else if (entry.isFile() && /\.(?:json|md|mjs|ts|tsx|yml|yaml)$/u.test(entry.name)) files.push(relative);

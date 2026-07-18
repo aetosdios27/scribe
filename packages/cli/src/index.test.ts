@@ -20,6 +20,11 @@ it("prints readable help and succeeds", async () => {
 
   expect(await main(["--help"])).toBe(0);
   expect(write.mock.calls.join("\n")).toContain("scb validate <article.mdx> [--strict]");
+  expect(write.mock.calls.join("\n")).toContain("scb init [--dry-run]");
+  expect(write.mock.calls.join("\n")).toContain("scb studio <article.mdx>");
+  expect(write.mock.calls.join("\n")).toContain("public alpha");
+  expect(write.mock.calls.join("\n")).not.toContain("beta");
+  expect(write.mock.calls.join("\n")).toContain("host-owned React site");
 });
 
 it("uses status 2 when no command is supplied", async () => {
@@ -102,6 +107,13 @@ it("uses status 2 for invalid command usage", async () => {
 
   expect(await main(["inspect", "article.mdx"])).toBe(2);
   expect(stderr.mock.calls.join("\n")).toContain('Unknown command "inspect".');
+});
+
+it("prints command-specific init help", async () => {
+  const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+  expect(await main(["init", "--help"])).toBe(0);
+  expect(write.mock.calls.join("\n")).toContain("scb init --mode foundation");
 });
 
 it("recognizes a symlinked installed binary as the entrypoint", () => {

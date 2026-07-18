@@ -1,0 +1,38 @@
+@import "./foundation.css";
+
+/* Tailwind Typography owns prose typography; Scribe supplies only publishing mechanics here. */
+@layer scribe.tailwind {
+  :where(.scribe) {
+    --scribe-content-width: 100%;
+    --scribe-wide-width: 100%;
+  }
+
+  :where(.scribe .scribe-code-frame__pre) {
+    max-width: 100%;
+    color: var(--shiki-light, var(--tw-prose-pre-code, var(--scribe-foreground)));
+    background-color: var(--tw-prose-pre-bg, transparent) !important;
+  }
+
+  :where(.scribe .scribe-code-frame__pre code)::before,
+  :where(.scribe .scribe-code-frame__pre code)::after,
+  :where(.scribe table :is(th, td) code)::before,
+  :where(.scribe table :is(th, td) code)::after {
+    content: none;
+  }
+
+  :where(.scribe .scribe-copy-button) {
+    appearance: none;
+    margin: 0;
+    text-transform: none;
+  }
+
+}
+
+/* This bridge stays unlayered so it can match compiled Tailwind v3 Typography output. */
+.prose :where(.scribe > :first-child) {
+  margin-block-start: 0;
+}
+
+.prose :where(.scribe > :last-child) {
+  margin-block-end: 0;
+}

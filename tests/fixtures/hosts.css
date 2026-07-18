@@ -66,3 +66,64 @@ body {
   font: 0.75rem/1.4 ui-monospace, monospace;
   opacity: 0.7;
 }
+
+.fixture-continuity {
+  padding: 2rem;
+}
+
+.fixture-continuity__pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2rem;
+  align-items: start;
+}
+
+.fixture-continuity [data-continuity] {
+  min-inline-size: 0;
+}
+
+.fixture-continuity [data-continuity="before"] :is(.scribe-table-scroll, .scribe-code-frame__pre) {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.custom-prose {
+  --font-mono: "Courier New", Courier, monospace;
+  inline-size: min(100%, 44rem);
+  color: #2c2824;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 18px;
+  line-height: 1.62;
+}
+
+.custom-prose code {
+  font-family: var(--font-mono);
+}
+
+.custom-prose p {
+  margin-block: 13px 21px;
+}
+
+.custom-prose h1 {
+  margin-block: 0 29px;
+  font-family: Inter, Arial, sans-serif;
+  font-size: 42px;
+  line-height: 1.08;
+}
+
+.custom-prose h2 {
+  margin-block: 47px 17px;
+  font-family: Inter, Arial, sans-serif;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+@media (max-width: 760px) {
+  .fixture-continuity {
+    padding: 1rem;
+  }
+
+  .fixture-continuity__pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

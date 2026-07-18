@@ -6,16 +6,16 @@ Scribe is an open-source publishing SDK that turns ordinary Markdown, MDX, seman
 
 Scribe is for developers who already own a React website built with Next.js or Vite and want publication-grade typography, code, tables, banners, callouts, figures, responsive behavior, and accessibility without assembling a publishing design system themselves. It transforms semantic article content at build time and renders it through a small React component map plus scoped CSS.
 
-Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor, proprietary content format, collaboration service, or replacement for React, Next.js, MDX, routing, deployment, analytics, or content storage. The first prerelease is tested against React 19.2.7, Next.js 16.2.10, Vite 8.1.3, and MDX 3.1.1. Broader compatibility will be validated through real integrations.
+Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor, proprietary content format, collaboration service, or replacement for React, Next.js, MDX, routing, deployment, analytics, or content storage. The public alpha is tested against React 19.2.7, Next.js 16.2.10, Vite 8.1.3, and MDX 3.1.1. Broader compatibility will be validated through real integrations.
 
 ## Packages
 
 | Package | Purpose | Public entry points |
 | --- | --- | --- |
 | `@scribe-sdk/react` | Publication boundary, component map, and editorial primitives | package root |
-| `@scribe-sdk/styles` | Scoped behavioral publishing CSS | `@scribe-sdk/styles/default.css` |
-| `@scribe-sdk/mdx` | Shared compile-time MDX configuration and validation | package root, `/next`, `/remark`, `/rehype` |
-| `@scribe-sdk/cli` | The `scb validate` command | `scb` binary |
+| `@scribe-sdk/styles` | Scoped publishing mechanics and optional editorial presentation | `/foundation.css`, `/default.css`, `/tailwind.css` |
+| `@scribe-sdk/mdx` | Shared compile-time MDX configuration and validation | package root, `/next`, `/next-remote`, `/remark`, `/rehype` |
+| `@scribe-sdk/cli` | Validation, deliberate setup, and the local authoring Studio | `scb` binary |
 
 Each installed package includes the same canonical `SKILL.md`. Agents can discover it at `node_modules/@scribe-sdk/<package>/SKILL.md`; the repository source of truth is [`SKILL.md`](./SKILL.md).
 
@@ -35,13 +35,52 @@ npm install @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alp
 npm install --save-dev @scribe-sdk/cli@alpha
 ```
 
-Import the stylesheet once from your application shell:
+Package installation is inert: it does not edit source files, run project detection, or make network calls beyond normal package-manager behavior. Inspect a proposed integration explicitly:
+
+```bash
+bunx scb init --dry-run
+```
+
+## Choose a style mode
+
+The host owns design; Scribe owns structure and behavior. Import one stylesheet from the application shell:
+
+| Mode | Use when | Import |
+| --- | --- | --- |
+| Foundation | The site already owns article typography, density, and width | `@scribe-sdk/styles/foundation.css` |
+| Default | The site needs a complete editorial preset | `@scribe-sdk/styles/default.css` |
+| Tailwind | Tailwind Preflight or Typography owns a `.prose` contract | `@scribe-sdk/styles/tailwind.css` |
+
+Foundation supplies containment, overflow, controls, anchors, figures, accessibility, print, and reduced-motion mechanics while inheriting host typography and rhythm. Default layers Scribe’s polished editorial scale on those mechanics. Tailwind preserves the host’s `.prose` typography while repairing code-frame, table, anchor, figure, and control behavior after Preflight.
+
+For a raw site:
 
 ```tsx
 import "@scribe-sdk/styles/default.css";
 ```
 
-Scribe ships no fonts and requires no Tailwind configuration.
+For a Tailwind Typography site, keep the existing `.prose` wrapper and load Scribe after Tailwind’s CSS entry:
+
+```css
+@import "tailwindcss";
+@import "@scribe-sdk/styles/tailwind.css";
+@plugin "@tailwindcss/typography";
+```
+
+Scribe ships no fonts and does not clone Tailwind Typography.
+
+## Initialize an existing project
+
+Run initialization deliberately after installation:
+
+```bash
+bunx scb init --dry-run
+bunx scb init
+```
+
+`init` inspects React, Next.js or Vite, Tailwind v3/v4, Typography and `.prose`, existing MDX integrations and plugins, syntax highlighters, global CSS, component maps, and current Scribe wiring. It recommends `foundation`, `default`, or `tailwind`, reports every proposed command and file edit, and asks before mutation. Use `--mode foundation|default|tailwind` to override the recommendation or `--yes` for a reviewed non-interactive plan.
+
+Initialization is minimal and idempotent. It does not replace existing remark/rehype plugins or remove another highlighter automatically; ambiguous configuration becomes a precise manual step. Roll back by reverting only the files listed in its completion report and removing the displayed packages.
 
 ## Next.js MDX integration
 
@@ -89,6 +128,28 @@ export default function Page() {
 ```
 
 The component map supplies `Publication` as the MDX wrapper, so individual Markdown elements do not need manual wrappers.
+
+## Next.js with `next-mdx-remote/rsc`
+
+`next-mdx-remote/rsc` compiles source through a server/runtime API, not the `@next/mdx` loader. Use its dedicated adapter directly in the `MDXRemote` `options` prop:
+
+```tsx
+import { createScribeRemoteMdxOptions } from "@scribe-sdk/mdx/next-remote";
+import { createScribeComponents } from "@scribe-sdk/react";
+import { MDXRemote } from "next-mdx-remote/rsc";
+
+export function RemoteArticle({ source }: { source: string }) {
+  return (
+    <MDXRemote
+      source={source}
+      options={createScribeRemoteMdxOptions({ strict: true })}
+      components={createScribeComponents()}
+    />
+  );
+}
+```
+
+Do not pass `createScribeNextMdxOptions()` here; that helper emits the serializable loader-oriented shape for `@next/mdx`. Preserve one compilation pipeline. If the host already has remark or rehype behavior, merge its plugin arrays with the arrays inside `createScribeRemoteMdxOptions().mdxOptions` rather than mounting a second `MDXRemote` pass.
 
 ## Vite MDX integration
 
@@ -253,7 +314,7 @@ Set tokens on the publication boundary or an ancestor. Scribe first reads common
 
 ### CSS token reference
 
-| Token | Value type and purpose | Neutral fallback | Example |
+| Token | Value type and purpose | Foundation / default value | Example |
 | --- | --- | --- | --- |
 | `--scribe-font-body` | font-family for prose | `var(--font-body, inherit)` | `"Source Serif 4", serif` |
 | `--scribe-font-heading` | font-family for headings | `var(--font-heading, inherit)` | `Inter, sans-serif` |
@@ -266,18 +327,48 @@ Set tokens on the publication boundary or an ancestor. Scribe first reads common
 | `--scribe-surface` | subtle component surface | `var(--card, color-mix(in oklab, currentColor 4%, transparent))` | `#fafaf7` |
 | `--scribe-surface-strong` | stronger header or control surface | `var(--muted, color-mix(in oklab, currentColor 8%, transparent))` | `#f0f0eb` |
 | `--scribe-selection` | text selection background | accent mixed to 22% | `rgb(124 58 237 / 22%)` |
-| `--scribe-content-width` | main reading measure | `70ch` | `66ch` |
-| `--scribe-wide-width` | maximum breakout width | `min(92rem, calc(100vw - 2rem))` | `80rem` |
-| `--scribe-radius` | component corner radius | `var(--radius, 0.75rem)` | `0.4rem` |
-| `--scribe-gutter` | responsive article gutter | `clamp(1rem, 4vw, 2.5rem)` | `clamp(1rem, 3vw, 2rem)` |
+| `--scribe-content-width` | main reading measure | `100%` / `70ch` | `66ch` |
+| `--scribe-wide-width` | maximum breakout width | `100%` / `min(92rem, calc(100vw - 2rem))` | `80rem` |
+| `--scribe-radius` | component corner radius | `var(--radius, 0.5rem)` / `var(--radius, 0.75rem)` | `0.4rem` |
+| `--scribe-gutter` | responsive article gutter | `0px` / `clamp(1rem, 4vw, 2.5rem)` | `clamp(1rem, 3vw, 2rem)` |
 | `--scribe-rule` | horizontal rule thickness | `1px` | `2px` |
-| `--scribe-leading` | prose line-height number | `1.78` | `1.72` |
+| `--scribe-body-size` | article body font size | `inherit` / `clamp(1rem, 0.97rem + 0.15vw, 1.075rem)` | `1rem` |
+| `--scribe-leading` | prose line height | `inherit` / `1.78` | `1.72` |
+| `--scribe-paragraph-spacing` | paragraph block margins | `inherit` / `1.35em 0` | `1em 0` |
+| `--scribe-section-spacing` | major heading rhythm | `inherit` / `clamp(3.8rem, 9cqi, 6.5rem)` | `4rem` |
+| `--scribe-h1-size` | H1 font size | `inherit` / `clamp(2.35rem, 1.7rem + 2.8cqi, 4.8rem)` | `3rem` |
+| `--scribe-h1-spacing` | H1 block margins | `inherit` / `0 1.8rem` | `0 1.5rem` |
+| `--scribe-h2-size` | H2 font size | `inherit` / `clamp(1.72rem, 1.45rem + 1.15cqi, 2.55rem)` | `2rem` |
+| `--scribe-h2-spacing` | H2 block margins | `inherit` / `var(--scribe-section-spacing) 1.15rem` | `4rem 1rem` |
+| `--scribe-h3-size` | H3 font size | `inherit` / `clamp(1.35rem, 1.22rem + 0.55cqi, 1.72rem)` | `1.5rem` |
+| `--scribe-h3-spacing` | H3 block margins | `inherit` / `3.15rem 0.9rem` | `2.5rem 0.75rem` |
 | `--scribe-code-size` | inline and block code scale | `0.875em` | `0.9em` |
+| `--scribe-control-size` | compact control hit-target size | `2rem` | `2.25rem` |
+| `--scribe-code-block-padding-block` | code-frame vertical density | `1rem` / `clamp(1rem, 3cqi, 1.45rem)` | `0.875rem` |
+| `--scribe-code-block-padding-inline` | code-frame horizontal density | `1rem` / `clamp(1rem, 3cqi, 1.45rem)` | `1.25rem` |
+| `--scribe-code-leading` | block-code line height | `1.6` / `1.7` | `1.55` |
+| `--scribe-table-cell-padding-block` | table vertical density | `0.625rem` / `0.8rem` | `0.5rem` |
+| `--scribe-table-cell-padding-inline` | table horizontal density | `0.75rem` / `clamp(0.85rem, 2.5cqi, 1.25rem)` | `0.75rem` |
 | `--scribe-shadow` | restrained code-frame shadow | `0 1.25rem 3rem color-mix(in oklab, #000 12%, transparent)` | `none` |
 
 Scribe follows `prefers-color-scheme` when the host provides no explicit mode. Set `data-theme="light"` or `data-theme="dark"` on `.scribe` when the host already has a runtime toggle. Scribe owns color-scheme-aware article styles; the host owns the toggle, persistence, and application chrome.
 
 Reduced-motion preferences disable nonessential transitions. Print styles remove interactive copy controls and preserve readable code and links.
+
+## Local authoring Studio
+
+Open a source-authoritative local workspace for one Markdown or MDX file:
+
+```bash
+bunx scb studio ./content/article.mdx
+bunx scb studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
+```
+
+Studio provides a source pane, real Scribe preview, explicit save, unsaved and external-change conflict states, validation diagnostics, style modes, light/dark previews, and desktop/tablet/mobile widths. It binds to `127.0.0.1`, opens the browser unless `--no-open` is supplied, performs no telemetry, and keeps the file as the source of truth. It is not a WYSIWYG editor and never stores a proprietary document.
+
+MDX is executable local project content; open only files you trust. `--host-css` loads one explicit local stylesheet. It does not crawl the application or reproduce framework processing automatically: Tailwind directives, CSS imports, asset URLs, and fonts may require a separately compiled CSS artifact. Studio writes only after Save, uses an atomic replacement, preserves LF/CRLF line endings, and refuses to overwrite an externally changed file until the conflict is resolved.
+
+Use `--port 4317` to select a port and `--no-open` for headless workflows. Stop the local server with the CLI process.
 
 ## Validate and troubleshoot
 
@@ -305,11 +396,19 @@ Diagnostics include the file, position when available, severity, stable code, an
 
 If rendering differs between the Vite and Next builds, confirm that both use the matching `@scribe-sdk/mdx` version and the shared helper. If a table is not scrollable, confirm that the stylesheet is imported and the article renders beneath `.scribe`. Do not add host CSS solely to conceal a Scribe defect; reduce the case and report it at <https://github.com/aetosdios27/scribe/issues>.
 
+## Migrating from `0.1.0-alpha.2`
+
+- Existing `default.css` imports remain supported and retain the complete editorial preset.
+- Established sites that already own article typography should switch to `foundation.css` after reviewing `scb init --dry-run` and before/after computed styles.
+- Tailwind Typography sites should use `tailwind.css` and keep their `.prose` wrapper.
+- `next-mdx-remote/rsc` integrations should replace loader-shaped configuration with `createScribeRemoteMdxOptions()` from `@scribe-sdk/mdx/next-remote`.
+- Installation performs no migration. `scb init` reports and confirms any safe edits; existing plugins and highlighters remain untouched unless the owner changes them explicitly.
+
 ## Responsibility boundary
 
-Scribe owns publication rendering, semantic component mappings, responsive article behavior, scoped publishing CSS, compile-time highlighting, and article diagnostics. The host owns routing, page metadata, deployment, analytics, content storage, runtime theme switching, and any framework-specific image optimization.
+Scribe owns publication structure, semantic component mappings, responsive article behavior, compile-time highlighting, controls, accessibility mechanics, print behavior, and article diagnostics. The host owns typography, density, colors, visual identity, routing, page metadata, deployment, analytics, content storage, runtime theme switching, and framework-specific image optimization.
 
-The alpha API may evolve before a stable release. Framework support remains intentionally narrow while real integrations validate the product.
+Scribe is in public alpha. The API may evolve before a stable release, and framework support remains intentionally narrow while real integrations validate the product.
 
 ## License
 

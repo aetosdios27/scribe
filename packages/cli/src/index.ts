@@ -7,16 +7,21 @@ import { fileURLToPath } from "node:url";
 
 import { compileScribeMdx } from "@scribe-sdk/mdx";
 
+import { initHelp, runInit } from "./init.js";
+import { runStudio, studioHelp } from "./studio.js";
+
 export const version = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ).version as string;
 
 const help = `Scribe ${version}
 
-Validate technical articles through Scribe's production MDX compiler.
+Scribe is in public alpha. Add technical-publishing structure and behavior to a host-owned React site.
 
 Usage:
   scb validate <article.mdx> [--strict]
+  scb init [--dry-run] [--mode foundation|default|tailwind] [--yes]
+  scb studio <article.mdx> [--mode foundation|default|tailwind] [--host-css <file>] [--port 4317] [--no-open]
   scb --help
   scb --version
 
@@ -31,7 +36,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     process.stdout.write(`${version}\n`);
     return 0;
   }
-  if (args.includes("--help") || args.includes("-h")) {
+  if ((args.includes("--help") || args.includes("-h")) && args[0] !== "init" && args[0] !== "studio") {
     process.stdout.write(help);
     return 0;
   }
@@ -41,6 +46,20 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
   }
 
   const [command, ...rest] = args;
+  if (command === "init") {
+    if (rest.includes("--help") || rest.includes("-h")) {
+      process.stdout.write(initHelp);
+      return 0;
+    }
+    return runInit(rest, { version });
+  }
+  if (command === "studio") {
+    if (rest.includes("--help") || rest.includes("-h")) {
+      process.stdout.write(studioHelp);
+      return 0;
+    }
+    return runStudio(rest);
+  }
   if (command !== "validate") {
     process.stderr.write(`Unknown command "${String(command)}". Run \`scb --help\` for usage.\n`);
     return 2;

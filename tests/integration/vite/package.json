@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "node ../../../scripts/build-style-fixtures.mjs",
     "build": "vite build",
+    "predev": "node ../../../scripts/build-style-fixtures.mjs",
     "dev": "vite"
   },
   "dependencies": {

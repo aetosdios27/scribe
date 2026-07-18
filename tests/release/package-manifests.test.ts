@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
-const version = "0.1.0-alpha.2";
+const version = "0.1.0-alpha.3";
 const packageNames = ["react", "styles", "mdx", "cli"] as const;
 const packageFiles = {
   react: ["dist", "README.md", "SKILL.md", "LICENSE"],
-  styles: ["default.css", "README.md", "SKILL.md", "LICENSE"],
+  styles: ["foundation.css", "default.css", "tailwind.css", "README.md", "SKILL.md", "LICENSE"],
   mdx: ["dist", "README.md", "SKILL.md", "LICENSE"],
   cli: ["dist", "README.md", "SKILL.md", "LICENSE"]
 } as const;
@@ -17,7 +17,7 @@ describe("publishable package manifests", () => {
   it("pins the audited PostCSS override for workspace framework fixtures", async () => {
     const manifest = await readJson(join(root, "package.json"));
 
-    expect(manifest.overrides).toEqual({ postcss: "8.5.19" });
+    expect(manifest.overrides).toEqual({ "@types/mdx": "2.0.14", postcss: "8.5.19" });
   });
 
   it.each(packageNames)("hardens @scribe-sdk/%s for npm publication", async (directory) => {
@@ -70,15 +70,23 @@ describe("publishable package manifests", () => {
     expect(manifest.sideEffects).toBe(false);
   });
 
-  it("preserves stylesheet side effects and only the supported CSS entry", async () => {
+  it("publishes all three explicit stylesheet modes as side effects", async () => {
     const manifest = await readJson(join(root, "packages/styles/package.json"));
-    expect(manifest.exports).toEqual({ "./default.css": "./default.css" });
-    expect(manifest.sideEffects).toEqual(["./default.css"]);
+    expect(manifest.exports).toEqual({
+      "./foundation.css": "./foundation.css",
+      "./default.css": "./default.css",
+      "./tailwind.css": "./tailwind.css"
+    });
+    expect(manifest.sideEffects).toEqual([
+      "./foundation.css",
+      "./default.css",
+      "./tailwind.css"
+    ]);
   });
 
   it("publishes only intentional MDX subpaths", async () => {
     const manifest = await readJson(join(root, "packages/mdx/package.json"));
-    expect(Object.keys(manifest.exports)).toEqual([".", "./next", "./remark", "./rehype"]);
+    expect(Object.keys(manifest.exports)).toEqual([".", "./next", "./next-remote", "./remark", "./rehype"]);
     expect(manifest.sideEffects).toBe(false);
     expect(manifest.engines).toEqual({ node: ">=20.19.0" });
     expect(manifest).toMatchObject({
@@ -92,7 +100,15 @@ describe("publishable package manifests", () => {
     const manifest = await readJson(join(root, "packages/cli/package.json"));
     expect(manifest.bin).toEqual({ scb: "./dist/index.mjs" });
     expect(manifest.exports).toEqual({});
-    expect(manifest.dependencies).toEqual({ "@scribe-sdk/mdx": version });
+    expect(manifest.dependencies).toEqual({
+      "@mdx-js/rollup": "3.1.1",
+      "@scribe-sdk/mdx": version,
+      "@scribe-sdk/react": version,
+      "@scribe-sdk/styles": version,
+      "@vitejs/plugin-react": "6.0.3",
+      vite: "8.1.3"
+    });
+    expect(manifest.peerDependencies).toEqual({ react: "19.2.7", "react-dom": "19.2.7" });
     expect(manifest.engines).toEqual({ node: ">=20.19.0" });
   });
 });

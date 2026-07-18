@@ -90,7 +90,7 @@ The curated bootstrap fragment generated `0.1.0-alpha.2` from the already prepar
 
 ## Compatibility verification model
 
-GitHub CI smoke-tests package installation, declarations, builds, and the CLI on Linux, Windows, and macOS. Required portable browser behavior runs against Playwright-managed Chromium and Firefox. WebKit and Safari behavior are not verified in this alpha, so do not claim Safari compatibility. The local WebKit command remains available for investigation but is not a release gate. Chromium-family products are covered primarily through the Chromium engine suite.
+GitHub CI smoke-tests package installation, declarations, builds, and the CLI on Linux, Windows, and macOS. Required portable browser behavior runs against Playwright-managed Chromium and Firefox. WebKit and Safari behavior are not verified for this release, so do not claim Safari compatibility. The local WebKit command remains available for investigation but is not a release gate. Chromium-family products are covered primarily through the Chromium engine suite.
 
 Helium Chromium 150 remains the canonical pixel-regression environment on the maintainer’s controlled machine. Contributors and Scribe users do not need Helium: it is not packaged or used at runtime. Host fonts can rasterize differently across operating systems, so portable tests guarantee semantic behavior and layout invariants rather than identical glyph pixels.
 
@@ -107,7 +107,7 @@ The optional WebKit diagnostic command is:
 bun run test:browser:webkit
 ```
 
-When Helium is installed locally, run the six canonical snapshots with:
+When Helium is installed locally, run the canonical article and visual-continuity snapshots with:
 
 ```bash
 bun run test:visual:helium
@@ -134,8 +134,10 @@ After versioning, run every gate from the repository root:
 - [ ] Run TypeScript 6 with library checking enabled: `node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`
 - [ ] Run unit, transformation, diagnostics, and release tests: `bun run test`
 - [ ] Build all packages: `bun run build`
-- [ ] Build Vite for production: `bun --cwd tests/integration/vite run build`
-- [ ] Build Next.js for production: `bun --cwd tests/integration/next run build`
+- [ ] Build Vite for production: `bun run --cwd tests/integration/vite build`
+- [ ] Build Next.js for production: `bun run --cwd tests/integration/next build`
+- [ ] Build `next-mdx-remote/rsc` for production: `bun run --cwd tests/integration/next-remote build`
+- [ ] Build the packed `next-mdx-remote/rsc` consumer through `bun run release:consumers`
 - [ ] Inspect npm dry runs: `bun run release:pack:dry`
 - [ ] Create local tarballs: `bun run release:pack`
 - [ ] Inspect tarball contents, manifests, declarations, README, SKILL, LICENSE, and repository-only exclusions: `bun run release:inspect`
@@ -144,6 +146,8 @@ After versioning, run every gate from the repository root:
 - [ ] Check the packaged CLI version and help from the packed consumer: `bunx scb --version` and `bunx scb --help`
 - [ ] Validate valid and invalid article fixtures through the packaged CLI
 - [ ] Run required portable browser behavior: `bun run test:browser:chromium` and `bun run test:browser:firefox`
+- [ ] Run the Studio edit, save, invalid-source, and recovery flow: `bun run test:studio:browser`
+- [ ] Review foundation, Tailwind v3, and Tailwind v4 computed-style continuity assertions in both portable browser suites
 - [ ] Run the canonical Helium Chromium 150 visual suite in required mode: `bun run release:visual`
 - [ ] Visually inspect every PNG under `tests/visual/screenshots/` without regenerating baselines
 - [ ] Inspect browser bundles for Shiki, Oniguruma, grammar, theme, MDX, unified, remark, rehype, Node, and WASM payloads: `bun run release:bundle-scan`

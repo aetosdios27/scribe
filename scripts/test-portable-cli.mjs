@@ -29,14 +29,16 @@ try {
     name: "scribe-portability-smoke",
     private: true,
     type: "module",
-    dependencies,
-    overrides: { "@scribe-sdk/mdx": dependencies["@scribe-sdk/mdx"] }
+    dependencies: { ...dependencies, react: "19.2.7", vite: "8.1.3" },
+    overrides: dependencies
   }, null, 2));
 
   const valid = join(articleDirectory, "valid article.mdx");
   const invalid = join(articleDirectory, "invalid article.mdx");
   await write(valid, "# Portable article\r\n\r\n```ts filename=\"src/portable.ts\" lineNumbers highlight=\"1\"\r\nexport const portable = true\r\n```\r\n");
   await write(invalid, '<Callout variant="warnng">Typo</Callout>\r\n');
+  const globalStyle = join(directory, "src", "index.css");
+  await write(globalStyle, "body { margin: 0; }\r\n");
 
   run(executable("bun"), ["install"], directory);
   run(executable("bun"), ["install", "--frozen-lockfile"], directory);
@@ -44,6 +46,12 @@ try {
   const reportedVersion = runCli(["--version"]).stdout.trim();
   assert(reportedVersion === version, `scb reported ${reportedVersion}; expected ${version}.`);
   runCli(["--help"]);
+  runCli(["init", "--help"]);
+  runCli(["studio", "--help"]);
+  const beforeInit = await readFile(globalStyle, "utf8");
+  const dryRun = runCli(["init", "--dry-run"]);
+  assert(dryRun.stdout.includes("Recommended style mode: default"), "Init dry run did not recommend default mode for the raw Vite fixture.");
+  assert(await readFile(globalStyle, "utf8") === beforeInit, "Init dry run modified the fixture.");
   const usage = runCli([], false);
   assert(usage.status === 2, `scb without arguments exited ${usage.status}; expected 2.`);
 

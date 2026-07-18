@@ -6,6 +6,8 @@ coverage/
 playwright-report/
 test-results/
 *.tgz
+*.tsbuildinfo
 .scribe-pack/
 .scribe-local/
 .scribe-release/
+tests/integration/vite/public/generated/

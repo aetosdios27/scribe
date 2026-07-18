@@ -1,5 +1,20 @@
 # @scribe-sdk/cli
 
+## 0.1.0-alpha.3
+
+### Minor Changes
+
+- Make Scribe's public alpha safe for established React sites: add foundation, default, and Tailwind style modes that preserve host-owned typography; add explicit, idempotent `scb init`; add a dedicated `next-mdx-remote/rsc` adapter; add the local source-authoritative Scribe Studio; and strengthen computed-style and visual-continuity verification.
+
+- Existing `default.css` imports remain supported. Established sites should use `foundation.css`, Tailwind Typography sites should use `tailwind.css`, and `next-mdx-remote/rsc` integrations should use `createScribeRemoteMdxOptions()` from `@scribe-sdk/mdx/next-remote`.
+
+### Patch Changes
+
+- Updated dependencies
+  - @scribe-sdk/react@0.1.0-alpha.3
+  - @scribe-sdk/styles@0.1.0-alpha.3
+  - @scribe-sdk/mdx@0.1.0-alpha.3
+
 ## 0.1.0-alpha.2
 
 ### Minor Changes

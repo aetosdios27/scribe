@@ -8,7 +8,8 @@ async function openArticle(
     theme?: "light" | "dark";
     host?: "neutral" | "branded";
     hostile?: boolean;
-    fixture?: "article" | "banner-no-image";
+    fixture?: "article" | "banner-no-image" | "continuity";
+    style?: "default" | "foundation" | "tailwind-v3" | "tailwind-v4";
     viewport?: { width: number; height: number };
   } = {}
 ) {
@@ -17,7 +18,8 @@ async function openArticle(
     theme: options.theme ?? "light",
     host: options.host ?? "neutral",
     hostile: String(options.hostile ?? false),
-    fixture: options.fixture ?? "article"
+    fixture: options.fixture ?? "article",
+    style: options.style ?? "default"
   });
   await page.goto(`/?${query}`);
   await page.evaluate(() => document.fonts.ready);
@@ -54,5 +56,38 @@ test.describe("canonical Helium editorial article", () => {
     await openArticle(page, { fixture: "banner-no-image" });
     await expect(page.locator(".scribe-banner__media")).toHaveCount(0);
     await expect(page).toHaveScreenshot("banner-without-image.png", { fullPage: true });
+  });
+});
+
+test.describe("host visual continuity", () => {
+  test("foundation preserves the established article on desktop", async ({ page }) => {
+    await openArticle(page, { fixture: "continuity", style: "foundation" });
+    await expect(page).toHaveScreenshot("continuity-foundation-desktop.png", { fullPage: true });
+  });
+
+  test("foundation preserves the established article on mobile", async ({ page }) => {
+    await openArticle(page, { fixture: "continuity", style: "foundation", viewport: { width: 390, height: 844 } });
+    await expect(page).toHaveScreenshot("continuity-foundation-mobile.png", { fullPage: true });
+  });
+
+  for (const style of ["tailwind-v3", "tailwind-v4"] as const) {
+    test(`${style} preserves prose typography`, async ({ page }) => {
+      await openArticle(page, { fixture: "continuity", style });
+      await expect(page).toHaveScreenshot(`continuity-${style}-desktop.png`, { fullPage: true });
+    });
+  }
+
+  test("captures code, table, and heading mechanics", async ({ page }) => {
+    await openArticle(page, { fixture: "continuity", style: "foundation" });
+    const after = page.locator("[data-continuity='after']");
+    await expect(after.locator(".scribe-code-frame")).toHaveScreenshot("continuity-code-frame.png");
+    await expect(after.locator(".scribe-table-scroll")).toHaveScreenshot("continuity-wide-table.png");
+    await expect(after.locator("h2")).toHaveScreenshot("continuity-heading-anchor.png");
+  });
+
+  test("captures print-safe foundation structure", async ({ page }) => {
+    await page.emulateMedia({ media: "print" });
+    await openArticle(page, { fixture: "continuity", style: "foundation" });
+    await expect(page).toHaveScreenshot("continuity-foundation-print.png", { fullPage: true });
   });
 });

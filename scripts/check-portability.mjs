@@ -54,7 +54,7 @@ process.stdout.write(`Portability scan passed across ${files.length} repository 
 async function repositoryFiles(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if ([".git", ".next", ".scribe-pack", ".scribe-release", "coverage", "dist", "node_modules", "out", "playwright-report", "test-results"].includes(entry.name)) continue;
+    if ([".git", ".next", ".scribe-local", ".scribe-pack", ".scribe-release", "coverage", "dist", "node_modules", "out", "playwright-report", "test-results"].includes(entry.name)) continue;
     const path = join(directory, entry.name);
     if (entry.isDirectory()) files.push(...await repositoryFiles(path));
     else if (entry.isFile()) files.push(normalizeRepositoryPath(relative(root, path)));

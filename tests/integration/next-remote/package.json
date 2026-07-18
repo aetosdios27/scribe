@@ -1,0 +1,22 @@
+{
+  "name": "@scribe-sdk/seam-next-remote",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build"
+  },
+  "dependencies": {
+    "@scribe-sdk/mdx": "workspace:*",
+    "@scribe-sdk/react": "workspace:*",
+    "@scribe-sdk/styles": "workspace:*",
+    "next": "16.2.10",
+    "next-mdx-remote": "6.0.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "typescript": "6.0.2"
+  }
+}

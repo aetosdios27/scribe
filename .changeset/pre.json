@@ -8,6 +8,7 @@
     "@scribe-sdk/styles": "0.1.0-alpha.1"
   },
   "changesets": [
-    "bright-pages-publish"
+    "bright-pages-publish",
+    "calm-sites-publish"
   ]
 }

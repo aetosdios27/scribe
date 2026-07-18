@@ -1,0 +1,13 @@
+{
+  "name": "@scribe-sdk/tailwind-v4-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tailwindcss -i input.css -o ../vite/public/generated/tailwind-v4.css --minify"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "@tailwindcss/typography": "0.5.20",
+    "tailwindcss": "4.3.3"
+  }
+}

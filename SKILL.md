@@ -9,11 +9,17 @@ description: Use when integrating, authoring, converting, validating, or trouble
 
 Use Scribe as publishing infrastructure inside the website the user already owns. Preserve its routing, deployment, content files, fonts, colors, spacing, and identity.
 
+The host owns visual design. Scribe owns publishing structure and behavior.
+
+When a broad request says to install Scribe or make a blog better, the default result is the existing host design with stronger publishing mechanics. Proceed with that preservation contract; do not stop to ask how extensively to redesign the site. Ask only when the repository contains genuinely conflicting visual directions or the requested change would alter product identity.
+
 Prefer ordinary Markdown and semantic HTML. Use Scribe-specific components only when richer semantics or metadata are genuinely required.
 
 Treat unexpected integration workarounds as possible Scribe defects. Do not silently patch around them in the host application.
 
 Scribe is not a CMS, hosted platform, website builder, rich-text editor, proprietary format, collaboration system, or replacement for React, Next.js, HTML, or MDX.
+
+Scribe is in public alpha. Package versions may use prerelease SemVer identifiers while the API is still evolving.
 
 ## Inspect before changing
 
@@ -26,6 +32,24 @@ Scribe is not a CMS, hosted platform, website builder, rich-text editor, proprie
 Expected packages are `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/mdx`, and development-only `@scribe-sdk/cli`. Read the installed Scribe README and `SKILL.md` before integrating. Depending on the installed package, these are available under paths such as `node_modules/@scribe-sdk/react/README.md` and `node_modules/@scribe-sdk/react/SKILL.md`. Use the packaged copies rather than relying on remembered APIs.
 
 ## Integrate the compiler
+
+Start with the deliberate detector:
+
+```bash
+bunx scb init --dry-run
+```
+
+Review the detected stack, recommended mode, touched files, commands, ambiguities, and existing highlighter warnings. Run `bunx scb init` only after the plan is safe. Installation itself is inert.
+
+Choose exactly one style mode:
+
+| Host | Mode |
+| --- | --- |
+| Established article typography | `foundation.css` |
+| Raw site with no article design | `default.css` |
+| Tailwind Preflight or Typography `.prose` | `tailwind.css` |
+
+Keep the host’s `.prose` wrapper in Tailwind mode. Do not map font roles to monospace or add compensating host CSS to imitate the pre-integration typography.
 
 For Next.js, configure the existing `@next/mdx` integration:
 
@@ -65,9 +89,23 @@ plugins: [
 
 Pass `createScribeComponents()` as the compiled article’s `components` prop in Vite.
 
+For `next-mdx-remote/rsc`, use its dedicated server-compilation adapter—not the `@next/mdx` loader helper:
+
+```tsx
+import { createScribeRemoteMdxOptions } from "@scribe-sdk/mdx/next-remote";
+import { createScribeComponents } from "@scribe-sdk/react";
+import { MDXRemote } from "next-mdx-remote/rsc";
+
+<MDXRemote
+  source={source}
+  options={createScribeRemoteMdxOptions()}
+  components={createScribeComponents()}
+/>
+```
+
 Preserve the host’s existing MDX options and plugins. Append the `remarkPlugins` and `rehypePlugins` arrays returned by the appropriate Scribe helper to the host’s existing arrays instead of replacing unrelated remark or rehype behavior. Do not create a second MDX compilation pipeline.
 
-Import `@scribe-sdk/styles/default.css` once from the host application shell. Do not copy Scribe CSS into the host.
+Import the selected packaged stylesheet once from the host application shell. Do not copy Scribe CSS into the host.
 
 ## Compose articles
 
@@ -149,6 +187,16 @@ Interpret exit codes as `0` success, `1` article validation failure, and `2` inv
 
 Then run the host’s strict TypeScript check and production build. Verify both the Scribe article and surrounding host UI in light, dark, narrow, and wide layouts. Confirm tables and code scroll internally without horizontal page overflow.
 
+For an established site, compare computed body font, body size, line height, paragraph margins, H1/H2 scale, content width, and code font before and after. Foundation and Tailwind integration is incomplete if any host-owned value changes without an explicit token override. Inspect screenshots; a green build is not visual proof.
+
+Use Studio for a source-authoritative local editing loop when helpful:
+
+```bash
+bunx scb studio path/to/article.mdx --mode foundation
+```
+
+Studio saves explicitly, detects external changes, and renders through Scribe’s real pipeline. It is local-only and not a WYSIWYG editor. Use `--host-css` only for one explicit local CSS file and account for framework preprocessing limitations.
+
 ## Diagnose the boundary
 
 Classify problems before editing:
@@ -164,8 +212,11 @@ Reduce defects to ordinary semantic content before adding CSS. Do not introduce 
 - Confirm all Scribe packages use the same version.
 - Confirm the shared MDX helper is active in development and production.
 - Confirm the packaged stylesheet is imported once.
+- Confirm the selected mode matches the host: foundation for established CSS, default for raw sites, tailwind for `.prose`.
+- Confirm host body font, size, line height, paragraph rhythm, heading scale, content width, and code font did not drift.
 - Confirm ordinary Markdown and literal JSX tables both scroll on mobile.
 - Confirm Shiki output is static and browser bundles contain no highlighter runtime.
 - Confirm copy is the only article behavior requiring hydration.
 - Confirm host fonts, colors, radius, and theme behavior remain native.
 - Run `bunx scb validate`, strict TypeScript, and the host production build.
+- Visually inspect desktop and mobile output before declaring success.

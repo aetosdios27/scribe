@@ -1,3 +1,5 @@
+@import "./foundation.css";
+
 @layer scribe.reset, scribe.base, scribe.components, scribe.utilities;
 
 @layer scribe.reset {
@@ -40,7 +42,22 @@
     --scribe-gutter: clamp(1rem, 4vw, 2.5rem);
     --scribe-rule: 1px;
     --scribe-leading: 1.78;
+    --scribe-body-size: clamp(1rem, 0.97rem + 0.15vw, 1.075rem);
+    --scribe-paragraph-spacing: 1.35em 0;
+    --scribe-section-spacing: clamp(3.8rem, 9cqi, 6.5rem);
+    --scribe-h1-size: clamp(2.35rem, 1.7rem + 2.8cqi, 4.8rem);
+    --scribe-h1-spacing: 0 1.8rem;
+    --scribe-h2-size: clamp(1.72rem, 1.45rem + 1.15cqi, 2.55rem);
+    --scribe-h2-spacing: var(--scribe-section-spacing) 1.15rem;
+    --scribe-h3-size: clamp(1.35rem, 1.22rem + 0.55cqi, 1.72rem);
+    --scribe-h3-spacing: 3.15rem 0.9rem;
     --scribe-code-size: 0.875em;
+    --scribe-control-size: 2rem;
+    --scribe-code-block-padding-block: clamp(1rem, 3cqi, 1.45rem);
+    --scribe-code-block-padding-inline: clamp(1rem, 3cqi, 1.45rem);
+    --scribe-code-leading: 1.7;
+    --scribe-table-cell-padding-block: 0.8rem;
+    --scribe-table-cell-padding-inline: clamp(0.85rem, 2.5cqi, 1.25rem);
     --scribe-shadow: 0 1.25rem 3rem color-mix(in oklab, #000 12%, transparent);
     container: scribe / inline-size;
     container-type: inline-size;
@@ -52,7 +69,7 @@
     color: var(--scribe-foreground);
     background: var(--scribe-background);
     font-family: var(--scribe-font-body);
-    font-size: clamp(1rem, 0.97rem + 0.15vw, 1.075rem);
+    font-size: var(--scribe-body-size);
     line-height: var(--scribe-leading);
     text-rendering: optimizeLegibility;
     hanging-punctuation: first last;
@@ -90,20 +107,20 @@
   }
 
   :where(.scribe h1) {
-    margin-block: 0 1.8rem;
-    font-size: clamp(2.35rem, 1.7rem + 2.8cqi, 4.8rem);
+    margin-block: var(--scribe-h1-spacing);
+    font-size: var(--scribe-h1-size);
     line-height: 1.02;
     letter-spacing: -0.045em;
   }
 
   :where(.scribe h2) {
-    margin-block: clamp(3.8rem, 9cqi, 6.5rem) 1.15rem;
-    font-size: clamp(1.72rem, 1.45rem + 1.15cqi, 2.55rem);
+    margin-block: var(--scribe-h2-spacing);
+    font-size: var(--scribe-h2-size);
   }
 
   :where(.scribe h3) {
-    margin-block: 3.15rem 0.9rem;
-    font-size: clamp(1.35rem, 1.22rem + 0.55cqi, 1.72rem);
+    margin-block: var(--scribe-h3-spacing);
+    font-size: var(--scribe-h3-size);
   }
 
   :where(.scribe h4) {
@@ -120,7 +137,7 @@
   }
 
   :where(.scribe p) {
-    margin-block: 1.35em 0;
+    margin-block: var(--scribe-paragraph-spacing);
   }
 
   :where(.scribe strong) {
@@ -288,8 +305,8 @@
   :where(.scribe table :is(th, td)) {
     min-inline-size: 8rem;
     max-inline-size: 34ch;
-    padding-block: 0.8rem;
-    padding-inline: clamp(0.85rem, 2.5cqi, 1.25rem);
+    padding-block: var(--scribe-table-cell-padding-block);
+    padding-inline: var(--scribe-table-cell-padding-inline);
     border: 0;
     border-block-end: 1px solid var(--scribe-border);
     color: inherit;
@@ -377,7 +394,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    min-block-size: 2rem;
+    min-block-size: var(--scribe-control-size);
     padding-inline: 0.62rem;
     border: 1px solid transparent;
     border-radius: calc(var(--scribe-radius) * 0.62);
@@ -410,7 +427,7 @@
   :where(.scribe .scribe-code-frame__pre) {
     max-inline-size: 100%;
     margin: 0;
-    padding-block: clamp(1rem, 3cqi, 1.45rem);
+    padding-block: var(--scribe-code-block-padding-block);
     overflow-x: auto !important;
     border: 0;
     border-radius: 0;
@@ -419,7 +436,7 @@
     font-family: var(--scribe-font-code);
     font-size: clamp(0.76rem, 0.72rem + 0.18cqi, 0.9rem);
     font-variant-ligatures: none;
-    line-height: 1.7;
+    line-height: var(--scribe-code-leading);
     tab-size: 2;
     white-space: pre !important;
   }
@@ -436,7 +453,7 @@
     position: relative;
     display: inline-block;
     min-block-size: 1.7em;
-    padding-inline: clamp(1rem, 3cqi, 1.45rem);
+    padding-inline: var(--scribe-code-block-padding-inline);
     transition: opacity 160ms ease, background 160ms ease;
   }
 

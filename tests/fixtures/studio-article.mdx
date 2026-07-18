@@ -1,0 +1,13 @@
+# Peer state transitions
+
+The local source file remains authoritative while Studio previews this article.
+
+| State | Meaning |
+| --- | --- |
+| `choked` | Upload requests are paused. |
+
+```rust filename="src/peer.rs" lineNumbers highlight="2"
+pub enum PeerState {
+    Choked,
+}
+```

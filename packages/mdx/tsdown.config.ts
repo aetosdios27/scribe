@@ -1,7 +1,7 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/next.ts", "src/remark.ts", "src/rehype.ts"],
+  entry: ["src/index.ts", "src/next.ts", "src/next-remote.ts", "src/remark.ts", "src/rehype.ts"],
   format: "esm",
   dts: true,
   clean: true,
@@ -9,4 +9,3 @@ export default defineConfig({
     skipNodeModulesBundle: true
   }
 });
-

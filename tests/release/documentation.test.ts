@@ -13,7 +13,8 @@ describe("release documentation", () => {
     expect(readme).toContain("Scribe is an open-source publishing SDK that turns ordinary Markdown, MDX, semantic HTML, and JSX into beautiful technical articles on websites you already own.");
     expect(readme).toContain("Just write. Scribe handles the rest.");
     expect(readme).toContain("developers who already own a React website built with Next.js or Vite");
-    expect(readme).toContain("The first prerelease is tested against React 19.2.7, Next.js 16.2.10, Vite 8.1.3, and MDX 3.1.1.");
+    expect(readme).toContain("The public alpha is tested against React 19.2.7, Next.js 16.2.10, Vite 8.1.3, and MDX 3.1.1.");
+    expect(readme).not.toContain("beta");
     expect(readme).toContain("bun add @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alpha");
     expect(readme).toContain('import "@scribe-sdk/styles/default.css"');
     expect(readme).toContain("createScribeNextMdxOptions");

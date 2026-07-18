@@ -5,10 +5,13 @@ const root = process.cwd();
 const targets = [
   "tests/integration/vite/dist",
   "tests/integration/next/.next/static",
+  "tests/integration/next-remote/.next/static",
   ".scribe-release/consumers/bun-vite/dist",
-  ".scribe-release/consumers/npm-next/.next/static"
+  ".scribe-release/consumers/bun-vite/foundation-dist",
+  ".scribe-release/consumers/npm-next/.next/static",
+  ".scribe-release/consumers/npm-next-remote/.next/static"
 ];
-const runtimePattern = /@shikijs|shiki\/(?:core|langs|themes|engine)|vscode-textmate|oniguruma|createHighlighter|codeToHast|bundledLanguages|@mdx-js\/mdx|(?:^|["'])unified(?:["'/])|(?:^|["'])remark-(?:parse|gfm|rehype)|(?:^|["'])rehype-(?:slug|recma)|node:(?:fs|path|url|module)/u;
+const runtimePattern = /@shikijs|shiki\/(?:core|langs|themes|engine)|vscode-textmate|oniguruma|createHighlighter|codeToHast|bundledLanguages|@mdx-js\/mdx|(?:^|["'])unified(?:["'/])|(?:^|["'])remark-(?:parse|gfm|rehype)|(?:^|["'])rehype-(?:slug|recma)|@scribe-sdk\/cli|Scribe Studio|scribe-studio-preview|node:(?:fs|path|url|module)/u;
 const assetPattern = /\.(?:wasm|tmLanguage|tmLanguage\.json)$/u;
 const findings = [];
 const copyChunks = [];
