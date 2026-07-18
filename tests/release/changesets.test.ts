@@ -29,7 +29,7 @@ describe("Changesets release policy", () => {
 
     expect(pre.mode).toBe("pre");
     expect(pre.tag).toBe("alpha");
-    expect(pre.changesets).toEqual(["bright-pages-publish", "calm-sites-publish"]);
+    expect(pre.changesets).toEqual(["bright-pages-publish", "calm-sites-publish", "steady-studios-close"]);
     expect(pre.initialVersions).toEqual(Object.fromEntries(publicPackages.map((name) => [name, "0.1.0-alpha.1"])));
   });
 
@@ -53,12 +53,12 @@ describe("Changesets release policy", () => {
     ));
     const versions = new Set(manifests.map((manifest) => manifest.version));
 
-    expect(versions).toEqual(new Set(["0.1.0-alpha.3"]));
+    expect(versions).toEqual(new Set(["0.1.0-alpha.4"]));
     expect(manifests.every((manifest) => manifest.license === "Apache-2.0")).toBe(true);
     expect(manifests.find((manifest) => manifest.name === "@scribe-sdk/cli")?.dependencies).toMatchObject({
-      "@scribe-sdk/mdx": "0.1.0-alpha.3",
-      "@scribe-sdk/react": "0.1.0-alpha.3",
-      "@scribe-sdk/styles": "0.1.0-alpha.3"
+      "@scribe-sdk/mdx": "0.1.0-alpha.4",
+      "@scribe-sdk/react": "0.1.0-alpha.4",
+      "@scribe-sdk/styles": "0.1.0-alpha.4"
     });
     expect(JSON.stringify(manifests)).not.toContain("workspace:");
   });
@@ -71,6 +71,10 @@ describe("Changesets release policy", () => {
       expect(changelog).toContain(`## 0.1.0-alpha.3`);
       expect(changelog).toContain("Make Scribe's public alpha safe for established React sites");
       expect(changelog).toContain("Existing `default.css` imports remain supported");
+      expect(changelog).toContain(`## 0.1.0-alpha.4`);
+      if (directory === "mdx" || directory === "cli") {
+        expect(changelog).toContain("Restore strict React 19 typechecking for Vite MDX configurations");
+      }
       expect(changelog).not.toContain("beta");
     }
   });

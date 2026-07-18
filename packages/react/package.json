@@ -1,6 +1,6 @@
 {
   "name": "@scribe-sdk/react",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "Host-adaptive React primitives for publication-grade technical articles.",
   "author": "aetosdios27",
   "license": "Apache-2.0",

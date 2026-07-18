@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
-const version = "0.1.0-alpha.3";
+const version = "0.1.0-alpha.4";
 const packageNames = ["react", "styles", "mdx", "cli"] as const;
 const packageFiles = {
   react: ["dist", "README.md", "SKILL.md", "LICENSE"],

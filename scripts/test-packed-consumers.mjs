@@ -56,6 +56,7 @@ async function createViteConsumer() {
     },
     devDependencies: {
       "@typescript/native": "npm:typescript@7.0.2",
+      "@types/node": "22.20.1",
       "@types/react": "19.2.17",
       "@types/react-dom": "19.2.3"
     }
@@ -283,11 +284,13 @@ async function smokeStudio(directory, articlePath) {
   const child = spawn(command, args, { cwd: directory, shell: requiresCommandShell(command), stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
+  let termination;
   child.stdout.on("data", (chunk) => { stdout += String(chunk); });
   child.stderr.on("data", (chunk) => { stderr += String(chunk); });
   try {
     await waitFor(async () => {
       if (child.exitCode !== null) throw new Error(`Packed Studio exited early:\n${stdout}\n${stderr}`);
+      if (!stdout.includes("Scribe Studio:")) return false;
       const response = await fetch(`http://127.0.0.1:${port}/__scribe/api/document`).catch(() => undefined);
       return response?.ok === true;
     }, 15_000);
@@ -296,11 +299,16 @@ async function smokeStudio(directory, articlePath) {
     const preview = await fetch(`http://127.0.0.1:${port}/preview`);
     if (!preview.ok || !(await preview.text()).includes('id="preview"')) throw new Error("Packed Studio preview did not respond.");
   } finally {
-    const closed = child.exitCode === null
-      ? new Promise((resolve) => child.once("close", resolve))
-      : Promise.resolve();
-    child.kill("SIGTERM");
-    await closed;
+    if (child.exitCode === null && child.signalCode === null) {
+      const closed = new Promise((resolve) => child.once("close", (code, signal) => resolve({ code, signal })));
+      child.kill("SIGTERM");
+      termination = await closed;
+    } else {
+      termination = { code: child.exitCode, signal: child.signalCode };
+    }
+  }
+  if (termination.code !== 0 || termination.signal !== null) {
+    throw new Error(`Packed Studio did not shut down cleanly (code ${String(termination.code)}, signal ${String(termination.signal)}):\n${stdout}\n${stderr}`);
   }
   results.push({ command: [command, ...args].join(" "), cwd: directory, status: 0, stdout: stdout.trim(), stderr: stderr.trim() });
   process.stderr.write(`✓ packed Studio loopback smoke on ${port}\n`);
@@ -352,11 +360,11 @@ async function assertPackagedSkill(directory) {
 function tsconfig() {
   return JSON.stringify({
     compilerOptions: {
-      target: "ES2022", lib: ["DOM", "ES2022"], strict: true, skipLibCheck: false,
+      target: "ES2022", lib: ["DOM", "DOM.Iterable", "ESNext"], strict: true, skipLibCheck: false,
       noEmit: true, module: "ESNext", moduleResolution: "Bundler", jsx: "react-jsx",
-      isolatedModules: true, types: ["vite/client"]
+      isolatedModules: true, types: ["node", "vite/client"]
     },
-    include: ["src"]
+    include: ["src", "vite.config.ts", "vite.foundation.config.ts"]
   }, null, 2);
 }
 

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
 import { createRequire } from "node:module";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
@@ -8,7 +9,7 @@ import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path"
 import mdx from "@mdx-js/rollup";
 import { compileScribeMdx, createScribeMdxOptions } from "@scribe-sdk/mdx";
 import react from "@vitejs/plugin-react";
-import { createServer, normalizePath, type Plugin, type ViteDevServer } from "vite";
+import { createServer as createViteServer, normalizePath, type Plugin, type ViteDevServer } from "vite";
 
 import type { StyleMode } from "./init.js";
 
@@ -148,23 +149,32 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   const articleId = `${sourcePath}.scribe-studio.mdx`;
   const runtime = studioRuntimePaths();
   let server: ViteDevServer;
+  const httpServer = createHttpServer((request, response) => {
+    server.middlewares(request, response, (error: unknown) => {
+      if (response.writableEnded) return;
+      response.statusCode = error === undefined ? 404 : 500;
+      response.end(error === undefined ? "Not found." : "Scribe Studio request failed.");
+    });
+  });
   const studioPlugin = createStudioPlugin({ root, sourcePath, articleId, state, runtime, ...(hostCss === undefined ? {} : { hostCss }) });
-  server = await createServer({
+  server = await createViteServer({
     configFile: false,
     root,
     appType: "custom",
     server: {
+      middlewareMode: true,
       host: "127.0.0.1",
       port: options.port,
       strictPort: options.port !== 0,
       open: false,
+      hmr: { server: httpServer },
       fs: { strict: true, allow: [root, ...Object.values(runtime).map(dirname)] }
     },
     plugins: [studioPlugin, { ...mdx(createScribeMdxOptions()), enforce: "pre" }, react()]
   });
 
   try {
-    await server.listen();
+    await listenOnLoopback(httpServer, options.port);
   } catch (error) {
     await server.close();
     throw new Error(`Could not start Scribe Studio on 127.0.0.1:${options.port}: ${error instanceof Error ? error.message : String(error)}`);
@@ -199,14 +209,14 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     }];
   });
 
-  const address = server.httpServer?.address();
+  const address = httpServer.address();
   if (!address || typeof address === "string") {
-    await server.close();
+    await closeStudioServers(server, httpServer);
     throw new Error("Scribe Studio did not expose a local HTTP address.");
   }
   const origin = `http://127.0.0.1:${address.port}`;
   if (options.open) openBrowser(origin);
-  return { origin, close: async () => server.close() };
+  return { origin, close: async () => closeStudioServers(server, httpServer) };
 }
 
 export async function runStudio(
@@ -563,4 +573,26 @@ function openBrowser(url: string): void {
   const [executable, ...args] = command;
   const child = spawn(executable, args, { detached: true, stdio: "ignore", shell: false });
   child.unref();
+}
+
+async function listenOnLoopback(server: HttpServer, port: number): Promise<void> {
+  await new Promise<void>((resolveListen, rejectListen) => {
+    const reject = (error: Error) => rejectListen(error);
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolveListen();
+    });
+  });
+}
+
+async function closeStudioServers(vite: ViteDevServer, http: HttpServer): Promise<void> {
+  try {
+    await vite.close();
+  } finally {
+    if (!http.listening) return;
+    await new Promise<void>((resolveClose, rejectClose) => {
+      http.close((error) => error === undefined ? resolveClose() : rejectClose(error));
+    });
+  }
 }

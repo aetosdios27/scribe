@@ -1,6 +1,6 @@
 {
   "name": "@scribe-sdk/cli",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "The scb command-line validator for Scribe MDX articles.",
   "author": "aetosdios27",
   "license": "Apache-2.0",
@@ -24,9 +24,9 @@
   },
   "dependencies": {
     "@mdx-js/rollup": "3.1.1",
-    "@scribe-sdk/mdx": "0.1.0-alpha.3",
-    "@scribe-sdk/react": "0.1.0-alpha.3",
-    "@scribe-sdk/styles": "0.1.0-alpha.3",
+    "@scribe-sdk/mdx": "0.1.0-alpha.4",
+    "@scribe-sdk/react": "0.1.0-alpha.4",
+    "@scribe-sdk/styles": "0.1.0-alpha.4",
     "@vitejs/plugin-react": "6.0.3",
     "vite": "8.1.3"
   },

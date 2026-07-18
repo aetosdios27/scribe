@@ -1,5 +1,11 @@
 # @scribe-sdk/mdx
 
+## 0.1.0-alpha.4
+
+### Patch Changes
+
+- Restore strict React 19 typechecking for Vite MDX configurations and make Scribe Studio shut down cleanly when its CLI process receives `SIGINT` or `SIGTERM`.
+
 ## 0.1.0-alpha.3
 
 ### Minor Changes
