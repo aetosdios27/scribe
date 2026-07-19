@@ -9,6 +9,12 @@ export default defineConfig({
     }
   },
   test: {
-    exclude: [...configDefaults.exclude, "tests/browser/**", "tests/studio-browser/**", "tests/visual/**"]
+    exclude: [
+      ...configDefaults.exclude,
+      "tests/browser/**",
+      "tests/next-css-modules-browser/**",
+      "tests/studio-browser/**",
+      "tests/visual/**"
+    ]
   }
 });

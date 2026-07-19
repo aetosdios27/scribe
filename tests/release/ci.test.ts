@@ -95,6 +95,19 @@ describe("public CI contract", () => {
     expect(visualSuite).toContain("image.decode()");
   });
 
+  it("keeps every Playwright suite outside Vitest discovery", async () => {
+    const vitest = await text("vitest.config.ts");
+
+    for (const testDirectory of [
+      "tests/browser/**",
+      "tests/next-css-modules-browser/**",
+      "tests/studio-browser/**",
+      "tests/visual/**"
+    ]) {
+      expect(vitest).toContain(`\"${testDirectory}\"`);
+    }
+  });
+
   it("contains no stale scope or maintainer path and isolates the Helium executable", async () => {
     const files = await repositoryFiles(root);
     const occurrences: Array<{ file: string; value: string }> = [];
