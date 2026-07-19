@@ -112,6 +112,7 @@
     overflow-x: auto !important;
     overscroll-behavior-inline: contain;
     scrollbar-gutter: stable;
+    border: var(--scribe-rule) solid var(--scribe-border);
   }
 
   :where(.scribe .scribe-table-scroll:focus-visible) {
@@ -119,21 +120,42 @@
   }
 
   :where(.scribe .scribe-table-scroll > table) {
-    inline-size: max-content !important;
+    inline-size: 100% !important;
     min-inline-size: 100%;
     max-inline-size: none;
     margin: 0;
     border-collapse: collapse;
   }
 
+  :where(.scribe .scribe-table-scroll:has(tr > :nth-child(4)) > table) {
+    inline-size: max-content !important;
+  }
+
   :where(.scribe table :is(th, td)) {
-    min-inline-size: 8rem;
+    min-inline-size: 0;
     max-inline-size: 34ch;
     padding-block: var(--scribe-table-cell-padding-block);
     padding-inline: var(--scribe-table-cell-padding-inline);
+    border-block-end: var(--scribe-rule) solid var(--scribe-border);
     overflow-wrap: anywhere;
     text-align: start;
     vertical-align: top;
+  }
+
+  :where(.scribe .scribe-table-scroll:has(tr > :nth-child(4)) table :is(th, td)) {
+    min-inline-size: 8rem;
+  }
+
+  :where(.scribe table :is(th, td) + :is(th, td)) {
+    border-inline-start: var(--scribe-rule) solid var(--scribe-border);
+  }
+
+  :where(.scribe table th) {
+    background: var(--scribe-surface-strong);
+  }
+
+  :where(.scribe table tbody tr:last-child td) {
+    border-block-end: 0;
   }
 
   :where(.scribe table :is([align="right"], [data-align="right"])) {
@@ -378,6 +400,20 @@
 
     :where(.scribe .scribe-table-scroll, .scribe .scribe-code-frame__pre) {
       overflow: visible !important;
+    }
+
+    :where(.scribe .scribe-table-scroll > table) {
+      inline-size: 100% !important;
+      min-inline-size: 100%;
+      max-inline-size: 100%;
+      table-layout: fixed;
+    }
+
+    :where(.scribe .scribe-table-scroll table :is(th, td)) {
+      min-inline-size: 0;
+      max-inline-size: none;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
   }
 }

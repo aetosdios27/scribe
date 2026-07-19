@@ -55,6 +55,7 @@ describe("published CSS contract", () => {
     expect(foundationCss).toContain("--scribe-body-size: inherit");
     expect(foundationCss).toContain("--scribe-leading: inherit");
     expect(foundationCss).toContain("--scribe-paragraph-spacing: inherit");
+    expect(foundationCss).toContain("border: var(--scribe-rule) solid var(--scribe-border)");
     expect(foundationCss).not.toMatch(/:where\(\.scribe\)\s*\{[^}]*grid-template-columns:/su);
     expect(foundationCss).not.toMatch(/:where\(\.scribe\)\s*\{[^}]*font-size:\s*clamp/su);
     expect(foundationCss).not.toMatch(/:where\(\.scribe p\)\s*\{[^}]*margin-block:/su);

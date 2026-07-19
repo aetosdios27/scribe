@@ -58,13 +58,38 @@ test("keeps Markdown and literal JSX tables inside the page on mobile", async ({
   await openArticle(page, { viewport: { width: 390, height: 844 } });
   const regions = page.getByRole("region", { name: "Scrollable article table" });
   await expect(regions).toHaveCount(2);
-  await expect(regions.nth(0).locator("table")).toBeVisible();
-  await expect(regions.nth(1).locator("table caption")).toContainText("Peer-wire control messages");
-  expect(await regions.first().evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+  const wideTable = regions.nth(0);
+  const compactTable = regions.nth(1);
+  await expect(wideTable.locator("table")).toBeVisible();
+  await expect(compactTable.locator("table caption")).toContainText("Peer-wire control messages");
+  await expect(compactTable.locator("tr").first().locator("th")).toHaveCount(3);
+  expect(await wideTable.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+  expect(await compactTable.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await expect(wideTable.locator("th").nth(2)).toHaveCSS("text-align", "center");
+  await expect(wideTable.locator("th").nth(7)).toHaveCSS("text-align", "right");
+  const cellPresentation = await compactTable.locator("tbody td").nth(1).evaluate((cell) => {
+    const style = getComputedStyle(cell);
+    return {
+      paddingInline: Number.parseFloat(style.paddingInlineStart),
+      rowBorder: style.borderBlockEndStyle,
+      columnBorder: style.borderInlineStartStyle
+    };
+  });
+  expect(cellPresentation.paddingInline).toBeGreaterThanOrEqual(10);
+  expect(cellPresentation).toMatchObject({ rowBorder: "solid", columnBorder: "solid" });
   expect(await regions.first().evaluate((node) => node.getBoundingClientRect().right <= node.parentElement!.getBoundingClientRect().right + 1)).toBe(true);
   await regions.first().focus();
   await expect(regions.first()).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  await page.emulateMedia({ media: "print" });
+  for (const region of await regions.all()) {
+    expect(await region.evaluate((node) => {
+      const table = node.querySelector("table");
+      if (!table) throw new Error("Missing table in normalized region.");
+      return table.getBoundingClientRect().width <= node.getBoundingClientRect().width + 1;
+    })).toBe(true);
+  }
 });
 
 test("keeps code metadata and overflow server-rendered", async ({ page }) => {
