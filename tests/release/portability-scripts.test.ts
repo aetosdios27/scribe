@@ -21,6 +21,9 @@ describe("cross-platform release scripts", () => {
     expect(portability).toContain("normalizeRepositoryPath(relative(root, path))");
     expect(pack).not.toContain(fixedTemp);
     expect(consumers).not.toContain(fixedTemp);
+    expect(consumers).toContain("process.stderr.write(output)");
+    expect(consumers).toContain('args[0] !== "--consumer"');
+    expect(consumers).toContain('consumerRunners.has(args[1])');
   });
 
   it("inspects npm archives without requiring a platform tar executable", async () => {

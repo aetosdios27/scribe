@@ -106,6 +106,25 @@
         "typescript": "6.0.2",
       },
     },
+    "tests/integration/next-css-modules": {
+      "name": "@scribe-sdk/seam-next-css-modules",
+      "dependencies": {
+        "@mdx-js/loader": "3.1.1",
+        "@mdx-js/react": "3.1.1",
+        "@next/mdx": "16.2.10",
+        "@scribe-sdk/mdx": "workspace:*",
+        "@scribe-sdk/react": "workspace:*",
+        "@scribe-sdk/styles": "workspace:*",
+        "next": "16.2.10",
+        "react": "19.2.7",
+        "react-dom": "19.2.7",
+      },
+      "devDependencies": {
+        "@types/react": "19.2.17",
+        "@types/react-dom": "19.2.3",
+        "typescript": "6.0.2",
+      },
+    },
     "tests/integration/next-remote": {
       "name": "@scribe-sdk/seam-next-remote",
       "dependencies": {
@@ -674,6 +693,8 @@
     "@scribe-sdk/react": ["@scribe-sdk/react@workspace:packages/react"],
 
     "@scribe-sdk/seam-next": ["@scribe-sdk/seam-next@workspace:tests/integration/next"],
+
+    "@scribe-sdk/seam-next-css-modules": ["@scribe-sdk/seam-next-css-modules@workspace:tests/integration/next-css-modules"],
 
     "@scribe-sdk/seam-next-remote": ["@scribe-sdk/seam-next-remote@workspace:tests/integration/next-remote"],
 

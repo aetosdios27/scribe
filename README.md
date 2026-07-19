@@ -73,6 +73,8 @@ The host owns design; Scribe owns structure and behavior. Import one stylesheet 
 
 Foundation supplies containment, overflow, controls, anchors, figures, accessibility, print, and reduced-motion mechanics while inheriting host typography and rhythm. Default layers Scribe’s polished editorial scale on those mechanics. Tailwind preserves the host’s `.prose` typography while repairing code-frame, table, anchor, figure, and control behavior after Preflight.
 
+CSS Module classes on the article boundary naturally pass inherited decisions such as font family, font size, line height, color, and available width into Foundation mode. Non-inherited element rules do not cross a CSS Module boundary automatically: apply an explicit local bridge such as `.article :global(h2)` or provide a component override when the host needs bespoke heading, paragraph, blockquote, code, or table presentation. Scribe does not claim to recover selectors that the host never applies to the rendered article elements.
+
 For a raw site:
 
 ```tsx

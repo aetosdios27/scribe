@@ -30,6 +30,7 @@
     "test:browser": "playwright test --config playwright.config.ts",
     "test:browser:chromium": "playwright test --config playwright.config.ts --project=chromium",
     "test:browser:firefox": "playwright test --config playwright.config.ts --project=firefox",
+    "test:browser:next-css-modules": "playwright test --config playwright.next-css-modules.config.ts",
     "test:browser:webkit": "playwright test --config playwright.config.ts --project=webkit",
     "test:portability": "node scripts/test-portable-cli.mjs",
     "test:studio:browser": "playwright test --config playwright.studio.config.ts",

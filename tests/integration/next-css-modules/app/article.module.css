@@ -1,0 +1,60 @@
+.hostShell {
+  margin: 0;
+  background: #f3f0e8;
+  color: #202326;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.articleBoundary {
+  box-sizing: border-box;
+  max-width: 46rem;
+  margin-inline: auto;
+  padding: 3rem 2rem;
+  color: inherit;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.articleBoundary :global(h1),
+.articleBoundary :global(h2) {
+  color: inherit;
+  font-family: Arial, sans-serif;
+  letter-spacing: -0.025em;
+}
+
+.articleBoundary :global(h2) {
+  margin-block: 3rem 1rem;
+}
+
+.articleBoundary :global(p) {
+  margin-block: 0 1.375rem;
+}
+
+.articleBoundary :global(blockquote) {
+  margin-inline: 0;
+  padding-inline-start: 1rem;
+  border-inline-start: 3px solid currentColor;
+}
+
+.articleBoundary :global(:not(pre) > code) {
+  padding: 0.12em 0.28em;
+  background: color-mix(in oklab, currentColor 10%, transparent);
+}
+
+.articleBoundary :global(table) {
+  border: 1px solid currentColor;
+}
+
+@media (prefers-color-scheme: dark) {
+  .hostShell {
+    background: #151719;
+    color: #eeefe8;
+  }
+}
+
+@media (max-width: 48rem) {
+  .articleBoundary {
+    padding: 1.5rem 1rem;
+  }
+}

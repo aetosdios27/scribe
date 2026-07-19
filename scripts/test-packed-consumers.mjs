@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createServer as createNetServer } from "node:net";
 
@@ -16,15 +16,30 @@ const tarballs = {
   cli: `../../scribe-sdk-cli-${version}.tgz`
 };
 const results = [];
+const consumerRunners = new Map([
+  ["bun-vite", createViteConsumer],
+  ["npm-next", createNextConsumer],
+  ["npm-next-remote", createNextRemoteConsumer],
+  ["npm-next-css-modules", createNextCssModulesConsumer]
+]);
+const selectedConsumer = selectedConsumerName(process.argv.slice(2));
 
 await rm(consumers, { recursive: true, force: true });
 await mkdir(consumers, { recursive: true });
-await createViteConsumer();
-await createNextConsumer();
-await createNextRemoteConsumer();
+for (const [name, runConsumer] of consumerRunners) {
+  if (selectedConsumer === undefined || selectedConsumer === name) await runConsumer();
+}
 
 process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
 await writeFile(join(release, "packed-consumers.json"), `${JSON.stringify(results, null, 2)}\n`);
+
+function selectedConsumerName(args) {
+  if (args.length === 0) return undefined;
+  if (args.length !== 2 || args[0] !== "--consumer" || !consumerRunners.has(args[1])) {
+    throw new Error(`Usage: node scripts/test-packed-consumers.mjs [--consumer <${[...consumerRunners.keys()].join("|")}>]`);
+  }
+  return args[1];
+}
 
 async function createViteConsumer() {
   const directory = join(consumers, "bun-vite");
@@ -242,6 +257,103 @@ export default function Page() { return <MDXRemote source={source} options={crea
   await assertPackagedSkill(directory);
 }
 
+async function createNextCssModulesConsumer() {
+  const directory = join(consumers, "npm-next-css-modules");
+  await mkdir(join(directory, "app"), { recursive: true });
+  await write(directory, "package.json", JSON.stringify({
+    name: "scribe-packed-npm-next-css-modules",
+    private: true,
+    type: "module",
+    scripts: { build: "next build", typecheck: "tsc --noEmit" },
+    dependencies: {
+      "@mdx-js/loader": "3.1.1",
+      "@mdx-js/react": "3.1.1",
+      "@next/mdx": "16.2.10",
+      "@scribe-sdk/cli": `file:${tarballs.cli}`,
+      "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
+      "@scribe-sdk/react": `file:${tarballs.react}`,
+      "@scribe-sdk/styles": `file:${tarballs.styles}`,
+      next: "16.2.10",
+      react: "19.2.7",
+      "react-dom": "19.2.7"
+    },
+    devDependencies: {
+      "@types/node": "22.20.1",
+      "@types/react": "19.2.17",
+      "@types/react-dom": "19.2.3",
+      typescript: "6.0.2"
+    }
+  }, null, 2));
+  await write(directory, "tsconfig.json", JSON.stringify({
+    compilerOptions: {
+      target: "ES2022", lib: ["DOM", "DOM.Iterable", "ES2024"], strict: true, skipLibCheck: false,
+      noEmit: true, module: "ESNext", moduleResolution: "Bundler", jsx: "react-jsx",
+      isolatedModules: true, esModuleInterop: true, plugins: [{ name: "next" }],
+      types: ["node", "react", "react-dom"], allowJs: true, incremental: true, resolveJsonModule: true
+    },
+    include: ["**/*.ts", "**/*.tsx", "**/*.mdx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
+    exclude: ["node_modules"]
+  }, null, 2));
+  await write(directory, "next-env.d.ts", '/// <reference types="next" />\n/// <reference types="next/image-types/global" />\n');
+  await write(directory, "mdx.d.ts", 'declare module "*.mdx" { const Component: (props: { components?: Record<string, unknown> }) => import("react").ReactNode; export default Component; }\n');
+  await write(directory, "next.config.mjs", `import createMDX from "@next/mdx";
+import { createScribeNextMdxOptions } from "@scribe-sdk/mdx/next";
+import { fileURLToPath } from "node:url";
+const withMDX = createMDX({ options: createScribeNextMdxOptions() });
+export default withMDX({ output: "export", pageExtensions: ["js", "jsx", "md", "mdx", "ts", "tsx"], turbopack: { root: fileURLToPath(new URL(".", import.meta.url)) } });
+`);
+  await write(directory, "mdx-components.tsx", `import { createScribeComponents, Publication, type PublicationProps, type ScribeComponents } from "@scribe-sdk/react";
+import styles from "./app/article.module.css";
+function HostPublication(props: PublicationProps) { return <Publication {...props} className={styles.articleBoundary} />; }
+export function useMDXComponents(components: ScribeComponents): ScribeComponents { return createScribeComponents({ components: { ...components, wrapper: HostPublication } }); }
+`);
+  await write(directory, "app/layout.tsx", `import type { ReactNode } from "react";
+import "@scribe-sdk/styles/foundation.css";
+import styles from "./article.module.css";
+export default function Layout({ children }: { children: ReactNode }) { return <html lang="en"><body className={styles.hostShell}>{children}</body></html>; }
+`);
+  await write(directory, "app/page.tsx", 'import Article from "./article.mdx"; export default function Page() { return <main><Article /></main>; }\n');
+  await write(directory, "app/article.mdx", `# CSS Module packed host
+
+The host owns inherited typography and color without Scribe token mappings.
+
+> Explicit element bridges remain the host's responsibility.
+
+| State | Meaning |
+| --- | --- |
+| \`ready\` | Packed Foundation mechanics work. |
+
+\`\`\`ts filename="src/state.ts"
+export const state = "ready"
+\`\`\`
+`);
+  await write(directory, "app/article.module.css", `.hostShell { margin: 0; background: #f3f0e8; color: #202326; font-family: Georgia, "Times New Roman", serif; }
+.articleBoundary { box-sizing: border-box; max-width: 46rem; margin-inline: auto; padding: 3rem 2rem; color: inherit; font: inherit; font-size: 18px; line-height: 1.75; }
+.articleBoundary :global(h1), .articleBoundary :global(h2) { color: inherit; font-family: Arial, sans-serif; }
+.articleBoundary :global(blockquote) { margin-inline: 0; padding-inline-start: 1rem; border-inline-start: 3px solid currentColor; }
+.articleBoundary :global(table) { border: 1px solid currentColor; }
+@media (prefers-color-scheme: dark) { .hostShell { background: #151719; color: #eeefe8; } }
+`);
+
+  await runStreaming(executable("npm"), ["install", "--cache", releaseCacheDirectory(), "--prefer-offline", "--no-audit", "--no-fund"], directory);
+  run(executable("npm"), ["run", "typecheck"], directory);
+  run(executable("npm"), ["run", "build"], directory);
+  const html = await readFile(join(directory, "out", "index.html"), "utf8");
+  for (const marker of ["CSS Module packed host", "scribe-table-scroll", "scribe-code-frame", "articleBoundary"]) {
+    if (!html.includes(marker)) throw new Error(`Packed CSS Modules output is missing ${marker}.`);
+  }
+  const outputFiles = await readdir(join(directory, "out"), { recursive: true });
+  const cssFiles = outputFiles.filter((file) => file.endsWith(".css"));
+  const css = (await Promise.all(cssFiles.map((file) => readFile(join(directory, "out", file), "utf8")))).join("\n");
+  for (const marker of ["Georgia", "46rem", "scribe-table-scroll"]) {
+    if (!css.includes(marker)) throw new Error(`Packed CSS Modules stylesheet is missing ${marker}.`);
+  }
+  if (/--(?:font-body|foreground|accent)\s*:/u.test(css)) {
+    throw new Error("Packed CSS Modules host unexpectedly defines Scribe-style host token aliases.");
+  }
+  await assertPackagedSkill(directory);
+}
+
 function run(command, args, cwd, requireSuccess = true) {
   const label = `${command} ${args.join(" ")}`;
   process.stderr.write(`→ ${label}\n`);
@@ -265,9 +377,22 @@ async function runStreaming(command, args, cwd) {
   });
   let stdout = "";
   let stderr = "";
-  child.stdout.on("data", (chunk) => { stdout += String(chunk); });
-  child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-  const heartbeat = setInterval(() => process.stderr.write(`… ${label}\n`), 5_000);
+  let lastOutputAt = Date.now();
+  child.stdout.on("data", (chunk) => {
+    const output = String(chunk);
+    stdout += output;
+    lastOutputAt = Date.now();
+    process.stderr.write(output);
+  });
+  child.stderr.on("data", (chunk) => {
+    const output = String(chunk);
+    stderr += output;
+    lastOutputAt = Date.now();
+    process.stderr.write(output);
+  });
+  const heartbeat = setInterval(() => {
+    if (Date.now() - lastOutputAt >= 5_000) process.stderr.write(`… ${label}\n`);
+  }, 5_000);
   const status = await new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("close", resolve);
