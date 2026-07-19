@@ -46,13 +46,47 @@ test("renders semantic article content and preserves component overrides", async
 
 test("resolves heading anchors without disturbing the host", async ({ page }) => {
   await openArticle(page);
+  const heading = page.getByRole("heading", { level: 2, name: /Two independent questions/u });
   const anchor = page.locator("h2#two-independent-questions .scribe-heading-anchor");
   await expect(anchor).toHaveAttribute("href", "#two-independent-questions");
-  await anchor.click({ force: true });
+  await expect(anchor).toHaveAccessibleName("Link to Two independent questions");
+  await anchor.focus();
+  await expect(anchor).toBeFocused();
+  await anchor.press("Enter");
   await expect(page).toHaveURL(/#two-independent-questions$/u);
-  await expect(page.locator("h2#two-independent-questions")).toBeVisible();
+  await expect(heading).toBeVisible();
+  await expect(heading).toHaveAttribute("id", "two-independent-questions");
   await expect(page.locator(".fixture-outside-proof")).toBeVisible();
 });
+
+for (const viewport of [
+  { name: "desktop", width: 1280, height: 900 },
+  { name: "mobile", width: 390, height: 844 }
+] as const) {
+  test(`keeps hostile article content inside the ${viewport.name} boundary`, async ({ page }) => {
+    await openArticle(page, { viewport });
+    const article = page.locator(".scribe");
+    const boundary = await article.evaluate((node) => node.getBoundingClientRect());
+    const selectors = [
+      ".scribe-lead",
+      ".scribe-lead code",
+      "a[href*='very/long/unbroken/reference']",
+      ".scribe-figure",
+      ".scribe-code-frame",
+      ".scribe-table-scroll"
+    ];
+
+    for (const selector of selectors) {
+      const locator = article.locator(selector).first();
+      await expect(locator).toBeVisible();
+      const rect = await locator.evaluate((node) => node.getBoundingClientRect());
+      expect(rect.left, selector).toBeGreaterThanOrEqual(boundary.left - 1);
+      expect(rect.right, selector).toBeLessThanOrEqual(boundary.right + 1);
+    }
+
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  });
+}
 
 test("keeps Markdown and literal JSX tables inside the page on mobile", async ({ page }) => {
   await openArticle(page, { viewport: { width: 390, height: 844 } });
@@ -134,6 +168,12 @@ test("supports light, dark, branded, reduced-motion, and print behavior", async 
   expect(Number.parseFloat(duration)).toBeLessThanOrEqual(0.00001);
   await page.emulateMedia({ media: "print" });
   await expect(page.locator(".scribe-copy-button")).toHaveCSS("display", "none");
+  await expect(page.getByRole("heading", { name: "Seeing the frame" })).toBeVisible();
+  await expect(page.locator(".scribe-figure figcaption")).toContainText("four-byte length prefix");
+  const printRegions = page.locator(".scribe-table-scroll, .scribe-code-frame__pre");
+  for (const region of await printRegions.all()) {
+    expect(await region.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  }
 });
 
 for (const clipboard of ["rejected", "unavailable"] as const) {

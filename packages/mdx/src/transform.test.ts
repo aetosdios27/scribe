@@ -3,6 +3,17 @@ import { describe, expect, it } from "vitest";
 import { compileScribeMdx } from "./index.js";
 
 describe("compileScribeMdx", () => {
+  it("emits deterministic heading IDs for unchanged source", async () => {
+    const source = "## Peer state\n\n## Peer state\n\n### Wire format\n";
+    const first = String(await compileScribeMdx(source));
+    const second = String(await compileScribeMdx(source));
+
+    expect(first).toBe(second);
+    expect(first).toContain('id: "peer-state"');
+    expect(first).toContain('id: "peer-state-1"');
+    expect(first).toContain('id: "wire-format"');
+  });
+
   it("turns supported frontmatter into one production Banner without rendering YAML", async () => {
     const file = await compileScribeMdx(`---
 title: The peer wire protocol
