@@ -62,6 +62,14 @@ function ContinuityContent() {
     "--shiki-light-bg": "#fff",
     "--shiki-dark-bg": "#24292e"
   } as CSSProperties;
+  const keywordStyle = {
+    "--shiki-light": "#cf222e",
+    "--shiki-dark": "#ff7b72"
+  } as CSSProperties;
+  const functionStyle = {
+    "--shiki-light": "#8250df",
+    "--shiki-dark": "#d2a8ff"
+  } as CSSProperties;
 
   return (
     <>
@@ -74,7 +82,7 @@ function ContinuityContent() {
         <table><tbody><tr>{["interested", "unchoked", "piece-index", "block-offset", "block-length", "download-rate", "upload-rate", "peer-identifier-with-a-long-token"].map((value) => <td key={value}>{value}</td>)}</tr></tbody></table>
       </div>
       <figure className="scribe-code-frame">
-        <pre className="scribe-code-frame__pre shiki" style={shikiStyle}><code><span style={shikiStyle}>peer.set_interested(true); // a deliberately long protocol operation remains internally scrollable</span></code></pre>
+        <pre className="scribe-code-frame__pre shiki" style={shikiStyle}><code><span><span data-token-kind="keyword" style={keywordStyle}>peer</span>.<span data-token-kind="function" style={functionStyle}>set_interested</span>(true); // a deliberately long protocol operation remains internally scrollable</span></code></pre>
       </figure>
     </>
   );
