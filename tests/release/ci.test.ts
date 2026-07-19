@@ -70,7 +70,7 @@ describe("public CI contract", () => {
   it("runs the Studio browser flow in hosted Chromium without making it a visual baseline", async () => {
     const workflow = await text(".github/workflows/ci.yml");
 
-    expect(workflow).toContain("bun run test:studio:browser");
+    expect(workflow).toContain("bun run test:studio:browser -- --project=chromium");
     expect(workflow).toContain("matrix.browser == 'chromium'");
   });
 

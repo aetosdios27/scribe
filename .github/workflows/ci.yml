@@ -155,7 +155,7 @@ jobs:
         run: bun run test:browser:${{ matrix.browser }}
       - name: Run Studio browser flow
         if: matrix.browser == 'chromium'
-        run: bun run test:studio:browser
+        run: bun run test:studio:browser -- --project=chromium
       - name: Upload browser diagnostics on failure
         if: failure()
         continue-on-error: true
