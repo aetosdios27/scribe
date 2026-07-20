@@ -30,7 +30,7 @@
     "@fontsource/ibm-plex-serif": "5.2.7",
     "@mdx-js/mdx": "3.1.1",
     "@mdx-js/rollup": "3.1.1",
-    "@mdxeditor/editor": "4.0.4",
+    "@mdxeditor/editor": "4.1.0",
     "@scribe-sdk/mdx": "0.1.0-alpha.5",
     "@scribe-sdk/react": "0.1.0-alpha.5",
     "@scribe-sdk/styles": "0.1.0-alpha.5",
