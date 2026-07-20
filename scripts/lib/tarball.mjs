@@ -11,6 +11,7 @@ export function readTarball(buffer) {
     const name = readString(header, 0, 100);
     const prefix = readString(header, 345, 155);
     const path = prefix ? `${prefix}/${name}` : name;
+    const mode = readOctal(header, 100, 8);
     const size = readOctal(header, 124, 12);
     const type = String.fromCharCode(header[156] || 48);
     const bodyStart = offset + 512;
@@ -19,6 +20,7 @@ export function readTarball(buffer) {
     if (bodyEnd > archive.length) throw new Error(`Invalid tarball entry ${path}: content exceeds archive size.`);
     entries.push({
       path,
+      mode,
       size,
       type,
       content: archive.subarray(bodyStart, bodyEnd)

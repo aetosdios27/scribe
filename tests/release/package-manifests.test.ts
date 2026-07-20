@@ -98,7 +98,7 @@ describe("publishable package manifests", () => {
 
   it("publishes the CLI as a binary rather than a library API", async () => {
     const manifest = await readJson(join(root, "packages/cli/package.json"));
-    expect(manifest.bin).toEqual({ scb: "./dist/index.mjs" });
+    expect(manifest.bin).toEqual({ scribe: "./dist/index.mjs", scb: "./dist/index.mjs" });
     expect(manifest.exports).toEqual({});
     expect(manifest.dependencies).toEqual({
       "@base-ui/react": "1.6.0",

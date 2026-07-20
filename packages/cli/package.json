@@ -1,7 +1,7 @@
 {
   "name": "@scribe-sdk/cli",
   "version": "0.1.0-alpha.5",
-  "description": "The scb command-line validator for Scribe MDX articles.",
+  "description": "The Scribe command-line interface for project setup, article validation, and local authoring.",
   "author": "aetosdios27",
   "license": "Apache-2.0",
   "type": "module",
@@ -15,6 +15,7 @@
     "LICENSE"
   ],
   "bin": {
+    "scribe": "./dist/index.mjs",
     "scb": "./dist/index.mjs"
   },
   "exports": {},

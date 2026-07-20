@@ -15,7 +15,7 @@ Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor
 | `@scribe-sdk/react` | Publication boundary, component map, and editorial primitives | package root |
 | `@scribe-sdk/styles` | Scoped publishing mechanics and optional editorial presentation | `/foundation.css`, `/default.css`, `/tailwind.css` |
 | `@scribe-sdk/mdx` | Shared compile-time MDX configuration and validation | package root, `/next`, `/next-remote`, `/remark`, `/rehype` |
-| `@scribe-sdk/cli` | Validation, deliberate setup, and the local authoring Studio | `scb` binary |
+| `@scribe-sdk/cli` | Validation, deliberate setup, and the local authoring Studio | `scribe` binary |
 
 Each installed package includes the same canonical `SKILL.md`. Agents can discover it at `node_modules/@scribe-sdk/<package>/SKILL.md`; the repository source of truth is [`SKILL.md`](./SKILL.md).
 
@@ -35,31 +35,35 @@ npm install @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alp
 npm install --save-dev @scribe-sdk/cli@alpha
 ```
 
+Project-local CLI installation is recommended so every contributor uses the same prerelease. A user-level CLI is also supported through `bun add --global @scribe-sdk/cli@alpha` or `npm install --global @scribe-sdk/cli@alpha`; the project still owns its runtime Scribe dependencies.
+
 Package installation is inert: it does not edit source files, run project detection, or make network calls beyond normal package-manager behavior. Inspect a proposed integration explicitly:
 
 ```bash
-bunx scb init --dry-run
+bunx scribe init --dry-run
 ```
 
 With npm, run the same locally installed binary through `npx`:
 
 ```bash
-npx scb init --dry-run
+npx scribe init --dry-run
 ```
 
 ### CLI reference
 
-Run CLI commands through `bunx scb` or `npx scb` after installing `@scribe-sdk/cli` locally. The examples below use `scb` to show the command surface without repeating both runners.
+Run CLI commands through `bunx scribe` or `npx scribe` after installing `@scribe-sdk/cli` locally. The examples below use `scribe` to show the command surface without repeating both runners.
+
+`scribe` is the primary executable. The prerelease-only `scb` compatibility alias remains available with identical behavior for existing alpha users; new integrations should use `scribe`.
 
 | Command | Purpose |
 | --- | --- |
-| `scb init [--dry-run] [--mode <mode>] [--yes]` | Inspect and deliberately initialize Scribe in the current React project; mode is `foundation`, `default`, or `tailwind` |
-| `scb validate <article.mdx> [--strict]` | Compile and validate one article without executing the complete host application |
-| `scb studio <article> [--mode <mode>] [--host-css <file>] [--port <number>] [--no-open]` | Open the local, source-authoritative Markdown/MDX Studio; mode is `foundation`, `default`, or `tailwind` |
-| `scb --help` | Show the installed CLI command surface |
-| `scb --version` | Print the installed Scribe version |
+| `scribe init [--dry-run] [--mode <mode>] [--yes]` | Inspect and deliberately initialize Scribe in the current React project; mode is `foundation`, `default`, or `tailwind` |
+| `scribe validate <article.mdx> [--strict]` | Compile and validate one article without executing the complete host application |
+| `scribe studio <article> [--mode <mode>] [--host-css <file>] [--port <number>] [--no-open]` | Open the local, source-authoritative Markdown/MDX Studio; mode is `foundation`, `default`, or `tailwind` |
+| `scribe --help` | Show the installed CLI command surface |
+| `scribe --version` | Print the installed Scribe version |
 
-Use `scb init --help` or `scb studio --help` for command-specific option summaries. CLI exit codes are consistent: `0` means success, `1` means execution or article-compilation failure, and `2` means invalid usage or unresolved initialization configuration.
+Use `scribe init --help`, `scribe validate --help`, or `scribe studio --help` for focused option summaries and examples. CLI exit codes are consistent: `0` means success, `1` means execution or article-compilation failure, and `2` means invalid usage or unresolved initialization configuration.
 
 ## Choose a style mode
 
@@ -96,15 +100,15 @@ Scribe ships no fonts and does not clone Tailwind Typography. In Tailwind mode, 
 Run initialization deliberately from the host project's root after installation:
 
 ```bash
-bunx scb init --dry-run
-bunx scb init
+bunx scribe init --dry-run
+bunx scribe init
 ```
 
 With npm:
 
 ```bash
-npx scb init --dry-run
-npx scb init
+npx scribe init --dry-run
+npx scribe init
 ```
 
 `init` inspects React, Next.js or Vite, Tailwind v3/v4, Typography and `.prose`, existing MDX integrations and plugins, syntax highlighters, global CSS, component maps, and current Scribe wiring. It recommends `foundation`, `default`, or `tailwind`, reports every proposed command and file edit, and asks before mutation. Use `--mode foundation|default|tailwind` to override the recommendation or `--yes` for a reviewed non-interactive plan.
@@ -322,7 +326,7 @@ Supported metadata is explicit:
 | additions | `add="4-6"` | Marks added lines |
 | removals | `remove="2"` | Marks removed lines |
 
-Ranges are one-based, comma-separated, and inclusive. Unknown or malformed fields fail compilation. Unsupported languages warn and fall back to plaintext by default. Enable strict behavior with `createScribeMdxOptions({ strict: true })`, `createScribeNextMdxOptions({ strict: true })`, or `scb validate article.mdx --strict`.
+Ranges are one-based, comma-separated, and inclusive. Unknown or malformed fields fail compilation. Unsupported languages warn and fall back to plaintext by default. Enable strict behavior with `createScribeMdxOptions({ strict: true })`, `createScribeNextMdxOptions({ strict: true })`, or `scribe validate article.mdx --strict`.
 
 Inline backticks remain visually distinct from framed code blocks.
 
@@ -391,18 +395,18 @@ Reduced-motion preferences disable nonessential transitions. Print styles remove
 Open a source-authoritative local workspace for one Markdown or MDX file:
 
 ```bash
-bunx scb studio ./content/article.mdx
-bunx scb studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
+bunx scribe studio ./content/article.mdx
+bunx scribe studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
 ```
 
 With npm:
 
 ```bash
-npx scb studio ./content/article.mdx
-npx scb studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
+npx scribe studio ./content/article.mdx
+npx scribe studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
 ```
 
-Studio detects the project style mode using the same rules as `scb init`; pass `--mode` only to override that result deliberately. An ambiguous project exits with guidance instead of silently choosing a visual preset. Port `4317` remains the default.
+Studio detects the project style mode using the same rules as `scribe init`; pass `--mode` only to override that result deliberately. An ambiguous project exits with guidance instead of silently choosing a visual preset. Port `4317` remains the default.
 
 Studio has exactly two authoring modes. Markdown mode keeps the source editable beside the production renderer and has no formatting toolbar. Rich Text mode is a constrained visual helper for ordinary Markdown; it provides a minimal toolbar, writes accepted edits back to the canonical Markdown draft, and shows a read-only Markdown mirror by default. Its secondary pane can switch to the same production renderer. Unsupported MDX, frontmatter, HTML, JSX, expressions, and metadata-bearing code fences remain byte-identical protected blocks with an **Edit in Markdown** action. Rich Text may refuse to edit a construct; it never pretends to support one and silently rewrites the source.
 
@@ -419,34 +423,34 @@ Use `--port 4317` to select a port and `--no-open` for headless workflows. Stop 
 Validate one article through the production compiler:
 
 ```bash
-bunx scb validate ./content/article.mdx
-bunx scb validate ./content/article.mdx --strict
+bunx scribe validate ./content/article.mdx
+bunx scribe validate ./content/article.mdx --strict
 ```
 
 With npm:
 
 ```bash
-npx scb validate ./content/article.mdx
-npx scb validate ./content/article.mdx --strict
+npx scribe validate ./content/article.mdx
+npx scribe validate ./content/article.mdx --strict
 ```
 
-`scb validate` checks MDX syntax, Scribe code metadata, supported static component metadata, compile-time highlighting, and article-level diagnostics. It does not execute or validate the complete consumer application.
+`scribe validate` checks MDX syntax, Scribe code metadata, supported static component metadata, compile-time highlighting, and article-level diagnostics. It does not execute or validate the complete consumer application.
 
 - Exit `0`: validation succeeded; warnings may have been printed.
 - Exit `1`: article compilation or strict validation failed.
 - Exit `2`: command usage was invalid.
 
-Diagnostics include the file, position when available, severity, stable code, and remediation. Unsupported languages use warning `SCB1003` and plaintext fallback unless strict mode is enabled. Run `scb --help` for the complete supported CLI surface.
+Diagnostics include the file, position when available, severity, stable code, and remediation. Unsupported languages use warning `SCB1003` and plaintext fallback unless strict mode is enabled. Run `scribe --help` for the complete supported CLI surface.
 
 If rendering differs between the Vite and Next builds, confirm that both use the matching `@scribe-sdk/mdx` version and the shared helper. If a table is not scrollable, confirm that the stylesheet is imported and the article renders beneath `.scribe`. Do not add host CSS solely to conceal a Scribe defect; reduce the case and report it at <https://github.com/aetosdios27/scribe/issues>.
 
 ## Migrating from `0.1.0-alpha.2`
 
 - Existing `default.css` imports remain supported and retain the complete editorial preset.
-- Established sites that already own article typography should switch to `foundation.css` after reviewing `scb init --dry-run` and before/after computed styles.
+- Established sites that already own article typography should switch to `foundation.css` after reviewing `scribe init --dry-run` and before/after computed styles.
 - Tailwind Typography sites should use `tailwind.css` and keep their `.prose` wrapper.
 - `next-mdx-remote/rsc` integrations should replace loader-shaped configuration with `createScribeRemoteMdxOptions()` from `@scribe-sdk/mdx/next-remote`.
-- Installation performs no migration. `scb init` reports and confirms any safe edits; existing plugins and highlighters remain untouched unless the owner changes them explicitly.
+- Installation performs no migration. `scribe init` reports and confirms any safe edits; existing plugins and highlighters remain untouched unless the owner changes them explicitly.
 
 ## Responsibility boundary
 

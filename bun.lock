@@ -22,6 +22,7 @@
       "name": "@scribe-sdk/cli",
       "version": "0.1.0-alpha.5",
       "bin": {
+        "scribe": "./dist/index.mjs",
         "scb": "./dist/index.mjs",
       },
       "dependencies": {
