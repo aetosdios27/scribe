@@ -42,11 +42,11 @@ describe("cross-platform release scripts", () => {
     expect(smoke).toContain("rejected.status === 1");
   });
 
-  it("runs Windows command shims through a shell and preserves spawn errors", async () => {
+  it("runs Windows command shims with argument-safe portable spawning and preserves spawn errors", async () => {
     const smoke = await source("scripts/test-portable-cli.mjs");
 
-    expect(smoke).toContain("requiresCommandShell");
-    expect(smoke).toContain("shell: requiresCommandShell(command)");
+    expect(smoke).toContain("spawnPortableSync");
+    expect(smoke).not.toContain("shell: requiresCommandShell(command)");
     expect(smoke.indexOf("if (result.error) throw result.error")).toBeLessThan(
       smoke.indexOf("results.push")
     );

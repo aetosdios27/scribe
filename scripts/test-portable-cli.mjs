@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
-import { executable, requiresCommandShell } from "./lib/platform.mjs";
+import { executable } from "./lib/platform.mjs";
+import { spawnPortableSync } from "./lib/spawn.mjs";
 
 const root = process.cwd();
 const release = join(root, ".scribe-release");
@@ -97,10 +97,9 @@ function runCli(command, args, requireSuccess = true, env = {}) {
 }
 
 function run(command, args, cwd, requireSuccess = true, env = {}) {
-  const result = spawnSync(command, args, {
+  const result = spawnPortableSync(command, args, {
     cwd,
     encoding: "utf8",
-    shell: requiresCommandShell(command),
     env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1", ...env }
   });
   if (result.error) throw result.error;
