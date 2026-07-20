@@ -24,6 +24,19 @@ it("classifies unsafe MDX as ordered protected islands", async () => {
     "codeMetadata",
     "mdxJsxFlowElement"
   ]);
+  expect(projection.islands.map(({ label }) => label)).toEqual([
+    "frontmatter",
+    "MDX import",
+    "MDX export",
+    "MDX expression",
+    "<Badge>",
+    "<Callout>",
+    "<aside>",
+    "MDX comment",
+    ":::unknown-directive directive",
+    "code-fence metadata",
+    "<table>"
+  ]);
   expect(projection.islands.map(({ start, end }) => source.slice(start, end))).toEqual(
     projection.islands.map(({ raw }) => raw)
   );
@@ -67,6 +80,44 @@ it.each([
   const result = await acceptRichCandidate(projection, mutate(projection.projectionMarkdown), fixturePath);
 
   expect(result).toMatchObject({ ok: false, markdown: source });
+});
+
+it("identifies the exact protected construct removed by an unsafe edit", async () => {
+  const source = await readFile(fixturePath, "utf8");
+  const projection = await createRichProjection(source);
+
+  for (const island of projection.islands) {
+    const marker = new RegExp(`<ScribeStudioProtectedIsland[^>]+data-scribe-id=["']${island.id}["'][^>]*/>\\n*`, "u");
+    const result = await acceptRichCandidate(projection, projection.projectionMarkdown.replace(marker, ""), fixturePath);
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "SCB_RICH_PLACEHOLDER_MISSING",
+      islandId: island.id,
+      markdown: source
+    });
+    if (result.ok) throw new Error("Unsafe Rich Text edit was accepted.");
+    expect(result.message).toContain(island.label);
+  }
+});
+
+it("identifies a newly introduced unsupported construct without changing canonical Markdown", async () => {
+  const source = await readFile(fixturePath, "utf8");
+  const projection = await createRichProjection(source);
+  const candidate = projection.projectionMarkdown.replace(
+    "Editable paragraph.",
+    "Editable paragraph.\n\n<InjectedWidget data={experimental} />"
+  );
+
+  const result = await acceptRichCandidate(projection, candidate, fixturePath);
+
+  expect(result).toMatchObject({
+    ok: false,
+    code: "SCB_RICH_PROTECTED_CHANGED",
+    markdown: source
+  });
+  if (result.ok) throw new Error("Unsupported Rich Text construct was accepted.");
+  expect(result.message).toContain("<InjectedWidget>");
 });
 
 it("rejects a candidate that cannot compile and retains canonical Markdown", async () => {

@@ -162,7 +162,7 @@ it("projects protected MDX for Rich Text mode and accepts only preservation-safe
     ok: false,
     code: "SCB_RICH_PLACEHOLDER_MISSING",
     source: expect.stringContaining("Edited paragraph."),
-    error: expect.stringContaining("protected block")
+    error: expect.stringContaining("protected frontmatter")
   });
   expect(await readFile(file.path, "utf8")).toBe(source);
 });

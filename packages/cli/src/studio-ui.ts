@@ -228,6 +228,7 @@ function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, 
   const lastAcceptedRef = useRef(session.projectionMarkdown);
   const timerRef = useRef();
   const submittingRef = useRef(false);
+  const pendingRef = useRef(false);
 
   const plugins = useMemo(() => [
     headingsPlugin({ allowedHeadingLevels: [1, 2, 3, 4] }),
@@ -260,14 +261,17 @@ function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, 
       if (response.ok) {
         revisionRef.current = body.revision;
         lastAcceptedRef.current = candidate;
+        pendingRef.current = false;
         onAccepted(body, { ...session, revision: body.revision, projectionMarkdown: body.projectionMarkdown, islands: body.islands });
         return true;
       }
       editorRef.current?.setMarkdown(lastAcceptedRef.current);
+      pendingRef.current = false;
       onRejected(body.error || "This Rich Text edit could not be represented safely.", body.islandId);
       return false;
     } catch (error) {
       editorRef.current?.setMarkdown(lastAcceptedRef.current);
+      pendingRef.current = false;
       onRejected(error instanceof Error ? error.message : "Studio could not validate this Rich Text edit.");
       return false;
     } finally {
@@ -277,7 +281,9 @@ function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, 
   }, [onAccepted, onPendingChange, onRejected, session]);
 
   useEffect(() => {
-    registerFlush(async () => submit(editorRef.current?.getMarkdown() || lastAcceptedRef.current));
+    registerFlush(async () => pendingRef.current
+      ? submit(editorRef.current?.getMarkdown() || lastAcceptedRef.current)
+      : true);
     return () => registerFlush(null);
   }, [registerFlush, submit]);
 
@@ -287,13 +293,16 @@ function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, 
       if (!response.ok) return onRejected(body.error || "Rich Text mode could not reload.");
       revisionRef.current = body.revision;
       lastAcceptedRef.current = body.projectionMarkdown;
+      pendingRef.current = false;
+      onPendingChange(false);
       editorRef.current?.setMarkdown(body.projectionMarkdown);
       onAccepted(state, { ...body, tab: session.tab }, false);
     });
-  }, [state.revision, onAccepted, onRejected, session.tab]);
+  }, [state.revision, onAccepted, onPendingChange, onRejected, session.tab]);
 
   const onChange = useCallback((candidate, initialNormalize) => {
     if (initialNormalize) return;
+    pendingRef.current = true;
     onPendingChange(true);
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => submit(candidate), 320);
