@@ -42,6 +42,16 @@ describe("cross-platform release scripts", () => {
     expect(smoke).toContain("rejected.status === 1");
   });
 
+  it("runs Windows command shims through a shell and preserves spawn errors", async () => {
+    const smoke = await source("scripts/test-portable-cli.mjs");
+
+    expect(smoke).toContain("requiresCommandShell");
+    expect(smoke).toContain("shell: requiresCommandShell(command)");
+    expect(smoke.indexOf("if (result.error) throw result.error")).toBeLessThan(
+      smoke.indexOf("results.push")
+    );
+  });
+
   it("keeps missing Helium optional for contributors but fatal for release verification", async () => {
     const wrapper = await source("scripts/run-helium-visual.mjs");
     expect(wrapper).toContain('process.argv.includes("--require-helium")');

@@ -3,7 +3,7 @@ import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
-import { executable } from "./lib/platform.mjs";
+import { executable, requiresCommandShell } from "./lib/platform.mjs";
 
 const root = process.cwd();
 const release = join(root, ".scribe-release");
@@ -100,10 +100,11 @@ function run(command, args, cwd, requireSuccess = true, env = {}) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
+    shell: requiresCommandShell(command),
     env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1", ...env }
   });
-  results.push({ command: [command, ...args].join(" "), status: result.status, stdout: result.stdout.trim(), stderr: result.stderr.trim() });
   if (result.error) throw result.error;
+  results.push({ command: [command, ...args].join(" "), status: result.status, stdout: result.stdout.trim(), stderr: result.stderr.trim() });
   if (requireSuccess && result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed with ${result.status}:\n${result.stdout}\n${result.stderr}`);
   }
