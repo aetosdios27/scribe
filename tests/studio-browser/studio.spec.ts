@@ -67,7 +67,18 @@ test("keeps Markdown canonical while constrained Rich Text edits update the mirr
   await expect(preview.locator("h1#recovered-draft")).toBeVisible();
   await expect(page.locator("#status-text")).toHaveText("Unsaved draft");
 
-  await source.fill("# Recovered draft\n\nEditable paragraph.\n\n<Callout variant=\"note\">Protected note.</Callout>\n");
+  const richSource = "# Recovered draft\n\nEditable paragraph.\n\n<Callout variant=\"note\">Protected note.</Callout>\n";
+  await source.fill(richSource);
+  await expect.poll(async () => page.evaluate(async () => (await fetch("/__scribe/api/document")).json().then((value) => value.source))).toBe(richSource);
+  const beforeNoopSwitch = await page.evaluate(async () => (await fetch("/__scribe/api/document")).json());
+  await page.getByRole("button", { name: "Rich Text" }).click();
+  await expect(page.getByRole("toolbar", { name: "Rich Text formatting" })).toBeVisible();
+  await page.getByRole("button", { name: "Markdown", exact: true }).click();
+  await expect(page.getByRole("toolbar", { name: "Rich Text formatting" })).toHaveCount(0);
+  const afterNoopSwitch = await page.evaluate(async () => (await fetch("/__scribe/api/document")).json());
+  expect(afterNoopSwitch.source).toBe(beforeNoopSwitch.source);
+  expect(afterNoopSwitch.revision).toBe(beforeNoopSwitch.revision);
+
   await page.getByRole("button", { name: "Rich Text" }).click();
   await expect(page.getByRole("toolbar", { name: "Rich Text formatting" })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);

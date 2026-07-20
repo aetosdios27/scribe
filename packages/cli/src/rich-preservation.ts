@@ -131,16 +131,26 @@ export async function acceptRichCandidate(
   }
   const duplicated = expectedIds.find((id) => (counts.get(id) ?? 0) > 1);
   if (duplicated) {
-    return reject(projection, "SCB_RICH_PLACEHOLDER_DUPLICATED", `Rich Text candidate duplicated protected block "${duplicated}".`, duplicated);
+    const island = projection.islands.find(({ id }) => id === duplicated)!;
+    return reject(projection, "SCB_RICH_PLACEHOLDER_DUPLICATED", `Rich Text candidate duplicated protected ${island.label}.`, duplicated);
   }
   const missing = expectedIds.find((id) => (counts.get(id) ?? 0) === 0);
   if (missing) {
-    return reject(projection, "SCB_RICH_PLACEHOLDER_MISSING", `Rich Text candidate removed protected block "${missing}".`, missing);
+    const island = projection.islands.find(({ id }) => id === missing)!;
+    return reject(projection, "SCB_RICH_PLACEHOLDER_MISSING", `Rich Text candidate removed protected ${island.label}.`, missing);
   }
   const actualIds = placeholders.map(({ id }) => id);
   if (actualIds.some((id, index) => id !== expectedIds[index])) {
     const firstMismatch = actualIds.find((id, index) => id !== expectedIds[index]);
-    return reject(projection, "SCB_RICH_PLACEHOLDER_REORDERED", "Rich Text candidate changed the order of protected source blocks.", firstMismatch);
+    const island = projection.islands.find(({ id }) => id === firstMismatch);
+    return reject(
+      projection,
+      "SCB_RICH_PLACEHOLDER_REORDERED",
+      island === undefined
+        ? "Rich Text candidate changed the order of protected source blocks."
+        : `Rich Text candidate changed the order of protected ${island.label}.`,
+      firstMismatch
+    );
   }
 
   const rehydrated = rehydrateCandidate(candidate, placeholders, projection.islands);
@@ -149,6 +159,23 @@ export async function acceptRichCandidate(
     rehydratedIslands = classifyProtectedIslands(rehydrated, parseMarkdown(rehydrated));
   } catch (error) {
     return reject(projection, "SCB_RICH_PARSE_FAILED", `Rehydrated Markdown could not be parsed: ${errorMessage(error)}`);
+  }
+  const expectedRawCounts = new Map<string, number>();
+  for (const island of projection.islands) {
+    expectedRawCounts.set(island.raw, (expectedRawCounts.get(island.raw) ?? 0) + 1);
+  }
+  const introduced = rehydratedIslands.find((island) => {
+    const remaining = expectedRawCounts.get(island.raw) ?? 0;
+    if (remaining === 0) return true;
+    expectedRawCounts.set(island.raw, remaining - 1);
+    return false;
+  });
+  if (introduced) {
+    return reject(
+      projection,
+      "SCB_RICH_PROTECTED_CHANGED",
+      `Rich Text candidate introduced unsupported ${introduced.label}.`
+    );
   }
   const changedIndex = projection.islands.findIndex((island, index) => rehydratedIslands[index]?.raw !== island.raw);
   if (changedIndex >= 0 || rehydratedIslands.length !== projection.islands.length) {
@@ -179,27 +206,31 @@ function parseMarkdown(markdown: string): MdastNode {
 function classifyProtectedIslands(markdown: string, tree: MdastNode): readonly ProtectedIsland[] {
   let islandIndex = 0;
   return (tree.children ?? []).flatMap((node) => {
-    const kind = protectedKind(node, markdown);
-    if (kind === undefined) return [];
+    const protectedNode = classifyProtectedNode(node, markdown);
+    if (protectedNode === undefined) return [];
     const range = nodeRange(node);
+    const raw = markdown.slice(range.start, range.end);
     const index = 1 + islandIndex++;
     return [{
       id: `scribe-protected-${String(index).padStart(4, "0")}`,
-      kind,
-      label: islandLabel(kind, node),
+      kind: protectedNode.kind,
+      label: islandLabel(protectedNode.kind, protectedNode.node, raw),
       ...range,
-      raw: markdown.slice(range.start, range.end)
+      raw
     }];
   });
 }
 
-function protectedKind(node: MdastNode, markdown: string): ProtectedIslandKind | undefined {
-  if (node.type === "yaml" || node.type === "toml") return "frontmatter";
-  if (node.type === "code" && (node.lang != null || node.meta != null)) return "codeMetadata";
+function classifyProtectedNode(
+  node: MdastNode,
+  markdown: string
+): { readonly kind: ProtectedIslandKind; readonly node: MdastNode } | undefined {
+  if (node.type === "yaml" || node.type === "toml") return { kind: "frontmatter", node };
+  if (node.type === "code" && (node.lang != null || node.meta != null)) return { kind: "codeMetadata", node };
   const raw = rawNode(markdown, node).trimStart();
-  if (isDirectiveNode(node) || raw.startsWith(":::")) return "directive";
+  if (isDirectiveNode(node) || raw.startsWith(":::")) return { kind: "directive", node };
   const unsafe = findUnsafeDescendant(node);
-  return unsafe === undefined ? undefined : kindForNode(unsafe);
+  return unsafe === undefined ? undefined : { kind: kindForNode(unsafe), node: unsafe };
 }
 
 function findUnsafeDescendant(node: MdastNode): MdastNode | undefined {
@@ -275,12 +306,22 @@ function rawNode(markdown: string, node: MdastNode): string {
   return markdown.slice(start, end);
 }
 
-function islandLabel(kind: ProtectedIslandKind, node: MdastNode): string {
+function islandLabel(kind: ProtectedIslandKind, node: MdastNode, raw: string): string {
   if (kind === "frontmatter") return "frontmatter";
   if (kind === "codeMetadata") return "code-fence metadata";
-  if (kind === "directive") return "directive";
-  if (kind === "mdxjsEsm") return "MDX import/export";
-  if (kind === "mdxFlowExpression" || kind === "mdxTextExpression") return "MDX expression";
+  if (kind === "directive") {
+    const name = node.name ?? /^\s*:::([A-Za-z][\w-]*)/u.exec(raw)?.[1];
+    return name === undefined ? "directive" : `:::${name} directive`;
+  }
+  if (kind === "mdxjsEsm") {
+    const value = node.value?.trimStart() ?? "";
+    if (value.startsWith("import ")) return "MDX import";
+    if (value.startsWith("export ")) return "MDX export";
+    return "MDX import/export";
+  }
+  if (kind === "mdxFlowExpression" || kind === "mdxTextExpression") {
+    return /^\/\*/u.test(node.value?.trimStart() ?? "") ? "MDX comment" : "MDX expression";
+  }
   if (kind === "mdxJsxFlowElement" || kind === "mdxJsxTextElement") {
     return node.name == null ? "MDX JSX" : `<${node.name}>`;
   }
