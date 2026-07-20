@@ -36,10 +36,10 @@ Expected packages are `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/md
 Start with the deliberate detector:
 
 ```bash
-bunx scb init --dry-run
+bunx scribe init --dry-run
 ```
 
-Review the detected stack, recommended mode, touched files, commands, ambiguities, and existing highlighter warnings. Run `bunx scb init` only after the plan is safe. Installation itself is inert.
+Review the detected stack, recommended mode, touched files, commands, ambiguities, and existing highlighter warnings. Run `bunx scribe init` only after the plan is safe. Installation itself is inert.
 
 Choose exactly one style mode:
 
@@ -177,11 +177,11 @@ Scribe supplies color-scheme-aware styles. The host owns the runtime light/dark 
 Run:
 
 ```bash
-bunx scb validate path/to/article.mdx
-bunx scb validate path/to/article.mdx --strict
+bunx scribe validate path/to/article.mdx
+bunx scribe validate path/to/article.mdx --strict
 ```
 
-With npm, use `npx scb validate path/to/article.mdx`.
+With npm, use `npx scribe validate path/to/article.mdx`.
 
 Interpret exit codes as `0` success, `1` article validation failure, and `2` invalid CLI usage. Warnings do not fail unless strict mode requires it. Diagnostics should name the file, position when available, severity, stable code, and remediation.
 
@@ -192,10 +192,10 @@ For an established site, compare computed body font, body size, line height, par
 Use Studio for a source-authoritative local editing loop when helpful:
 
 ```bash
-bunx scb studio path/to/article.mdx --mode foundation
+bunx scribe studio path/to/article.mdx --mode foundation
 ```
 
-Studio detects the project style mode with the same rules as `scb init`; use `--mode` only as a deliberate override. Markdown mode edits source beside the production renderer. Rich Text mode is a constrained visual helper whose accepted edits serialize to the canonical Markdown draft; its Markdown mirror is read-only, and unsupported MDX remains a byte-identical protected block that must be edited in Markdown mode. Studio saves explicitly to the displayed article path, warns before closing with unwritten changes, detects external conflicts, and writes atomically. Frontmatter supplies a generated Banner when it includes a title and no explicit Banner exists. Absolute image paths resolve from the project `public` directory, and missing assets remain visible in the preview. Studio is local-only and not a WYSIWYG editor, CMS, or page builder. Use `--host-css` only for one explicit local CSS file and account for framework preprocessing limitations.
+Studio detects the project style mode with the same rules as `scribe init`; use `--mode` only as a deliberate override. Markdown mode edits source beside the production renderer. Rich Text mode is a constrained visual helper whose accepted edits serialize to the canonical Markdown draft; its Markdown mirror is read-only, and unsupported MDX remains a byte-identical protected block that must be edited in Markdown mode. Studio saves explicitly to the displayed article path, warns before closing with unwritten changes, detects external conflicts, and writes atomically. Frontmatter supplies a generated Banner when it includes a title and no explicit Banner exists. Absolute image paths resolve from the project `public` directory, and missing assets remain visible in the preview. Studio is local-only and not a WYSIWYG editor, CMS, or page builder. Use `--host-css` only for one explicit local CSS file and account for framework preprocessing limitations.
 
 ## Diagnose the boundary
 
@@ -218,5 +218,5 @@ Reduce defects to ordinary semantic content before adding CSS. Do not introduce 
 - Confirm Shiki output is static and browser bundles contain no highlighter runtime.
 - Confirm copy is the only article behavior requiring hydration.
 - Confirm host fonts, colors, radius, and theme behavior remain native.
-- Run `bunx scb validate`, strict TypeScript, and the host production build.
+- Run `bunx scribe validate`, strict TypeScript, and the host production build.
 - Visually inspect desktop and mobile output before declaring success.

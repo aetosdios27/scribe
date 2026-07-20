@@ -32,6 +32,12 @@ for (const manifest of manifests) {
   }
 }
 
+const cliManifest = manifests.find(({ name }) => name === "@scribe-sdk/cli");
+assert(
+  cliManifest?.bin?.scribe === "./dist/index.mjs" && cliManifest.bin.scb === "./dist/index.mjs",
+  "@scribe-sdk/cli must expose scribe and the scb compatibility alias from the same executable."
+);
+
 const config = JSON.parse(await readFile(join(root, ".changeset", "config.json"), "utf8"));
 assert(config.access === "public", "Changesets access must be public.");
 assert(config.baseBranch === "main", "Changesets baseBranch must be main.");

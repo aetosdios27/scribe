@@ -5,7 +5,7 @@ import { createServer as createNetServer } from "node:net";
 
 import { afterEach, expect, it, vi } from "vitest";
 
-import { parseStudioArguments, runStudio, startStudio, type StudioHandle } from "./studio.js";
+import { formatStudioStartup, parseStudioArguments, runStudio, startStudio, type StudioHandle } from "./studio.js";
 
 const handles: StudioHandle[] = [];
 afterEach(async () => Promise.all(handles.splice(0).map((handle) => handle.close())));
@@ -34,8 +34,17 @@ it("parses the documented studio command surface and rejects unknown flags", () 
     open: true,
     help: false
   });
-  expect(parseStudioArguments(["content/a.mdx", "--wat"])).toMatchObject({ error: expect.stringContaining("--wat") });
+  expect(parseStudioArguments(["content/a.mdx", "--no-opn"])).toEqual({ error: 'Unknown studio option "--no-opn". Did you mean "--no-open"?' });
   expect(parseStudioArguments(["content/a.txt"])).toMatchObject({ error: expect.stringContaining(".md or .mdx") });
+});
+
+it("formats Studio startup with a project-relative source path", () => {
+  const root = join(tmpdir(), "scribe host");
+  const source = join(root, "content", "peer notes.mdx");
+  const output = formatStudioStartup(root, source, "foundation", "http://127.0.0.1:4317");
+
+  expect(output).toMatch(/Source  content[\\/]peer notes\.mdx/u);
+  expect(output).not.toContain(root);
 });
 
 it("requires an explicit Studio mode when project detection is ambiguous", async () => {

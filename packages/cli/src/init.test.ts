@@ -89,10 +89,30 @@ it("keeps dry runs pure and reports every proposed change", async () => {
 
   expect(await runInit(["--dry-run"], { cwd, version: "0.1.0-alpha.2", stdout })).toBe(0);
   expect(await readFile(join(cwd, "src/index.css"), "utf8")).toBe(before);
-  expect(stdout.mock.calls.join("\n")).toContain("Scribe public alpha init dry run");
-  expect(stdout.mock.calls.join("\n")).not.toContain("beta");
-  expect(stdout.mock.calls.join("\n")).toContain("Recommended style mode: default");
-  expect(stdout.mock.calls.join("\n")).toContain("src/index.css");
+  const output = stdout.mock.calls.join("\n");
+  expect(output).toContain("Scribe init — dry run");
+  expect(output).not.toContain("beta");
+  expect(output).toMatch(/Detected\n[\s\S]*React 19\.2\.7/u);
+  expect(output).toMatch(/Recommendation\n[\s\S]*default/u);
+  expect(output).toMatch(/Commands\n/u);
+  expect(output).toMatch(/File changes\n[\s\S]*src\/index\.css/u);
+  expect(output).toMatch(/Manual steps\n/u);
+  expect(output).toMatch(/Next\n/u);
+  expect(output).not.toContain(cwd);
+});
+
+it("separates detected integration warnings from manual steps", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3", "rehype-pretty-code": "0.14.1" } }),
+    "src/index.css": "body { margin: 0; }\n",
+    "vite.config.ts": 'import prettyCode from "rehype-pretty-code";\n'
+  });
+  const stdout = vi.fn();
+
+  expect(await runInit(["--dry-run"], { cwd, version: "0.1.0-alpha.2", stdout })).toBe(0);
+  const output = stdout.mock.calls.join("\n");
+  expect(output).toMatch(/Warnings\n[\s\S]*existing syntax highlighter/u);
+  expect(output.indexOf("Warnings")).toBeLessThan(output.indexOf("Manual steps"));
 });
 
 it("applies one style import and remains idempotent", async () => {
@@ -159,6 +179,9 @@ it("preserves CRLF files while adding the selected import", async () => {
 
 it("rejects invalid options and unresolved projects with usage status", async () => {
   const cwd = await project({ "package.json": JSON.stringify({ dependencies: { react: "19.2.7" } }) });
-  expect(await runInit(["--mode", "loud"], { cwd, version: "0.1.0-alpha.2", stderr: vi.fn() })).toBe(2);
+  const stderr = vi.fn();
+  expect(await runInit(["--mode", "loud"], { cwd, version: "0.1.0-alpha.2", stderr })).toBe(2);
+  expect(await runInit(["--dryrun"], { cwd, version: "0.1.0-alpha.2", stderr })).toBe(2);
+  expect(stderr.mock.calls.join("\n")).toContain('Did you mean "--dry-run"?');
   expect(await runInit(["--dry-run"], { cwd, version: "0.1.0-alpha.2", stderr: vi.fn() })).toBe(2);
 });

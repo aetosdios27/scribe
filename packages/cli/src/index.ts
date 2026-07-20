@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { compileScribeMdx } from "@scribe-sdk/mdx";
 
+import { colorize, commandArgument, displayPath, suggestClosest, supportsColor } from "./cli-output.js";
 import { initHelp, runInit } from "./init.js";
 import { runStudio, studioHelp } from "./studio.js";
 
@@ -14,82 +15,133 @@ export const version = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ).version as string;
 
-const help = `Scribe ${version}
+const help = `Scribe ${version} · public alpha
 
-Scribe is in public alpha. Add technical-publishing structure and behavior to a host-owned React site.
+Technical-publishing structure and behavior for a host-owned React site.
 
-Usage:
-  scb validate <article.mdx> [--strict]
-  scb init [--dry-run] [--mode foundation|default|tailwind] [--yes]
-  scb studio <article.mdx> [--mode foundation|default|tailwind] [--host-css <file>] [--port 4317] [--no-open]
-  scb --help
-  scb --version
+Usage
+  scribe <command> [options]
 
-Options:
-  --strict    Treat warnings, including plaintext language fallbacks, as errors.
-  -h, --help  Show this help.
-  -v, --version  Show the installed Scribe version.
+Commands
+  init       Inspect and deliberately configure Scribe in the current React project.
+  validate   Compile and validate one Markdown or MDX article.
+  studio     Open the local, source-authoritative authoring Studio.
+
+Examples
+  scribe init --dry-run
+  scribe validate ./content/article.mdx
+  scribe studio ./content/article.mdx
+
+Global options
+  -h, --help       Show this help.
+  -v, --version    Show the installed Scribe version.
+
+Run \`scribe <command> --help\` for command options.
 `;
 
-export async function main(args: readonly string[] = process.argv.slice(2)): Promise<number> {
+const validateHelp = `Compile and validate one article through Scribe's production MDX pipeline.
+
+Usage
+  scribe validate <article.mdx> [--strict]
+
+Examples
+  scribe validate ./content/article.mdx
+  scribe validate ./content/article.mdx --strict
+
+Options
+  --strict      Treat warnings, including plaintext language fallback, as errors.
+  -h, --help    Show this command help.
+`;
+
+export interface MainDependencies {
+  readonly cwd?: string;
+  readonly stdout?: (value: string) => void;
+  readonly stderr?: (value: string) => void;
+  readonly isTTY?: boolean;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+}
+
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+  dependencies: MainDependencies = {}
+): Promise<number> {
+  const cwd = dependencies.cwd ?? process.cwd();
+  const stdout = dependencies.stdout ?? ((value: string) => process.stdout.write(value));
+  const stderr = dependencies.stderr ?? ((value: string) => process.stderr.write(value));
+  const color = supportsColor(
+    dependencies.isTTY ?? process.stdout.isTTY === true,
+    dependencies.env ?? process.env
+  );
   if (args.includes("--version") || args.includes("-v")) {
-    process.stdout.write(`${version}\n`);
+    stdout(`${version}\n`);
     return 0;
   }
-  if ((args.includes("--help") || args.includes("-h")) && args[0] !== "init" && args[0] !== "studio") {
-    process.stdout.write(help);
+  if (args[0] === "--help" || args[0] === "-h") {
+    stdout(help);
     return 0;
   }
   if (args.length === 0) {
-    process.stderr.write("Expected a command. Run `scb --help` for usage.\n");
+    stderr("Expected a command. Run `scribe --help` for the three supported actions.\n");
     return 2;
   }
 
   const [command, ...rest] = args;
   if (command === "init") {
     if (rest.includes("--help") || rest.includes("-h")) {
-      process.stdout.write(initHelp);
+      stdout(initHelp);
       return 0;
     }
-    return runInit(rest, { version });
+    return runInit(rest, { version, cwd, stdout, stderr });
   }
   if (command === "studio") {
     if (rest.includes("--help") || rest.includes("-h")) {
-      process.stdout.write(studioHelp);
+      stdout(studioHelp);
       return 0;
     }
-    return runStudio(rest);
+    return runStudio(rest, { cwd, stdout, stderr });
   }
   if (command !== "validate") {
-    process.stderr.write(`Unknown command "${String(command)}". Run \`scb --help\` for usage.\n`);
+    const suggestion = suggestClosest(String(command), ["init", "validate", "studio"]);
+    stderr(`Unknown command "${String(command)}".${suggestion === undefined ? "" : ` Did you mean "${suggestion}"?`}\nRun \`scribe --help\` for the supported actions.\n`);
     return 2;
+  }
+  if (rest.includes("--help") || rest.includes("-h")) {
+    stdout(validateHelp);
+    return 0;
   }
 
   const strict = rest.includes("--strict");
   const unsupportedOptions = rest.filter((argument) => argument.startsWith("-") && argument !== "--strict");
   const paths = rest.filter((argument) => !argument.startsWith("-"));
   if (unsupportedOptions.length > 0 || paths.length !== 1) {
-    const detail = unsupportedOptions.length > 0
-      ? `Unknown option "${unsupportedOptions[0]}".`
+    const unknown = unsupportedOptions[0];
+    const suggestion = unknown === undefined ? undefined : suggestClosest(unknown, ["--strict", "--help"]);
+    const detail = unknown !== undefined
+      ? `Unknown option "${unknown}".${suggestion === undefined ? "" : ` Did you mean "${suggestion}"?`}`
       : "Expected exactly one MDX file.";
-    process.stderr.write(`${detail} Usage: scb validate <article.mdx> [--strict]\n`);
+    stderr(`${detail}\nRun \`scribe validate --help\` for accepted arguments.\n`);
     return 2;
   }
 
-  return validate(paths[0] as string, strict);
+  return validate(paths[0] as string, strict, { cwd, stdout, stderr, color });
 }
 
-async function validate(inputPath: string, strict: boolean): Promise<number> {
-  const path = resolve(inputPath);
+async function validate(
+  inputPath: string,
+  strict: boolean,
+  output: Required<Pick<MainDependencies, "cwd" | "stdout" | "stderr">> & { readonly color: boolean }
+): Promise<number> {
+  const path = resolve(output.cwd, inputPath);
+  const shownPath = displayPath(output.cwd, path);
   try {
     const source = await readFile(path, "utf8");
     const file = await compileScribeMdx({ path, value: source }, { strict });
-    for (const message of file.messages) process.stderr.write(`${formatDiagnostic(path, message, "warning")}\n`);
+    for (const message of file.messages) output.stderr(`${formatDiagnostic(shownPath, message, "warning")}\n`);
     const count = file.messages.length;
-    process.stdout.write(`Validated ${path}${count === 0 ? "." : ` with ${count} warning${count === 1 ? "" : "s"}.`}\n`);
+    output.stdout(`${colorize("Success", "success", output.color)}  Validation passed\n  ${shownPath}\n${count === 0 ? "" : `${colorize("Warning", "warning", output.color)}  ${count} warning${count === 1 ? "" : "s"} reported\n`}\n`);
     return 0;
   } catch (error) {
-    process.stderr.write(`${formatDiagnostic(path, error, "error")}\n`);
+    output.stderr(`${formatDiagnostic(shownPath, error, "error")}\n${colorize("Error", "error", output.color)}  Validation failed\n  ${shownPath}\n\nNext\n  Fix the diagnostic above, then run \`scribe validate ${commandArgument(shownPath)}${strict ? " --strict" : ""}\` again.\n`);
     return 1;
   }
 }

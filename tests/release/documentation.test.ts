@@ -16,16 +16,20 @@ describe("release documentation", () => {
     expect(readme).toContain("The public alpha is tested against React 19.2.7, Next.js 16.2.10, Vite 8.1.3, and MDX 3.1.1.");
     expect(readme).not.toContain("beta");
     expect(readme).toContain("bun add @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alpha");
+    expect(readme).toContain("bun add --global @scribe-sdk/cli@alpha");
+    expect(readme).toContain("npm install --global @scribe-sdk/cli@alpha");
     expect(readme).toContain('import "@scribe-sdk/styles/default.css"');
     expect(readme).toContain("createScribeNextMdxOptions");
     expect(readme).toContain("createScribeComponents");
-    expect(readme).toContain("scb validate");
+    expect(readme).toContain("scribe validate");
     expect(readme).toContain("SKILL.md");
     expect(readme).toContain("Licensed under Apache-2.0");
     expect(readme).toContain("https://github.com/aetosdios27/scribe/blob/main/examples/starter-article.mdx");
     expect(readme).toContain("https://github.com/aetosdios27/scribe/blob/main/examples/starter-diagram.svg");
     expect(readme).toContain("return <Publication>{children}</Publication>");
-    expect(readme).toContain("npx scb validate ./content/article.mdx --strict");
+    expect(readme).toContain("npx scribe validate ./content/article.mdx --strict");
+    expect(readme).toContain("`scb` compatibility alias");
+    expect(readme.match(/\bscb\b/gu)).toHaveLength(1);
     expect(readme).toContain("`0 1.25rem 3rem color-mix(in oklab, #000 12%, transparent)`");
   });
 
@@ -48,10 +52,11 @@ describe("release documentation", () => {
     expect(skill).toContain("Preserve the host’s existing MDX options and plugins.");
     expect(skill).toContain("Do not create a second MDX compilation pipeline.");
     expect(skill).toContain("Do not wrap an MDX article in a second `Publication`; the Scribe MDX component map already supplies the article boundary.");
-    expect(skill).toContain("bunx scb validate path/to/article.mdx");
-    expect(skill).toContain("bunx scb validate path/to/article.mdx --strict");
-    expect(skill).toContain("npx scb validate path/to/article.mdx");
-    expect(skill).not.toMatch(/^scb validate /mu);
+    expect(skill).toContain("bunx scribe validate path/to/article.mdx");
+    expect(skill).toContain("bunx scribe validate path/to/article.mdx --strict");
+    expect(skill).toContain("npx scribe validate path/to/article.mdx");
+    expect(skill).not.toMatch(/^scribe validate /mu);
+    expect(skill).not.toMatch(/\bscb\b/u);
     expect(skill.trim().split(/\s+/u).length).toBeGreaterThan(500);
     expect(skill.trim().split(/\s+/u).length).toBeLessThan(2_500);
     expect(skill.split("\n").length).toBeLessThan(500);

@@ -39,6 +39,16 @@ for (const expected of packages) {
   if (/workspace:|file:|\/home\/|\\Users\\/u.test(manifestText)) {
     throw new Error(`${file} contains a workspace or filesystem reference.`);
   }
+  if (expected.directory === "cli") {
+    const expectedBins = { scribe: "./dist/index.mjs", scb: "./dist/index.mjs" };
+    if (JSON.stringify(manifest.bin) !== JSON.stringify(expectedBins)) {
+      throw new Error(`${file} must expose the scribe binary and scb compatibility alias from dist/index.mjs.`);
+    }
+    const executable = archiveEntries.find((entry) => entry.path === "package/dist/index.mjs");
+    if (!executable || (executable.mode & 0o111) === 0) {
+      throw new Error(`${file}:dist/index.mjs is not executable.`);
+    }
+  }
   const declarationEntries = entries.filter((entry) => entry.endsWith(".d.mts"));
   for (const entry of declarationEntries) {
     const declaration = entryText(archiveEntries, `package/${entry}`, file);
@@ -59,6 +69,7 @@ for (const expected of packages) {
     topLevelFiles,
     sourceMaps: entries.filter((entry) => entry.endsWith(".map")),
     declarations: declarationEntries,
+    bin: manifest.bin,
     files: entries
   });
 }

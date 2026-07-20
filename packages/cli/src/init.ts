@@ -4,6 +4,8 @@ import { access, mkdir, readFile, readdir, rename, writeFile } from "node:fs/pro
 import { basename, dirname, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 
+import { suggestClosest } from "./cli-output.js";
+
 export type StyleMode = "foundation" | "default" | "tailwind";
 export type PackageManager = "bun" | "npm" | "pnpm" | "yarn";
 
@@ -39,6 +41,7 @@ export interface InitPlan {
   readonly ambiguities: readonly string[];
   readonly commands: readonly (readonly string[])[];
   readonly changes: readonly FileChange[];
+  readonly warnings: readonly string[];
   readonly manualSteps: readonly string[];
 }
 
@@ -73,14 +76,15 @@ const styleCandidates = [
 
 export const initHelp = `Initialize Scribe deliberately inside an existing React project.
 
-Usage:
-  scb init --dry-run
-  scb init [--yes]
-  scb init --mode foundation [--yes]
-  scb init --mode default [--yes]
-  scb init --mode tailwind [--yes]
+Usage
+  scribe init [options]
 
-Options:
+Examples
+  scribe init --dry-run
+  scribe init
+  scribe init --mode foundation --yes
+
+Options
   --dry-run       Inspect and print the plan without installing or writing files.
   --mode <mode>   Select foundation, default, or tailwind styling.
   --yes           Apply the reported plan without an interactive confirmation.
@@ -144,6 +148,7 @@ export async function planInit(root: string, explicitMode: StyleMode | undefined
   if (missingCli.length > 0) commands.push(installCommand(inspection.packageManager, missingCli, true));
 
   const changes: FileChange[] = [];
+  const warnings: string[] = [];
   const manualSteps: string[] = [];
   if (mode !== undefined) {
     const importLine = `@import "@scribe-sdk/styles/${mode}.css";`;
@@ -188,10 +193,10 @@ export async function planInit(root: string, explicitMode: StyleMode | undefined
     }
   }
   if (inspection.hasSyntaxHighlighter) {
-    manualSteps.push("An existing syntax highlighter was detected. Review the overlap manually; init will not remove or replace it.");
+    warnings.push("An existing syntax highlighter was detected. Review the overlap manually; init will not remove or replace it.");
   }
 
-  return { inspection, ...(mode === undefined ? {} : { mode }), reason, ambiguities, commands, changes, manualSteps };
+  return { inspection, ...(mode === undefined ? {} : { mode }), reason, ambiguities, commands, changes, warnings, manualSteps };
 }
 
 export async function resolveProjectStyleMode(
@@ -288,7 +293,7 @@ export async function runInit(args: readonly string[], dependencies: InitDepende
     return 1;
   }
 
-  stdout(`Scribe initialized in ${plan.mode} mode.\nModified: ${plan.changes.length === 0 ? "none" : plan.changes.map((change) => displayPath(plan.inspection.root, change.path)).join(", ")}\nSkipped: existing configuration was preserved.\nVerify with: ${verificationCommand(plan.inspection.packageManager)}\nRollback: revert only the files listed above and remove packages added by the displayed commands.\n`);
+  stdout(`Success  Scribe initialized\n  Mode           ${plan.mode}\n\nChanged files\n${plan.changes.length === 0 ? "  none" : plan.changes.map((change) => `  ${displayPath(plan.inspection.root, change.path)}`).join("\n")}\n\nPreserved\n  Existing configuration outside the reported plan.\n\nNext\n  Run \`${verificationCommand(plan.inspection.packageManager)}\`.\n  Roll back by reverting only the files above and removing packages from the displayed commands.\n`);
   return 0;
 }
 
@@ -311,7 +316,11 @@ function parseInitArguments(args: readonly string[]): { readonly dryRun: boolean
       const value = argument.slice("--mode=".length);
       if (!modes.has(value as StyleMode)) return `Invalid --mode value "${value}". Expected one of: foundation, default, tailwind.`;
       mode = value as StyleMode;
-    } else return `Unknown init option "${String(argument)}".`;
+    } else {
+      const value = String(argument);
+      const suggestion = suggestClosest(value, ["--dry-run", "--mode", "--yes", "--help"]);
+      return `Unknown init option "${value}".${suggestion === undefined ? "" : ` Did you mean "${suggestion}"?`}`;
+    }
   }
   return { dryRun, yes, help, ...(mode === undefined ? {} : { mode }) };
 }
@@ -327,19 +336,40 @@ function formatPlan(plan: InitPlan, dryRun: boolean): string {
     plan.inspection.hasNextMdx ? "@next/mdx" : undefined
   ].filter(Boolean).join(", ");
   const lines = [
-    dryRun ? "Scribe public alpha init dry run — no files or packages will be changed." : "Scribe public alpha initialization plan.",
-    `Project: ${plan.inspection.root}`,
-    `Detected stack: ${detected}`,
-    `Package manager: ${plan.inspection.packageManager}`,
-    `Recommended style mode: ${plan.mode ?? "unresolved"}${plan.reason === "" ? "" : ` — ${plan.reason}`}`,
-    "Proposed commands:",
+    `Scribe init — ${dryRun ? "dry run" : "reviewed plan"}`,
+    dryRun ? "No files or packages will be changed." : "Review this plan before confirming changes.",
+    "",
+    "Detected",
+    "  Project          .",
+    `  Stack            ${detected}`,
+    `  Package manager  ${plan.inspection.packageManager}`,
+    "",
+    "Recommendation",
+    `  Mode    ${plan.mode ?? "unresolved"}`,
+    ...(plan.reason === "" ? [] : [`  Reason  ${plan.reason}`]),
+    "",
+    "Commands",
     ...(plan.commands.length === 0 ? ["  none"] : plan.commands.map((command) => `  ${command.join(" ")}`)),
-    "Proposed file changes:",
+    "",
+    "File changes",
     ...(plan.changes.length === 0 ? ["  none"] : plan.changes.map((change) => `  ${displayPath(plan.inspection.root, change.path)} — ${change.description}`)),
-    "Manual steps:",
+    "",
+    "Warnings",
+    ...(plan.warnings.length === 0 ? ["  none"] : plan.warnings.map((warning) => `  ${warning}`)),
+    "",
+    "Manual steps",
     ...(plan.manualSteps.length === 0 ? ["  none"] : plan.manualSteps.map((step) => `  ${step}`))
   ];
-  if (plan.ambiguities.length > 0) lines.push("Unresolved:", ...plan.ambiguities.map((value) => `  ${value}`));
+  if (plan.ambiguities.length > 0) lines.push("", "Ambiguities", ...plan.ambiguities.map((value) => `  ${value}`));
+  lines.push(
+    "",
+    "Next",
+    plan.ambiguities.length > 0 || plan.mode === undefined
+      ? "  Resolve the ambiguities above, then rerun `scribe init --dry-run`."
+      : dryRun
+        ? "  Review this plan, then run `scribe init` to confirm and apply it."
+        : "  Confirm only after the detected stack and proposed changes are correct."
+  );
   return `${lines.join("\n")}\n`;
 }
 
@@ -388,10 +418,10 @@ function installCommand(manager: PackageManager, packages: readonly string[], de
 }
 
 function verificationCommand(manager: PackageManager): string {
-  if (manager === "bun") return "bunx scb validate path/to/article.mdx";
-  if (manager === "pnpm") return "pnpm exec scb validate path/to/article.mdx";
-  if (manager === "yarn") return "yarn scb validate path/to/article.mdx";
-  return "npx scb validate path/to/article.mdx";
+  if (manager === "bun") return "bunx scribe validate path/to/article.mdx";
+  if (manager === "pnpm") return "pnpm exec scribe validate path/to/article.mdx";
+  if (manager === "yarn") return "yarn scribe validate path/to/article.mdx";
+  return "npx scribe validate path/to/article.mdx";
 }
 
 function insertCssImport(existing: string, importLine: string): string {

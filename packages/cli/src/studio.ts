@@ -12,6 +12,7 @@ import { compileScribeMdx, createScribeMdxOptions } from "@scribe-sdk/mdx";
 import react from "@vitejs/plugin-react";
 import { createServer as createViteServer, normalizePath, type Plugin, type ViteDevServer } from "vite";
 
+import { displayPath, suggestClosest } from "./cli-output.js";
 import { resolveProjectStyleMode, type StyleMode } from "./init.js";
 import { acceptRichCandidate, createRichProjection, type RichProjection } from "./rich-preservation.js";
 import { studioClientModule, studioStyles, type StudioClientImports } from "./studio-ui.js";
@@ -77,10 +78,14 @@ const maxRequestBytes = 5 * 1024 * 1024;
 
 export const studioHelp = `Open Scribe's local, source-authoritative MDX Studio.
 
-Usage:
-  scb studio <article.mdx> [options]
+Usage
+  scribe studio <article.mdx> [options]
 
-Options:
+Examples
+  scribe studio ./content/article.mdx
+  scribe studio ./content/article.mdx --mode foundation --no-open
+
+Options
   --mode <mode>     Override detected foundation, default, or tailwind CSS.
   --host-css <path> Load one explicit local host stylesheet.
   --port <number>   Use a specific loopback port (default: 4317).
@@ -115,7 +120,10 @@ export function parseStudioArguments(args: readonly string[]): StudioArguments |
       if (!Number.isInteger(value) || value < 1 || value > 65_535) return { error: "--port requires an integer from 1 to 65535." };
       port = value;
       index += 1;
-    } else if (argument?.startsWith("-")) return { error: `Unknown studio option "${argument}".` };
+    } else if (argument?.startsWith("-")) {
+      const suggestion = suggestClosest(argument, ["--mode", "--host-css", "--port", "--no-open", "--help"]);
+      return { error: `Unknown studio option "${argument}".${suggestion === undefined ? "" : ` Did you mean "${suggestion}"?`}` };
+    }
     else if (path === undefined) path = argument;
     else return { error: "Expected exactly one Markdown or MDX source file." };
   }
@@ -304,7 +312,7 @@ export async function runStudio(
     return 1;
   }
 
-  stdout(`Scribe Studio: ${handle.origin}\nSource remains authoritative; save explicitly from the Studio or your editor.\n`);
+  stdout(formatStudioStartup(dependencies.cwd ?? process.cwd(), parsed.path, mode, handle.origin));
   await new Promise<void>((resolveStop) => {
     const stop = () => resolveStop();
     process.once("SIGINT", stop);
@@ -312,6 +320,11 @@ export async function runStudio(
   });
   await handle.close();
   return 0;
+}
+
+export function formatStudioStartup(root: string, sourcePath: string, mode: StyleMode, origin: string): string {
+  const source = displayPath(root, resolve(root, sourcePath));
+  return `Scribe Studio\n  ${origin}\n  Source  ${source}\n  Mode    ${mode}\n\nSource remains authoritative. Save explicitly from Studio or your editor.\nPress Ctrl+C to stop.\n`;
 }
 
 function createStudioPlugin(context: {

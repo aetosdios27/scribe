@@ -14,10 +14,14 @@ const packageFiles = {
 } as const;
 
 describe("publishable package manifests", () => {
-  it("pins the audited PostCSS override for workspace framework fixtures", async () => {
+  it("pins audited dependency overrides for workspace and consumer fixtures", async () => {
     const manifest = await readJson(join(root, "package.json"));
 
-    expect(manifest.overrides).toEqual({ "@types/mdx": "2.0.14", postcss: "8.5.19" });
+    expect(manifest.overrides).toEqual({
+      "@types/mdx": "2.0.14",
+      "js-yaml": "4.3.0",
+      postcss: "8.5.19"
+    });
   });
 
   it.each(packageNames)("hardens @scribe-sdk/%s for npm publication", async (directory) => {
@@ -98,7 +102,7 @@ describe("publishable package manifests", () => {
 
   it("publishes the CLI as a binary rather than a library API", async () => {
     const manifest = await readJson(join(root, "packages/cli/package.json"));
-    expect(manifest.bin).toEqual({ scb: "./dist/index.mjs" });
+    expect(manifest.bin).toEqual({ scribe: "./dist/index.mjs", scb: "./dist/index.mjs" });
     expect(manifest.exports).toEqual({});
     expect(manifest.dependencies).toEqual({
       "@base-ui/react": "1.6.0",

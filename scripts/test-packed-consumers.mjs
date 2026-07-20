@@ -120,11 +120,15 @@ createRoot(root).render(<Article components={createScribeComponents()} />);
   run("node", ["--input-type=module", "-e", "import('@scribe-sdk/react').then((api) => { const expected = ['Banner','Callout','CodeFrame','Figure','Publication','ScribeImage','createScribeComponents']; if (JSON.stringify(Object.keys(api).sort()) !== JSON.stringify(expected)) process.exit(1) })"], directory);
   run("node", ["--input-type=module", "-e", "import('@scribe-sdk/react/components').then(() => process.exit(1)).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') process.exit(1) })"], directory);
   await assertPackagedSkill(directory);
-  const cliVersion = run(bin(directory, "scb"), ["--version"], directory);
+  const cliVersion = run(bin(directory, "scribe"), ["--version"], directory);
   if (cliVersion.stdout.trim() !== version) throw new Error(`Bun Vite CLI reported ${cliVersion.stdout.trim()}, expected ${version}.`);
+  const aliasVersion = run(bin(directory, "scb"), ["--version"], directory);
+  if (aliasVersion.stdout.trim() !== version) throw new Error(`Bun Vite scb alias reported ${aliasVersion.stdout.trim()}, expected ${version}.`);
+  run(bin(directory, "scribe"), ["--help"], directory);
   run(bin(directory, "scb"), ["--help"], directory);
+  run(bin(directory, "scribe"), ["validate", join(directory, "src/article.mdx")], directory);
   run(bin(directory, "scb"), ["validate", join(directory, "src/article.mdx")], directory);
-  const invalid = run(bin(directory, "scb"), ["validate", join(directory, "src/invalid.mdx")], directory, false);
+  const invalid = run(bin(directory, "scribe"), ["validate", join(directory, "src/invalid.mdx")], directory, false);
   if (invalid.status !== 1 || !invalid.stderr.includes("SCB1101")) throw new Error("Bun Vite invalid fixture did not produce SCB1101.");
   await smokeStudio(directory, join(directory, "src/article.mdx"));
 }
@@ -190,11 +194,15 @@ export default function Layout({ children }: { children: ReactNode }) { return <
   run(executable("npm"), ["run", "build"], directory);
   run("node", ["--input-type=module", "-e", "import('@scribe-sdk/cli/dist/index.mjs').then(() => process.exit(1)).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') process.exit(1) })"], directory);
   await assertPackagedSkill(directory);
-  const cliVersion = run(bin(directory, "scb"), ["--version"], directory);
+  const cliVersion = run(bin(directory, "scribe"), ["--version"], directory);
   if (cliVersion.stdout.trim() !== version) throw new Error(`npm Next CLI reported ${cliVersion.stdout.trim()}, expected ${version}.`);
+  const aliasVersion = run(bin(directory, "scb"), ["--version"], directory);
+  if (aliasVersion.stdout.trim() !== version) throw new Error(`npm Next scb alias reported ${aliasVersion.stdout.trim()}, expected ${version}.`);
+  run(bin(directory, "scribe"), ["--help"], directory);
   run(bin(directory, "scb"), ["--help"], directory);
+  run(executable("npx"), ["--no-install", "scribe", "validate", join(directory, "app/article.mdx")], directory);
   run(bin(directory, "scb"), ["validate", join(directory, "app/article.mdx")], directory);
-  const invalid = run(bin(directory, "scb"), ["validate", join(directory, "invalid.mdx")], directory, false);
+  const invalid = run(bin(directory, "scribe"), ["validate", join(directory, "invalid.mdx")], directory, false);
   if (invalid.status !== 1 || !invalid.stderr.includes("SCB1101")) throw new Error("npm Next invalid fixture did not produce SCB1101.");
 }
 
@@ -404,7 +412,7 @@ async function runStreaming(command, args, cwd) {
 
 async function smokeStudio(directory, articlePath) {
   const port = await availablePort();
-  const command = bin(directory, "scb");
+  const command = bin(directory, "scribe");
   const args = ["studio", articlePath, "--mode", "foundation", "--port", String(port), "--no-open"];
   const child = spawn(command, args, { cwd: directory, shell: requiresCommandShell(command), stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
@@ -415,7 +423,7 @@ async function smokeStudio(directory, articlePath) {
   try {
     await waitFor(async () => {
       if (child.exitCode !== null) throw new Error(`Packed Studio exited early:\n${stdout}\n${stderr}`);
-      if (!stdout.includes("Scribe Studio:")) return false;
+      if (!stdout.includes("Scribe Studio")) return false;
       const response = await fetch(`http://127.0.0.1:${port}/__scribe/api/document`).catch(() => undefined);
       return response?.ok === true;
     }, 15_000);

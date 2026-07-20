@@ -143,7 +143,7 @@ After versioning, run every gate from the repository root:
 - [ ] Inspect tarball contents, manifests, declarations, README, SKILL, LICENSE, and repository-only exclusions: `bun run release:inspect`
 - [ ] Install the packed tarballs and smoke-test portable CLI paths: `bun run test:portability`
 - [ ] Run isolated packed Vite and Next consumers with Bun and npm: `bun run release:consumers`
-- [ ] Check the packaged CLI version and help from the packed consumer: `bunx scb --version` and `bunx scb --help`
+- [ ] Check the packaged CLI version and help from the packed consumer: `bunx scribe --version` and `bunx scribe --help`
 - [ ] Validate valid and invalid article fixtures through the packaged CLI
 - [ ] Run required portable browser behavior: `bun run test:browser:chromium` and `bun run test:browser:firefox`
 - [ ] Run the Studio edit, save, invalid-source, and recovery flow: `bun run test:studio:browser`
@@ -191,9 +191,9 @@ In a fresh consumer, install only the published alpha packages:
 ```bash
 bun add @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alpha
 bun add --dev @scribe-sdk/cli@alpha
-bunx scb --version
-bunx scb --help
-bunx scb validate path/to/article.mdx
+bunx scribe --version
+bunx scribe --help
+bunx scribe validate path/to/article.mdx
 ```
 
 Run that consumer’s strict typecheck and production build. Confirm each installed `node_modules/@scribe-sdk/*/package.json` reports the same version before creating any Git tag or GitHub release.
