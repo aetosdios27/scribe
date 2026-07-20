@@ -1,16 +1,39 @@
 import { expect, test } from "@playwright/test";
-import { readFile, writeFile } from "node:fs/promises";
+import type { Locator, Page } from "@playwright/test";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const fixturePath = resolve("tests/fixtures/studio-article.mdx");
 let originalFixture = "";
+
+async function replaceFixture(source: string) {
+  const temporaryPath = `${fixturePath}.studio-test-${process.pid}`;
+  await writeFile(temporaryPath, source, "utf8");
+  await rename(temporaryPath, fixturePath);
+}
+
+async function captureTable(page: Page, table: Locator, path: string) {
+  await table.evaluate((element) => element.scrollIntoView({ block: "center", inline: "start" }));
+  const tableBox = await table.boundingBox();
+  const scrollerBox = await page.locator(".rich-editor-scroll").boundingBox();
+  if (!tableBox || !scrollerBox) throw new Error("Could not capture the Rich Text table.");
+  await page.screenshot({
+    path,
+    clip: {
+      x: Math.max(tableBox.x, scrollerBox.x),
+      y: tableBox.y,
+      width: Math.min(tableBox.width, scrollerBox.width),
+      height: tableBox.height
+    }
+  });
+}
 
 test.beforeAll(async () => {
   originalFixture = await readFile(fixturePath, "utf8");
 });
 
 test.afterAll(async () => {
-  if (originalFixture) await writeFile(fixturePath, originalFixture, "utf8");
+  if (originalFixture) await replaceFixture(originalFixture);
 });
 
 test("keeps Markdown canonical while constrained Rich Text edits update the mirror and production preview", async ({ page }, testInfo) => {
@@ -67,7 +90,26 @@ test("keeps Markdown canonical while constrained Rich Text edits update the mirr
   await expect(preview.locator("h1#recovered-draft")).toBeVisible();
   await expect(page.locator("#status-text")).toHaveText("Unsaved draft");
 
-  const richSource = "# Recovered draft\n\nEditable paragraph.\n\n<Callout variant=\"note\">Protected note.</Callout>\n";
+  const richSource = [
+    "# Recovered draft",
+    "",
+    "Editable paragraph.",
+    "",
+    "| Value |",
+    "| --- |",
+    "| one-column content |",
+    "",
+    "| Left | Center | Right |",
+    "| :--- | :---: | ---: |",
+    "| alpha | beta | gamma |",
+    "",
+    "| State | Direction | Payload | Retry | Notes |",
+    "| --- | --- | --- | --- | --- |",
+    "| choked | inbound | piece request | exponential | long-lived peer state |",
+    "",
+    '<Callout variant="note">Protected note.</Callout>',
+    ""
+  ].join("\n");
   await source.fill(richSource);
   await expect.poll(async () => page.evaluate(async () => (await fetch("/__scribe/api/document")).json().then((value) => value.source))).toBe(richSource);
   const beforeNoopSwitch = await page.evaluate(async () => (await fetch("/__scribe/api/document")).json());
@@ -87,12 +129,63 @@ test("keeps Markdown canonical while constrained Rich Text edits update the mirr
   await expect(page.getByText("Protected source", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit protected source in Markdown" })).toBeVisible();
   await expect(page.getByTestId("markdown-mirror")).toContainText("Editable paragraph.");
+  await page.setViewportSize({ width: 1100, height: 760 });
+  const editorTables = page.locator('.rich-content table[class*="_tableEditor"]');
+  await expect(editorTables).toHaveCount(3);
+  const tableMetrics = await editorTables.evaluateAll((tables) => tables.map((table) => {
+    const scroller = table.closest(".rich-editor-scroll");
+    const cols = [...table.querySelectorAll(":scope > colgroup > col")];
+    const dataCells = [...table.querySelectorAll(":scope > tbody > tr:first-child > :is(th,td):not([data-tool-cell]):not([class*='_toolCell'])")];
+    const columnControl = table.querySelector(":scope > thead > tr > [data-tool-cell]:not(:last-child)");
+    const rowControl = table.querySelector(":scope > tbody > tr:first-child > [class*='_toolCell']");
+    const addColumnControl = table.querySelector(":scope > tbody > tr:first-child > [data-tool-cell]:last-child");
+    const dataCell = dataCells[0];
+    if (!(scroller instanceof HTMLElement) || !(table instanceof HTMLElement) || !(columnControl instanceof HTMLElement) || !(rowControl instanceof HTMLElement) || !(addColumnControl instanceof HTMLElement) || !(dataCell instanceof HTMLElement)) {
+      throw new Error("Missing expected MDXEditor table structure.");
+    }
+    const tableWidth = table.getBoundingClientRect().width;
+    const dataWidth = dataCells.reduce((total, cell) => total + cell.getBoundingClientRect().width, 0);
+    const style = getComputedStyle(dataCell);
+    return {
+      dataColumns: cols.length - 2,
+      tableWidth,
+      scrollerWidth: scroller.getBoundingClientRect().width,
+      dataShare: dataWidth / tableWidth,
+      columnControlWidth: columnControl.getBoundingClientRect().width,
+      rowControlWidth: rowControl.getBoundingClientRect().width,
+      addColumnControlWidth: addColumnControl.getBoundingClientRect().width,
+      paddingInline: Number.parseFloat(style.paddingInlineStart),
+      borderStyle: style.borderInlineEndStyle,
+      borderWidth: Number.parseFloat(style.borderInlineEndWidth)
+    };
+  }));
+  expect(tableMetrics.map(({ dataColumns }) => dataColumns)).toEqual([1, 3, 5]);
+  for (const metric of tableMetrics.slice(0, 2)) {
+    expect(metric.tableWidth).toBeLessThanOrEqual(metric.scrollerWidth + 1);
+    expect(metric.dataShare).toBeGreaterThanOrEqual(0.75);
+    expect(metric.columnControlWidth).toBeGreaterThan(40);
+  }
+  const wideTable = tableMetrics.at(2);
+  if (!wideTable) throw new Error("Missing wide Rich Text table metrics.");
+  expect(wideTable.tableWidth).toBeGreaterThan(wideTable.scrollerWidth);
+  for (const metric of tableMetrics) {
+    expect(metric.rowControlWidth).toBeLessThanOrEqual(40);
+    expect(metric.addColumnControlWidth).toBeLessThanOrEqual(40);
+    expect(metric.paddingInline).toBeGreaterThanOrEqual(10);
+    expect(metric.borderStyle).toBe("solid");
+    expect(metric.borderWidth).toBeGreaterThanOrEqual(1);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await captureTable(page, editorTables.nth(0), testInfo.outputPath("studio-table-one.png"));
+  await captureTable(page, editorTables.nth(1), testInfo.outputPath("studio-table-three.png"));
+  await captureTable(page, editorTables.nth(2), testInfo.outputPath("studio-table-wide.png"));
   await page.screenshot({ path: testInfo.outputPath("studio-rich-text.png"), fullPage: true });
 
   const richParagraph = page.locator(".rich-content p").filter({ hasText: "Editable paragraph." });
   await richParagraph.click({ clickCount: 3 });
   await page.keyboard.type("Visually edited paragraph.");
   await expect(page.getByTestId("markdown-mirror")).toContainText("Visually edited paragraph.");
+  await expect(page.getByTestId("markdown-mirror")).toContainText(/\| :--+ \| :--+: \| --+: \|/u);
   await expect(page.locator("#status-text")).toHaveText("Unsaved draft");
 
   await page.getByRole("tab", { name: "Preview tab" }).click();
@@ -124,7 +217,7 @@ test("keeps Markdown canonical while constrained Rich Text edits update the mirr
   await expect(page.getByRole("alert").filter({ hasText: "Source changed outside Studio" })).toHaveCount(0);
   await expect(page.locator("#status-text")).toHaveText("Ready");
 
-  await writeFile(fixturePath, originalFixture, "utf8");
+  await replaceFixture(originalFixture);
   await expect(source).toHaveValue(/Peer state transitions/u);
 
   expect(issues).toEqual([]);
