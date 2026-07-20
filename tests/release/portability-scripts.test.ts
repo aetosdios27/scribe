@@ -52,6 +52,14 @@ describe("cross-platform release scripts", () => {
     );
   });
 
+  it("tests npx from an npm-installed consumer instead of Bun's executable shims", async () => {
+    const smoke = await source("scripts/test-portable-cli.mjs");
+
+    expect(smoke).toContain("verifyLocalNpmInstall");
+    expect(smoke).toContain('["--no-install", "scribe", "--version"]');
+    expect(smoke).not.toContain('run(executable("npx"), ["--no-install", "scribe", "--version"], directory)');
+  });
+
   it("keeps missing Helium optional for contributors but fatal for release verification", async () => {
     const wrapper = await source("scripts/run-helium-visual.mjs");
     expect(wrapper).toContain('process.argv.includes("--require-helium")');

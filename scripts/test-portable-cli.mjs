@@ -53,7 +53,6 @@ try {
   runCli("scribe", ["init", "--help"]);
   runCli("scribe", ["studio", "--help"]);
   run(executable("bun"), ["run", "scribe:version"], directory);
-  run(executable("npx"), ["--no-install", "scribe", "--version"], directory);
   const beforeInit = await readFile(globalStyle, "utf8");
   const dryRun = runCli("scribe", ["init", "--dry-run"]);
   assert(dryRun.stdout.includes("Recommendation") && dryRun.stdout.includes("Mode    default"), "Init dry run did not recommend default mode for the raw Vite fixture.");
@@ -77,6 +76,7 @@ try {
     assert(installed.version === version, `@scribe-sdk/${name} installed at ${installed.version}; expected ${version}.`);
   }
 
+  await verifyLocalNpmInstall();
   await verifyGlobalInstalls();
 } finally {
   await mkdir(release, { recursive: true });
@@ -109,6 +109,28 @@ function run(command, args, cwd, requireSuccess = true, env = {}) {
     throw new Error(`${command} ${args.join(" ")} failed with ${result.status}:\n${result.stdout}\n${result.stderr}`);
   }
   return result;
+}
+
+async function verifyLocalNpmInstall() {
+  const npmDirectory = join(directory, "npm-local");
+  await mkdir(npmDirectory, { recursive: true });
+  await write(join(npmDirectory, "package.json"), JSON.stringify({
+    name: "scribe-portability-npm-smoke",
+    private: true,
+    dependencies: {
+      "@scribe-sdk/cli": "file:../tarballs/scribe-sdk-cli-" + version + ".tgz",
+      "@scribe-sdk/mdx": "file:../tarballs/scribe-sdk-mdx-" + version + ".tgz",
+      "@scribe-sdk/react": "file:../tarballs/scribe-sdk-react-" + version + ".tgz",
+      "@scribe-sdk/styles": "file:../tarballs/scribe-sdk-styles-" + version + ".tgz",
+      react: "19.2.7",
+      "react-dom": "19.2.7"
+    },
+    overrides: { "js-yaml": "4.3.0" }
+  }, null, 2));
+  run(executable("npm"), ["install", "--no-audit", "--no-fund"], npmDirectory);
+  const npmVersion = run(executable("npx"), ["--no-install", "scribe", "--version"], npmDirectory).stdout.trim();
+  assert(npmVersion === version, `Local npm scribe reported ${npmVersion}; expected ${version}.`);
+  assert(run(executable("npx"), ["--no-install", "scb", "--version"], npmDirectory).stdout.trim() === version, "Local npm scb alias reported a different version.");
 }
 
 async function verifyGlobalInstalls() {

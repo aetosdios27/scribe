@@ -14,10 +14,14 @@ const packageFiles = {
 } as const;
 
 describe("publishable package manifests", () => {
-  it("pins the audited PostCSS override for workspace framework fixtures", async () => {
+  it("pins audited dependency overrides for workspace and consumer fixtures", async () => {
     const manifest = await readJson(join(root, "package.json"));
 
-    expect(manifest.overrides).toEqual({ "@types/mdx": "2.0.14", postcss: "8.5.19" });
+    expect(manifest.overrides).toEqual({
+      "@types/mdx": "2.0.14",
+      "js-yaml": "4.3.0",
+      postcss: "8.5.19"
+    });
   });
 
   it.each(packageNames)("hardens @scribe-sdk/%s for npm publication", async (directory) => {
