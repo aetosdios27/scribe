@@ -1,8 +1,6 @@
 ## Linear
 
-<!-- Use `Fixes AET-123` when this PR completes the issue. Use `Refs AET-123` for partial work. -->
-
-Refs AET-
+<!-- Replace this comment with `Fixes AET-123` when this PR completes the issue, or `Refs AET-123` for partial work. -->
 
 ## Summary
 
@@ -12,7 +10,8 @@ Refs AET-
 
 - [ ] Focused tests pass
 - [ ] Type checking passes
-- [ ] Consumer-facing changes include documentation and a Changeset, or neither is required
+- [ ] Meaningful consumer-facing changes include a Changeset, or no Changeset is required
+- [ ] Documentation is updated when required, or no documentation change is needed
 - [ ] Existing coverage was not weakened or skipped
 
 ## Visual evidence
