@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createNetServer } from "node:net";
@@ -258,6 +258,89 @@ it("detects external changes and refuses to overwrite an unsaved draft", async (
   });
   expect(saved.status).toBe(409);
   expect(await readFile(file.path, "utf8")).toBe("# External editor change\n");
+
+  const reloaded = await fetch(`${handle.origin}/__scribe/api/discard`, { method: "POST" });
+  expect(reloaded.status).toBe(200);
+  await expect(reloaded.json()).resolves.toMatchObject({
+    source: "# External editor change\n",
+    dirty: false,
+    conflict: false
+  });
+});
+
+it("revalidates the source on disk immediately before saving", async () => {
+  const file = await fixture();
+  const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  handles.push(handle);
+  const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { diskVersion: string };
+
+  await fetch(`${handle.origin}/__scribe/api/draft`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ source: "# Unsaved studio draft\n" })
+  });
+  await writeFile(file.path, "# External editor change before watcher delivery\n");
+
+  const saved = await fetch(`${handle.origin}/__scribe/api/save`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ expectedDiskVersion: initial.diskVersion })
+  });
+
+  expect(saved.status).toBe(409);
+  await expect(saved.json()).resolves.toMatchObject({
+    conflict: true,
+    error: expect.stringContaining("changed outside Studio")
+  });
+  expect(await readFile(file.path, "utf8")).toBe("# External editor change before watcher delivery\n");
+});
+
+it("keeps the draft conflicted when reload cannot read a deleted source", async () => {
+  const file = await fixture();
+  const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  handles.push(handle);
+
+  await fetch(`${handle.origin}/__scribe/api/draft`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ source: "# Unsaved studio draft\n" })
+  });
+  await unlink(file.path);
+  await expect.poll(async () => {
+    const state = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { conflict: boolean };
+    return state.conflict;
+  }).toBe(true);
+
+  const reloaded = await fetch(`${handle.origin}/__scribe/api/discard`, { method: "POST" });
+
+  expect(reloaded.status).toBe(409);
+  await expect(reloaded.json()).resolves.toMatchObject({
+    conflict: true,
+    dirty: true,
+    source: "# Unsaved studio draft\n",
+    error: expect.stringContaining("deleted or renamed")
+  });
+});
+
+it("preserves CRLF line endings when a draft is saved", async () => {
+  const file = await fixture("crlf.mdx", "# Peer states\r\n\r\nOriginal.\r\n");
+  const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  handles.push(handle);
+  const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { diskVersion: string };
+
+  await fetch(`${handle.origin}/__scribe/api/draft`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ source: "# Peer states\n\nUpdated.\n" })
+  });
+  const saved = await fetch(`${handle.origin}/__scribe/api/save`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ expectedDiskVersion: initial.diskVersion })
+  });
+
+  expect(saved.status).toBe(200);
+  expect(await readFile(file.path, "utf8")).toBe("# Peer states\r\n\r\nUpdated.\r\n");
 });
 
 it("rejects source and host CSS paths outside the selected workspace", async () => {
