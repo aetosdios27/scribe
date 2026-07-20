@@ -150,7 +150,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     previewVersion: 1,
     mode: options.mode,
     modeReason: options.modeReason ?? "Selected explicitly by the Studio caller.",
-    lineEnding: diskSource.includes("\r\n") ? "\r\n" : "\n",
+    lineEnding: detectLineEnding(diskSource),
     dirty: false,
     conflict: false,
     diagnostics: await diagnosticsFor(sourcePath, diskSource),
@@ -224,7 +224,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     const wasClean = !state.dirty;
     state.diskSource = source;
     state.diskVersion = fingerprint(source);
-    state.lineEnding = source.includes("\r\n") ? "\r\n" : "\n";
+    state.lineEnding = detectLineEnding(source);
     if (wasClean) {
       state.draftSource = source;
       state.previewSource = source;
@@ -240,11 +240,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   server.watcher.on("unlink", (path) => {
     if (resolve(path) !== sourcePath) return;
     state.conflict = true;
-    state.diagnostics = [{
-      severity: "error",
-      code: "SCB2001",
-      message: "The source file was deleted or renamed outside Studio. Save is blocked until it is restored or the session is closed."
-    }];
+    state.diagnostics = [missingSourceDiagnostic()];
   });
 
   const address = httpServer.address();
@@ -432,7 +428,23 @@ function createStudioPlugin(context: {
         if (url.pathname === "/__scribe/api/save" && request.method === "PUT") {
           try {
             const body = await readJsonBody(request) as { expectedDiskVersion?: unknown };
-            if (body.expectedDiskVersion !== context.state.diskVersion || context.state.conflict) {
+            let diskSource: string;
+            try {
+              diskSource = await readUtf8(context.sourcePath);
+            } catch {
+              context.state.conflict = true;
+              context.state.diagnostics = [missingSourceDiagnostic()];
+              return json(response, 409, {
+                error: "The source file was deleted or renamed outside Studio. Restore it before saving.",
+                ...publicState(context.state)
+              });
+            }
+            const diskVersion = fingerprint(diskSource);
+            if (body.expectedDiskVersion !== context.state.diskVersion || context.state.conflict || diskVersion !== body.expectedDiskVersion) {
+              context.state.diskSource = diskSource;
+              context.state.diskVersion = diskVersion;
+              context.state.lineEnding = detectLineEnding(diskSource);
+              context.state.conflict = true;
               return json(response, 409, { error: "The source changed outside Studio. Reload or reconcile before saving.", ...publicState(context.state) });
             }
             await atomicWrite(context.sourcePath, context.state.draftSource);
@@ -446,11 +458,25 @@ function createStudioPlugin(context: {
           }
         }
         if (url.pathname === "/__scribe/api/discard" && request.method === "POST") {
-          context.state.draftSource = context.state.diskSource;
-          context.state.previewSource = context.state.diskSource;
+          let diskSource: string;
+          try {
+            diskSource = await readUtf8(context.sourcePath);
+          } catch {
+            context.state.conflict = true;
+            context.state.diagnostics = [missingSourceDiagnostic()];
+            return json(response, 409, {
+              error: "The source file was deleted or renamed outside Studio. The unsaved draft is still preserved.",
+              ...publicState(context.state)
+            });
+          }
+          context.state.diskSource = diskSource;
+          context.state.diskVersion = fingerprint(diskSource);
+          context.state.lineEnding = detectLineEnding(diskSource);
+          context.state.draftSource = diskSource;
+          context.state.previewSource = diskSource;
           context.state.dirty = false;
           context.state.conflict = false;
-          context.state.diagnostics = await diagnosticsFor(context.sourcePath, context.state.diskSource);
+          context.state.diagnostics = await diagnosticsFor(context.sourcePath, diskSource);
           context.state.previewVersion += 1;
           context.state.revision += 1;
           context.state.richProjection = undefined;
@@ -699,6 +725,18 @@ function frontmatter(source: string): Record<string, string> {
 
 function normalizeLineEndings(source: string, ending: "\n" | "\r\n"): string {
   return source.replace(/\r\n?|\n/gu, "\n").replaceAll("\n", ending);
+}
+
+function detectLineEnding(source: string): "\n" | "\r\n" {
+  return source.includes("\r\n") ? "\r\n" : "\n";
+}
+
+function missingSourceDiagnostic(): StudioDiagnostic {
+  return {
+    severity: "error",
+    code: "SCB2001",
+    message: "The source file was deleted or renamed outside Studio. Save is blocked until it is restored or the session is closed."
+  };
 }
 
 async function readUtf8(path: string): Promise<string> {

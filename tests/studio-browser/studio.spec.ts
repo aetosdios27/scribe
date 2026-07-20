@@ -1,8 +1,29 @@
 import { expect, test } from "@playwright/test";
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
+const fixturePath = resolve("tests/fixtures/studio-article.mdx");
+let originalFixture = "";
+
+test.beforeAll(async () => {
+  originalFixture = await readFile(fixturePath, "utf8");
+});
+
+test.afterAll(async () => {
+  if (originalFixture) await writeFile(fixturePath, originalFixture, "utf8");
+});
 
 test("keeps Markdown canonical while constrained Rich Text edits update the mirror and production preview", async ({ page }, testInfo) => {
   const issues: string[] = [];
-  page.on("console", (message) => { if (message.type() === "error") issues.push(message.text()); });
+  let expectedConflictResponse = false;
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    if (expectedConflictResponse && message.text().includes("409 (Conflict)")) {
+      expectedConflictResponse = false;
+      return;
+    }
+    issues.push(message.text());
+  });
   page.on("pageerror", (error) => issues.push(error.message));
 
   await page.goto("/");
@@ -75,6 +96,25 @@ test("keeps Markdown canonical while constrained Rich Text edits update the mirr
   await expect(page.locator(".preview-device__label")).toContainText("Mobile · 414 × 896");
   await page.getByRole("button", { name: "Dark" }).click();
   await expect(preview.locator(".scribe[data-theme='dark']")).toBeVisible();
+
+  const externalSource = "# External editor version\n\nThis change came from the IDE.\n";
+  await writeFile(fixturePath, externalSource, "utf8");
+  await expect(page.getByRole("alert").filter({ hasText: "Source changed outside Studio" })).toBeVisible();
+  await expect(source).not.toHaveValue(externalSource);
+
+  expectedConflictResponse = true;
+  await page.getByRole("button", { name: /^Save/u }).click();
+  expect(await readFile(fixturePath, "utf8")).toBe(externalSource);
+  await expect(page.locator("[data-sonner-toast]")).toContainText("changed outside Studio");
+  expect(expectedConflictResponse).toBe(false);
+
+  await page.getByRole("button", { name: "Reload from disk" }).click();
+  await expect(source).toHaveValue(externalSource);
+  await expect(page.getByRole("alert").filter({ hasText: "Source changed outside Studio" })).toHaveCount(0);
+  await expect(page.locator("#status-text")).toHaveText("Ready");
+
+  await writeFile(fixturePath, originalFixture, "utf8");
+  await expect(source).toHaveValue(/Peer state transitions/u);
 
   expect(issues).toEqual([]);
 });
