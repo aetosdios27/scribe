@@ -33,6 +33,21 @@ describe("release documentation", () => {
     expect(readme).toContain("`0 1.25rem 3rem color-mix(in oklab, #000 12%, transparent)`");
   });
 
+  it("freezes compatibility claims to the verified public-alpha matrix", async () => {
+    const readme = await readFile(join(root, "README.md"), "utf8");
+
+    expect(readme).toContain("## Verified compatibility");
+    expect(readme).toContain("React 19.2.7, MDX 3.1.1, Vite 8.1.3, `@vitejs/plugin-react` 6.0.3, Next.js 16.2.10, `@next/mdx` 16.2.10, and `next-mdx-remote` 6.0.0");
+    expect(readme).toContain("TypeScript 7.0.2 and 6.0.2 with `skipLibCheck: false`");
+    expect(readme).toContain("Linux, Windows, and macOS using Bun 1.3.13 and an npm-compatible install flow");
+    expect(readme).toContain("Playwright-managed Chromium and Firefox");
+    expect(readme).toContain("WebKit and Safari are not verified for this prerelease");
+    expect(readme).toContain("These are tested configurations, not a claim that other modern versions cannot work.");
+    expect(readme).toContain("MDX is executable local project content; open only files you trust.");
+    expect(readme).toContain("Rich Text mode is a constrained visual helper for ordinary Markdown");
+    expect(readme).toContain("Non-inherited element rules do not cross a CSS Module boundary automatically");
+  });
+
   it("keeps every packaged skill and README generated from the canonical files", async () => {
     const canonicalReadme = await readFile(join(root, "README.md"), "utf8");
     const canonicalSkill = await readFile(join(root, "SKILL.md"), "utf8");
