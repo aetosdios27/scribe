@@ -5,6 +5,7 @@ import { createServer as createNetServer } from "node:net";
 
 import { afterEach, expect, it, vi } from "vitest";
 
+import { studioRecoveryKey } from "./studio-recovery.js";
 import { formatStudioStartup, parseStudioArguments, runStudio, startStudio, type StudioHandle } from "./studio.js";
 
 const handles: StudioHandle[] = [];
@@ -70,6 +71,21 @@ it("formats Studio startup with a project-relative source path", () => {
 
   expect(output).toMatch(/Source  content[\\/]peer notes\.mdx/u);
   expect(output).not.toContain(root);
+});
+
+it("surfaces recovery read failures before opening the Studio", async () => {
+  const file = await fixture();
+  const recoveryRoot = await mkdtemp(join(tmpdir(), "scribe recovery failure "));
+  await mkdir(join(recoveryRoot, "recovery", `${studioRecoveryKey(file.path)}.json`), { recursive: true });
+
+  await expect(startStudio({
+    root: file.root,
+    path: file.path,
+    mode: "default",
+    port: 0,
+    open: false,
+    recoveryRoot
+  })).rejects.toThrow("Studio could not read its local recovery state");
 });
 
 it("requires an explicit Studio mode when project detection is ambiguous", async () => {
@@ -144,6 +160,21 @@ it("rejects cross-origin mutations and prevents a second tab from taking the wri
     body: "{}"
   });
   expect(unauthenticated.status).toBe(403);
+
+  const authenticatedCrossSite = await fetch(`${handle.origin}/__scribe/api/discard`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-scribe-studio-session": handle.sessionToken,
+      origin: "https://attacker.invalid",
+      "sec-fetch-site": "cross-site"
+    },
+    body: "{}"
+  });
+  expect(authenticatedCrossSite.status).toBe(403);
+  await expect(authenticatedCrossSite.json()).resolves.toMatchObject({
+    error: expect.stringContaining("Cross-site")
+  });
 
   const first = await mutate(handle, "/__scribe/api/draft", { source: "# First tab\n" });
   expect(first.status).toBe(200);

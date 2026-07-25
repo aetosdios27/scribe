@@ -64,6 +64,23 @@ it("does not advance the revision when a guarded mutation is rejected", async ()
   expect(coordinator.revision).toBe(2);
 });
 
+it("evicts failed operation ids so an explicit retry can execute", async () => {
+  const coordinator = new StudioTransactionCoordinator(1);
+  const request = { clientId: "tab-a", operationId: "a-retry", baseRevision: 1 };
+  let attempts = 0;
+
+  await expect(coordinator.mutate(request, async () => {
+    attempts += 1;
+    throw new Error("transient compilation failure");
+  })).rejects.toThrow("transient compilation failure");
+
+  await expect(coordinator.mutate(request, async () => {
+    attempts += 1;
+    return { accepted: true as const, value: "recovered" };
+  })).resolves.toEqual({ kind: "accepted", revision: 2, value: "recovered" });
+  expect(attempts).toBe(2);
+});
+
 it("runs system mutations in the same queue as client mutations", async () => {
   const coordinator = new StudioTransactionCoordinator(1);
   const order: string[] = [];

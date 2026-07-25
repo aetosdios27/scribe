@@ -2,6 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { open, readFile, realpath, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { syncDirectory } from "./studio-fs.js";
+
 export interface StudioFileSnapshot {
   readonly requestedPath: string;
   readonly resolvedPath: string;
@@ -124,16 +126,4 @@ function detectLineEnding(source: string): "\n" | "\r\n" {
 
 function fingerprintBytes(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
-}
-
-async function syncDirectory(path: string): Promise<void> {
-  const directory = await open(path, "r");
-  try {
-    await directory.sync();
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (process.platform !== "win32" || (code !== "EINVAL" && code !== "ENOTSUP" && code !== "EPERM")) throw error;
-  } finally {
-    await directory.close();
-  }
 }

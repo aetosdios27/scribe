@@ -34,7 +34,7 @@ import {
   type RichProjection
 } from "./rich-preservation.js";
 import { StudioWriterLease } from "./studio-lease.js";
-import { StudioRecoveryStore, studioRecoveryKey } from "./studio-recovery.js";
+import { StudioRecoveryStore, studioRecoveryKey, type StudioRecoveryRecord } from "./studio-recovery.js";
 import { authorizeStudioMutation, createStudioSession, studioSessionHeader, type StudioSession } from "./studio-security.js";
 import {
   StudioTransactionCoordinator,
@@ -195,12 +195,23 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   }
 
   const recovery = new StudioRecoveryStore(sourcePath, options.recoveryRoot);
-  const recoveredDraft = await recovery.loadDraft();
+  let recoveredDraft: StudioRecoveryRecord | undefined;
+  try {
+    recoveredDraft = await recovery.loadDraft();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    throw new Error(
+      `Studio could not read its local recovery state${code === undefined ? "" : ` (${code})`}. Check the recovery directory permissions before reopening this article.`
+    );
+  }
   const runtime = studioRuntimePaths();
   const compiler = new StudioCompiler();
-  const canRecover = recoveredDraft?.sourcePath === sourcePath && recoveredDraft.draftSource !== fileSnapshot.source;
+  const recoveryDraft = recoveredDraft?.sourcePath === sourcePath && recoveredDraft.draftSource !== fileSnapshot.source
+    ? recoveredDraft
+    : undefined;
+  const canRecover = recoveryDraft !== undefined;
   const diskSource = fileSnapshot.source;
-  const draftSource = canRecover ? recoveredDraft.draftSource : diskSource;
+  const draftSource = recoveryDraft?.draftSource ?? diskSource;
   let initialDiagnostics: StudioDiagnostic[];
   try {
     initialDiagnostics = await diagnosticsFor(compiler, sourcePath, draftSource);
@@ -220,14 +231,14 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     modeReason: options.modeReason ?? "Selected explicitly by the Studio caller.",
     lineEnding: fileSnapshot.lineEnding,
     dirty: draftSource !== diskSource,
-    conflict: Boolean(canRecover && recoveredDraft.baseDiskVersion !== fileSnapshot.version),
+    conflict: Boolean(recoveryDraft && recoveryDraft.baseDiskVersion !== fileSnapshot.version),
     diagnostics: initialDiagnostics,
-    revision: canRecover ? Math.max(1, recoveredDraft.revision) : 1,
+    revision: recoveryDraft ? Math.max(1, recoveryDraft.revision) : 1,
     richProjection: undefined,
     fileSnapshot,
-    recoveryBaseVersion: canRecover ? recoveredDraft.baseDiskVersion : fileSnapshot.version,
+    recoveryBaseVersion: recoveryDraft?.baseDiskVersion ?? fileSnapshot.version,
     recovered: Boolean(canRecover),
-    recoveryConflict: Boolean(canRecover && recoveredDraft.baseDiskVersion !== fileSnapshot.version),
+    recoveryConflict: Boolean(recoveryDraft && recoveryDraft.baseDiskVersion !== fileSnapshot.version),
     discardRecoveryAvailable: false,
     recoveryKey: studioRecoveryKey(sourcePath)
   };
@@ -318,7 +329,15 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   const handleExternalChange = (path: string) => {
     if (resolve(path) !== sourcePath) return;
     void coordinator.system(async (nextRevision) => {
-      const snapshot = await readStudioFile(requestedSourcePath);
+      let snapshot: StudioFileSnapshot;
+      try {
+        snapshot = await readStudioFile(requestedSourcePath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          return { changed: false as const, value: undefined };
+        }
+        throw error;
+      }
       if (snapshot.resolvedPath !== sourcePath) {
         state.revision = nextRevision;
         state.conflict = true;

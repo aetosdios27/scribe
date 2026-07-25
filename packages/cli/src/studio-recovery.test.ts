@@ -1,10 +1,10 @@
-import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { expect, it } from "vitest";
 
-import { StudioRecoveryStore } from "./studio-recovery.js";
+import { StudioRecoveryStore, studioRecoveryKey } from "./studio-recovery.js";
 
 it("durably restores the latest accepted unsaved draft", async () => {
   const root = await mkdtemp(join(tmpdir(), "scribe recovery "));
@@ -57,4 +57,42 @@ it("quarantines a corrupted active record instead of trusting it", async () => {
 
   await expect(store.loadDraft()).resolves.toBeUndefined();
   expect((await readdir(directory)).some((name) => name.endsWith(".corrupt"))).toBe(true);
+});
+
+it("propagates recovery read failures instead of quarantining inaccessible records", async () => {
+  const root = await mkdtemp(join(tmpdir(), "scribe recovery "));
+  const sourcePath = "/project/article.mdx";
+  const activePath = join(root, "recovery", `${studioRecoveryKey(sourcePath)}.json`);
+  await mkdir(activePath, { recursive: true });
+
+  await expect(new StudioRecoveryStore(sourcePath, root).loadDraft()).rejects.toBeDefined();
+  expect((await readdir(join(root, "recovery")))).toContain(`${studioRecoveryKey(sourcePath)}.json`);
+});
+
+it("trims only recognized completed archives and preserves in-flight temporary files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "scribe recovery "));
+  const sourcePath = "/project/article.mdx";
+  const key = studioRecoveryKey(sourcePath);
+  const directory = join(root, "recovery");
+  await mkdir(directory, { recursive: true });
+  for (let index = 0; index < 22; index += 1) {
+    await writeFile(join(directory, `${key}.${String(1_000 + index)}.deadbeef.checkpoint.json`), "{}");
+  }
+  const temporary = `${key}.0000.deadbeef.checkpoint.json.writer.tmp`;
+  const unrelated = `${key}.0000.unrelated.json`;
+  await writeFile(join(directory, temporary), "in flight");
+  await writeFile(join(directory, unrelated), "unrelated");
+
+  const store = new StudioRecoveryStore(sourcePath, root);
+  await store.writeHistory({
+    sourcePath,
+    baseDiskVersion: "disk-a",
+    draftSource: "# History\n",
+    revision: 4
+  }, "checkpoint");
+
+  const entries = await readdir(directory);
+  expect(entries).toContain(temporary);
+  expect(entries).toContain(unrelated);
+  expect(entries.filter((entry) => /\.(?:discarded|saved|reverted|checkpoint)\.json$/u.test(entry))).toHaveLength(20);
 });

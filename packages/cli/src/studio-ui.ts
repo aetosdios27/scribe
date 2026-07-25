@@ -213,13 +213,14 @@ async function clearBrowserRecovery(key) {
     transaction.objectStore(recoveryStoreName).delete(key);
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
   });
 }
 
 function Status({ state, richError, writer, connected }) {
   const hasErrors = richError || state.diagnostics.some((item) => item.severity === "error");
-  const kind = !connected ? "error" : !writer ? "conflict" : state.conflict ? "conflict" : hasErrors ? "error" : state.dirty ? "dirty" : "ready";
-  const label = !connected ? "Reconnecting" : !writer ? "Read-only tab" : state.conflict ? "External change" : richError ? "Rich edit rejected" : hasErrors ? "Compilation blocked" : state.dirty ? "Unsaved draft" : "Ready";
+  const kind = !connected ? "error" : writer === false ? "conflict" : state.conflict ? "conflict" : hasErrors ? "error" : state.dirty ? "dirty" : "ready";
+  const label = !connected ? "Reconnecting" : writer === false ? "Read-only tab" : state.conflict ? "External change" : richError ? "Rich edit rejected" : hasErrors ? "Compilation blocked" : state.dirty ? "Unsaved draft" : "Ready";
   return <div className="studio-status" data-status={kind} role="status"><span className="studio-status__dot" aria-hidden="true" /><span id="status-text">{label}</span></div>;
 }
 
@@ -234,7 +235,7 @@ function MarkdownPanel({ state, source, setSource, textareaRef, writer }) {
   const diagnostics = formatDiagnostics(state.diagnostics);
   return <section className="studio-panel source-panel" aria-label="Markdown editor">
     <PanelHeading icon={FileText} title="Markdown" state={state.conflict ? "Conflict" : state.dirty ? "Unsaved" : "Saved"} />
-    <textarea ref={textareaRef} id="source" className="source-textarea" value={source} onChange={(event) => setSource(event.target.value)} readOnly={!writer} spellCheck="false" aria-label={writer ? "Article source" : "Article source (read-only in this tab)"} data-lenis-prevent />
+    <textarea ref={textareaRef} id="source" className="source-textarea" value={source} onChange={(event) => setSource(event.target.value)} readOnly={writer === false} spellCheck="false" aria-label={writer === false ? "Article source (read-only in this tab)" : "Article source"} data-lenis-prevent />
     {diagnostics && <pre id="diagnostics" className="diagnostics" aria-live="polite">{diagnostics}</pre>}
   </section>;
 }
@@ -370,7 +371,6 @@ function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           source: candidate,
-          revision: revisionRef.current,
           baseSource: session.baseSource,
           baseDiskVersion: session.baseDiskVersion
         })
@@ -494,7 +494,7 @@ function StudioApp() {
   const [theme, setTheme] = useState("dark");
   const [copyStatus, setCopyStatus] = useState("");
   const [richPending, setRichPending] = useState(false);
-  const [writer, setWriter] = useState(false);
+  const [writer, setWriter] = useState(null);
   const [connected, setConnected] = useState(true);
   const diskVersion = useRef("");
   const draftBaseDiskVersion = useRef("");
@@ -741,7 +741,7 @@ function StudioApp() {
   }, [state, source, apply]);
 
   const enterRich = useCallback(async () => {
-    if (!writer) {
+    if (writer === false) {
       toast.error("Another Studio tab currently owns this draft.");
       return;
     }
@@ -804,7 +804,7 @@ function StudioApp() {
   }, [state?.recoveryKey]);
 
   const save = useCallback(async () => {
-    if (!state || !writer) {
+    if (!state || writer === false) {
       toast.error("This tab is read-only while another Studio tab owns the draft.");
       return;
     }
@@ -859,7 +859,11 @@ function StudioApp() {
     toast.success("Recovered the discarded draft");
   };
   const discard = async () => {
-    const { body } = await request("/__scribe/api/discard", { method: "POST", body: "{}" });
+    const { response, body } = await request("/__scribe/api/discard", { method: "POST", body: "{}" });
+    if (!response.ok || typeof body.source !== "string") {
+      toast.error(body.error || "The source could not be reloaded from disk.");
+      return;
+    }
     apply(body, true);
     setAuthorModeState("markdown");
     setRichSession(null);
@@ -875,7 +879,7 @@ function StudioApp() {
       <Status state={state} richError={richError} writer={writer} connected={connected} />
       <div className="studio-actions">
         {(state.diagnostics.length > 0 || richError) && <Hint label="Copy diagnostics"><Button id="copy-diagnostics" type="button" size="icon" variant="ghost" aria-label="Copy diagnostics" onClick={copyDiagnostics}><ClipboardCopy aria-hidden="true" /></Button></Hint>}
-        <Button id="save" type="button" variant="default" onClick={save} disabled={!writer}><Save data-icon="inline-start" aria-hidden="true" />Save <kbd>⌘S</kbd></Button>
+        <Button id="save" type="button" variant="default" onClick={save} disabled={writer === false}><Save data-icon="inline-start" aria-hidden="true" />Save <kbd>⌘S</kbd></Button>
       </div>
     </header>
 

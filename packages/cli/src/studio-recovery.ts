@@ -4,6 +4,8 @@ import { homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { mkdir } from "node:fs/promises";
 
+import { syncDirectory } from "./studio-fs.js";
+
 export interface StudioRecoveryRecord {
   readonly schema: 1;
   readonly sourcePath: string;
@@ -33,10 +35,16 @@ export class StudioRecoveryStore {
   }
 
   async loadDraft(): Promise<StudioRecoveryRecord | undefined> {
+    let source: string;
     try {
-      return validateRecord(JSON.parse(await readFile(this.#activePath, "utf8")));
+      source = await readFile(this.#activePath, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
+    try {
+      return validateRecord(JSON.parse(source));
+    } catch {
       await this.#quarantineCorruptRecord();
       return undefined;
     }
@@ -103,8 +111,9 @@ export class StudioRecoveryStore {
   }
 
   async #trimArchives(): Promise<void> {
+    const archiveName = new RegExp(`^${this.#key}\\.\\d+\\.[0-9a-f]+\\.(?:discarded|saved|reverted|checkpoint)\\.json$`, "u");
     const entries = (await readdir(this.#directory))
-      .filter((entry) => entry.startsWith(`${this.#key}.`) && entry !== `${this.#key}.json` && !entry.endsWith(".corrupt"))
+      .filter((entry) => archiveName.test(entry))
       .sort()
       .reverse();
     await Promise.all(entries.slice(20).map((entry) => unlink(join(this.#directory, entry)).catch(() => undefined)));
@@ -182,17 +191,5 @@ async function durableJsonWrite(path: string, value: unknown): Promise<void> {
     await syncDirectory(directory);
   } finally {
     if (exists) await unlink(temporary).catch(() => undefined);
-  }
-}
-
-async function syncDirectory(path: string): Promise<void> {
-  const directory = await open(path, "r");
-  try {
-    await directory.sync();
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (platform() !== "win32" || (code !== "EINVAL" && code !== "ENOTSUP" && code !== "EPERM")) throw error;
-  } finally {
-    await directory.close();
   }
 }

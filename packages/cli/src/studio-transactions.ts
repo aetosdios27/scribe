@@ -47,7 +47,11 @@ export class StudioTransactionCoordinator {
       this.#revision += 1;
       return { kind: "accepted", revision: this.#revision, value: decision.value };
     });
-    this.#operations.set(key, result as Promise<StudioMutationResult<unknown>>);
+    const cached = result as Promise<StudioMutationResult<unknown>>;
+    this.#operations.set(key, cached);
+    void cached.catch(() => {
+      if (this.#operations.get(key) === cached) this.#operations.delete(key);
+    });
     this.#trimOperations();
     return result;
   }

@@ -16,6 +16,11 @@ it("ships the constrained Rich Text client and the Studio visual tokens", () => 
   expect(client).toContain("Math.max(studioRevision, body.revision)");
   expect(client).toContain("next.revision < studioRevision");
   expect(client).toContain("Your browser recovery draft remains intact");
+  expect(client).toContain("transaction.onabort = () => reject(transaction.error)");
+  expect(client).toContain("const [writer, setWriter] = useState(null)");
+  expect(client).toContain("writer === false");
+  expect(client).toContain('if (!response.ok || typeof body.source !== "string")');
+  expect(client).not.toContain("revision: revisionRef.current");
   expect(client).not.toContain('aria-label="Markdown formatting"');
 
   const styles = studioStyles();
