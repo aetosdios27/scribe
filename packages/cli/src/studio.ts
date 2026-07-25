@@ -317,9 +317,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   server.watcher.add(sourcePath);
   const handleExternalChange = (path: string) => {
     if (resolve(path) !== sourcePath) return;
-    void coordinator.system(async () => {
+    void coordinator.system(async (nextRevision) => {
       const snapshot = await readStudioFile(requestedSourcePath);
       if (snapshot.resolvedPath !== sourcePath) {
+        state.revision = nextRevision;
         state.conflict = true;
         state.recoveryConflict = true;
         state.diagnostics = [sourceTargetChangedDiagnostic()];
@@ -330,6 +331,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
         return { changed: false as const, value: undefined };
       }
       const wasClean = !state.dirty;
+      const diagnostics = wasClean
+        ? await diagnosticsFor(compiler, sourcePath, source)
+        : state.diagnostics;
+      state.revision = nextRevision;
       state.fileSnapshot = snapshot;
       state.diskSource = source;
       state.diskVersion = snapshot.version;
@@ -337,7 +342,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
       if (wasClean) {
         state.draftSource = source;
         state.previewSource = source;
-        state.diagnostics = await diagnosticsFor(compiler, sourcePath, source);
+        state.diagnostics = diagnostics;
         state.previewVersion += 1;
         state.richProjection = undefined;
         state.recoveryBaseVersion = snapshot.version;
@@ -362,7 +367,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   server.watcher.on("add", handleExternalChange);
   server.watcher.on("unlink", (path) => {
     if (resolve(path) !== sourcePath) return;
-    void coordinator.system(async () => {
+    void coordinator.system(async (nextRevision) => {
+      state.revision = nextRevision;
       state.conflict = true;
       state.diagnostics = [missingSourceDiagnostic()];
       return { changed: true as const, value: undefined };
@@ -372,7 +378,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     });
   });
   server.watcher.on("error", (error) => {
-    void coordinator.system(async () => {
+    void coordinator.system(async (nextRevision) => {
+      state.revision = nextRevision;
       state.conflict = true;
       state.diagnostics = [watcherDiagnostic(error)];
       return { changed: true as const, value: undefined };

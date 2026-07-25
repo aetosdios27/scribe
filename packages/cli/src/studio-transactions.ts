@@ -53,11 +53,12 @@ export class StudioTransactionCoordinator {
   }
 
   system<T>(
-    operation: () => Promise<{ readonly changed: boolean; readonly value: T }>
+    operation: (nextRevision: number) => Promise<{ readonly changed: boolean; readonly value: T }>
   ): Promise<{ readonly changed: boolean; readonly revision: number; readonly value: T }> {
     return this.#enqueue(async () => {
-      const result = await operation();
-      if (result.changed) this.#revision += 1;
+      const nextRevision = this.#revision + 1;
+      const result = await operation(nextRevision);
+      if (result.changed) this.#revision = nextRevision;
       return { changed: result.changed, revision: this.#revision, value: result.value };
     });
   }

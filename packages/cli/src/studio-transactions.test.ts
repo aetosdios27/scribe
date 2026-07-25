@@ -85,6 +85,34 @@ it("runs system mutations in the same queue as client mutations", async () => {
   expect(order).toEqual(["external"]);
 });
 
+it("reserves the revision that a queued client observes during a system mutation", async () => {
+  const coordinator = new StudioTransactionCoordinator(1);
+  let releaseSystem!: () => void;
+  let exposeRevision!: (revision: number) => void;
+  const systemBlocked = new Promise<void>((resolve) => {
+    releaseSystem = resolve;
+  });
+  const revisionExposed = new Promise<number>((resolve) => {
+    exposeRevision = resolve;
+  });
+
+  const system = coordinator.system(async (nextRevision) => {
+    exposeRevision(nextRevision);
+    await systemBlocked;
+    return { changed: true as const, value: "external" };
+  });
+  const observedRevision = await revisionExposed;
+  const client = coordinator.mutate(
+    { clientId: "tab-a", operationId: "a-2", baseRevision: observedRevision },
+    async () => ({ accepted: true as const, value: "preserved browser draft" })
+  );
+
+  releaseSystem();
+
+  await expect(system).resolves.toEqual({ changed: true, revision: 2, value: "external" });
+  await expect(client).resolves.toEqual({ kind: "accepted", revision: 3, value: "preserved browser draft" });
+});
+
 it("does not advance the revision for a no-op system observation", async () => {
   const coordinator = new StudioTransactionCoordinator(7);
 
