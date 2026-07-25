@@ -144,12 +144,12 @@ async function createNextConsumer() {
     dependencies: {
       "@mdx-js/loader": "3.1.1",
       "@mdx-js/react": "3.1.1",
-      "@next/mdx": "16.2.10",
+      "@next/mdx": "16.2.11",
       "@scribe-sdk/cli": `file:${tarballs.cli}`,
       "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
       "@scribe-sdk/react": `file:${tarballs.react}`,
       "@scribe-sdk/styles": `file:${tarballs.styles}`,
-      next: "16.2.10",
+      next: "16.2.11",
       react: "19.2.7",
       "react-dom": "19.2.7"
     },
@@ -219,7 +219,7 @@ async function createNextRemoteConsumer() {
       "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
       "@scribe-sdk/react": `file:${tarballs.react}`,
       "@scribe-sdk/styles": `file:${tarballs.styles}`,
-      next: "16.2.10",
+      next: "16.2.11",
       "next-mdx-remote": "6.0.0",
       react: "19.2.7",
       "react-dom": "19.2.7"
@@ -276,12 +276,12 @@ async function createNextCssModulesConsumer() {
     dependencies: {
       "@mdx-js/loader": "3.1.1",
       "@mdx-js/react": "3.1.1",
-      "@next/mdx": "16.2.10",
+      "@next/mdx": "16.2.11",
       "@scribe-sdk/cli": `file:${tarballs.cli}`,
       "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
       "@scribe-sdk/react": `file:${tarballs.react}`,
       "@scribe-sdk/styles": `file:${tarballs.styles}`,
-      next: "16.2.10",
+      next: "16.2.11",
       react: "19.2.7",
       "react-dom": "19.2.7"
     },

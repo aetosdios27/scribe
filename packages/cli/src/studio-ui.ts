@@ -98,16 +98,129 @@ function formatDiagnostics(items) {
   }).join("\n");
 }
 
-async function request(path, options) {
-  const response = await fetch(path, options);
-  const body = await response.json();
-  return { response, body };
+const studioSessionToken = document.querySelector('meta[name="scribe-studio-session"]')?.content || "";
+const studioClientId = crypto.randomUUID();
+let studioRevision = 0;
+let studioOperation = 0;
+let studioMutationTail = Promise.resolve();
+
+async function performRequest(path, options = {}) {
+  try {
+    const response = await fetch(path, options);
+    const text = await response.text();
+    let body;
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { error: "Studio received an invalid response from its local server." };
+    }
+    if (Number.isSafeInteger(body.revision)) studioRevision = Math.max(studioRevision, body.revision);
+    return { response, body };
+  } catch {
+    return {
+      response: new Response(null, { status: 503, statusText: "Studio server unavailable" }),
+      body: { error: "Studio could not reach its local server. Your browser recovery draft remains intact." }
+    };
+  }
 }
 
-function Status({ state, richError }) {
+function request(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  if (method !== "PUT" && method !== "POST") return performRequest(path, options);
+  if (path === "/__scribe/api/lease") {
+    return performRequest(path, {
+      ...options,
+      headers: {
+        ...options.headers,
+        "content-type": "application/json",
+        "x-scribe-studio-session": studioSessionToken
+      },
+      body: JSON.stringify({ clientId: studioClientId })
+    });
+  }
+
+  const execute = async () => {
+    const supplied = options.body ? JSON.parse(options.body) : {};
+    const body = JSON.stringify({
+      ...supplied,
+      clientId: studioClientId,
+      operationId: studioClientId + "-" + (++studioOperation),
+      baseRevision: studioRevision
+    });
+    return performRequest(path, {
+      ...options,
+      headers: {
+        ...options.headers,
+        "content-type": "application/json",
+        "x-scribe-studio-session": studioSessionToken
+      },
+      body
+    });
+  };
+  const result = studioMutationTail.then(execute, execute);
+  studioMutationTail = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+const recoveryDatabaseName = "scribe-studio-recovery";
+const recoveryStoreName = "drafts";
+let recoveryDatabasePromise;
+
+async function recoveryDatabase() {
+  recoveryDatabasePromise ??= new Promise((resolve, reject) => {
+    const opening = indexedDB.open(recoveryDatabaseName, 1);
+    opening.onupgradeneeded = () => opening.result.createObjectStore(recoveryStoreName);
+    opening.onsuccess = () => {
+      opening.result.onversionchange = () => {
+        opening.result.close();
+        recoveryDatabasePromise = undefined;
+      };
+      resolve(opening.result);
+    };
+    opening.onerror = () => {
+      recoveryDatabasePromise = undefined;
+      reject(opening.error);
+    };
+  });
+  return recoveryDatabasePromise;
+}
+
+async function readBrowserRecovery(key) {
+  const database = await recoveryDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(recoveryStoreName, "readonly");
+    const request = transaction.objectStore(recoveryStoreName).get(key);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function writeBrowserRecovery(key, value) {
+  const database = await recoveryDatabase();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction(recoveryStoreName, "readwrite");
+    transaction.objectStore(recoveryStoreName).put(value, key);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+async function clearBrowserRecovery(key) {
+  const database = await recoveryDatabase();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction(recoveryStoreName, "readwrite");
+    transaction.objectStore(recoveryStoreName).delete(key);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+function Status({ state, richError, writer, connected }) {
   const hasErrors = richError || state.diagnostics.some((item) => item.severity === "error");
-  const kind = state.conflict ? "conflict" : hasErrors ? "error" : state.dirty ? "dirty" : "ready";
-  const label = state.conflict ? "External change" : richError ? "Rich edit rejected" : hasErrors ? "Compilation blocked" : state.dirty ? "Unsaved draft" : "Ready";
+  const kind = !connected ? "error" : writer === false ? "conflict" : state.conflict ? "conflict" : hasErrors ? "error" : state.dirty ? "dirty" : "ready";
+  const label = !connected ? "Reconnecting" : writer === false ? "Read-only tab" : state.conflict ? "External change" : richError ? "Rich edit rejected" : hasErrors ? "Compilation blocked" : state.dirty ? "Unsaved draft" : "Ready";
   return <div className="studio-status" data-status={kind} role="status"><span className="studio-status__dot" aria-hidden="true" /><span id="status-text">{label}</span></div>;
 }
 
@@ -118,11 +231,11 @@ function PanelHeading({ icon: Icon, title, state, tabs }) {
   </div>;
 }
 
-function MarkdownPanel({ state, source, setSource, textareaRef }) {
+function MarkdownPanel({ state, source, setSource, textareaRef, writer }) {
   const diagnostics = formatDiagnostics(state.diagnostics);
   return <section className="studio-panel source-panel" aria-label="Markdown editor">
     <PanelHeading icon={FileText} title="Markdown" state={state.conflict ? "Conflict" : state.dirty ? "Unsaved" : "Saved"} />
-    <textarea ref={textareaRef} id="source" className="source-textarea" value={source} onChange={(event) => setSource(event.target.value)} spellCheck="false" aria-label="Article source" data-lenis-prevent />
+    <textarea ref={textareaRef} id="source" className="source-textarea" value={source} onChange={(event) => setSource(event.target.value)} readOnly={writer === false} spellCheck="false" aria-label={writer === false ? "Article source (read-only in this tab)" : "Article source"} data-lenis-prevent />
     {diagnostics && <pre id="diagnostics" className="diagnostics" aria-live="polite">{diagnostics}</pre>}
   </section>;
 }
@@ -134,7 +247,7 @@ const previewPresets = {
 };
 
 function PreviewPanel({ theme, viewport, previewVersion, compact = false }) {
-  const src = "/preview?theme=" + theme + "&version=" + previewVersion;
+  const src = "/preview?theme=" + theme;
   const preset = previewPresets[viewport];
   const stageRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -222,7 +335,7 @@ function RichToolbar() {
   </div>;
 }
 
-function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, onPendingChange, registerFlush }) {
+function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, onPendingChange, onRecoveryCandidate, registerFlush }) {
   const editorRef = useRef(null);
   const revisionRef = useRef(session.revision);
   const lastAcceptedRef = useRef(session.projectionMarkdown);
@@ -256,13 +369,23 @@ function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, 
       const { response, body } = await request("/__scribe/api/rich-draft", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ source: candidate, revision: revisionRef.current })
+        body: JSON.stringify({
+          source: candidate,
+          baseSource: session.baseSource,
+          baseDiskVersion: session.baseDiskVersion
+        })
       });
       if (response.ok) {
         revisionRef.current = body.revision;
         lastAcceptedRef.current = candidate;
         pendingRef.current = false;
-        onAccepted(body, { ...session, revision: body.revision, projectionMarkdown: body.projectionMarkdown, islands: body.islands });
+        onAccepted(body, {
+          ...session,
+          revision: body.revision,
+          projectionMarkdown: body.projectionMarkdown,
+          islands: body.islands,
+          baseSource: body.source
+        });
         return true;
       }
       editorRef.current?.setMarkdown(lastAcceptedRef.current);
@@ -304,9 +427,10 @@ function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, 
     if (initialNormalize) return;
     pendingRef.current = true;
     onPendingChange(true);
+    onRecoveryCandidate(candidate, session);
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => submit(candidate), 320);
-  }, [onPendingChange, submit]);
+  }, [onPendingChange, onRecoveryCandidate, session, submit]);
 
   return <RichContext.Provider value={{ islands: session.islands, editInMarkdown: onEditInMarkdown }}>
     <section className="studio-panel rich-panel" aria-label="Rich Text editor">
@@ -343,15 +467,15 @@ function SecondaryPane({ tab, setTab, source, state, theme, viewport }) {
   </section>;
 }
 
-function Workspace({ authorMode, state, source, setSource, textareaRef, theme, viewport, richSession, setRichSession, richError, setRichError, setAuthorMode, setRichPending, registerRichFlush, revealProtected }) {
+function Workspace({ authorMode, state, source, setSource, textareaRef, theme, viewport, richSession, setRichSession, richError, setRichError, setAuthorMode, setRichPending, preserveRichCandidate, registerRichFlush, revealProtected, writer }) {
   if (authorMode === "markdown") {
     return <div className="studio-workspace studio-workspace--markdown">
-      <MarkdownPanel state={state} source={source} setSource={setSource} textareaRef={textareaRef} />
+      <MarkdownPanel state={state} source={source} setSource={setSource} textareaRef={textareaRef} writer={writer} />
       <PreviewPanel theme={theme} viewport={viewport} previewVersion={state.previewVersion} />
     </div>;
   }
   return <div className="studio-workspace studio-workspace--rich">
-    <RichEditor session={richSession} state={state} registerFlush={registerRichFlush} onPendingChange={setRichPending} onEditInMarkdown={revealProtected} onRejected={(message) => { setRichError(message); toast.error(message); }} onAccepted={(body, nextSession, applyState = true) => {
+    <RichEditor session={richSession} state={state} registerFlush={registerRichFlush} onPendingChange={setRichPending} onRecoveryCandidate={preserveRichCandidate} onEditInMarkdown={revealProtected} onRejected={(message) => { setRichError(message); toast.error(message); }} onAccepted={(body, nextSession, applyState = true) => {
       setRichError("");
       setRichSession(nextSession);
       if (applyState) setAuthorMode(body);
@@ -370,35 +494,212 @@ function StudioApp() {
   const [theme, setTheme] = useState("dark");
   const [copyStatus, setCopyStatus] = useState("");
   const [richPending, setRichPending] = useState(false);
+  const [writer, setWriter] = useState(null);
+  const [connected, setConnected] = useState(true);
   const diskVersion = useRef("");
+  const draftBaseDiskVersion = useRef("");
   const textareaRef = useRef(null);
   const updateTimer = useRef();
   const richFlushRef = useRef(null);
   const pendingSelection = useRef(null);
+  const sourceRef = useRef("");
+  const serverSourceRef = useRef("");
+  const browserRecoveryReady = useRef(false);
+  const browserRecoveryConflict = useRef(false);
+  const browserRecoveryWarningShown = useRef(false);
+  const richPendingRef = useRef(false);
 
   const apply = useCallback((next, replaceSource = false) => {
+    if (Number.isSafeInteger(next.revision) && next.revision < studioRevision) return false;
     diskVersion.current = next.diskVersion;
+    if (!draftBaseDiskVersion.current || !next.dirty) draftBaseDiskVersion.current = next.diskVersion;
+    serverSourceRef.current = next.source;
     setState(next);
-    if (replaceSource) setSource(next.source);
+    if (replaceSource) {
+      sourceRef.current = next.source;
+      setSource(next.source);
+    }
+    return true;
+  }, []);
+
+  const updateSource = useCallback((next) => {
+    sourceRef.current = next;
+    setSource(next);
   }, []);
 
   const applyRichState = useCallback((body) => apply(body, true), [apply]);
 
   useEffect(() => {
-    request("/__scribe/api/document").then(({ body }) => apply(body, true));
-    const interval = setInterval(async () => {
-      const { body } = await request("/__scribe/api/document");
-      if (body.diskVersion !== diskVersion.current || body.conflict) apply(body, !body.dirty);
-    }, 900);
-    return () => clearInterval(interval);
+    let active = true;
+    let events;
+    const openDocument = async () => {
+      const { response, body } = await request("/__scribe/api/document");
+      if (!response.ok || typeof body.source !== "string") {
+        if (active) {
+          setConnected(false);
+          toast.error(body.error || "Studio could not load the local document.");
+        }
+        return false;
+      }
+      apply(body, true);
+      try {
+        const recovered = await readBrowserRecovery(body.recoveryKey);
+        if (
+          recovered?.kind === "rich"
+          && typeof recovered.candidate === "string"
+          && typeof recovered.baseSource === "string"
+          && typeof recovered.diskVersion === "string"
+        ) {
+          draftBaseDiskVersion.current = recovered.diskVersion;
+          const restored = await request("/__scribe/api/rich-draft", {
+            method: "PUT",
+            body: JSON.stringify({
+              source: recovered.candidate,
+              baseSource: recovered.baseSource,
+              baseDiskVersion: recovered.diskVersion
+            })
+          });
+          if (restored.response.ok && typeof restored.body.source === "string") {
+            apply(restored.body, true);
+            await clearBrowserRecovery(body.recoveryKey);
+            toast.warning("Recovered Rich Text typing that had not reached the Studio server.");
+          } else {
+            toast.error(restored.body.error || "Studio preserved a Rich Text recovery candidate but could not restore it safely.");
+          }
+        } else
+        if (
+          recovered
+          && typeof recovered.source === "string"
+          && recovered.source !== body.source
+        ) {
+          draftBaseDiskVersion.current = recovered.diskVersion;
+          sourceRef.current = recovered.source;
+          setSource(recovered.source);
+          browserRecoveryConflict.current = recovered.diskVersion !== body.diskVersion;
+          toast.warning(recovered.diskVersion === body.diskVersion
+            ? "Recovered typing that had not reached the Studio server."
+            : "Recovered local typing, but the source also changed on disk. Saving is blocked until you reconcile.");
+        }
+      } catch {
+        if (!browserRecoveryWarningShown.current) {
+          browserRecoveryWarningShown.current = true;
+          toast.warning("Instant browser crash recovery is unavailable. Drafts are still protected after they reach the local Studio server.");
+        }
+      } finally {
+        browserRecoveryReady.current = true;
+      }
+      if (body.recovered) {
+        toast.warning(body.recoveryConflict
+          ? "Recovered an unsaved draft, but the source also changed on disk. Reconcile before saving."
+          : "Recovered your unsaved Studio draft.");
+      }
+      return true;
+    };
+    const refresh = async () => {
+      const { response, body } = await request("/__scribe/api/document");
+      if (!response.ok || typeof body.source !== "string") {
+        if (active) setConnected(false);
+        return;
+      }
+      if (richPendingRef.current) return;
+      if (body.diskVersion !== diskVersion.current) {
+        const localPending = sourceRef.current !== serverSourceRef.current;
+        if (localPending) {
+          const preserved = await request("/__scribe/api/draft", {
+            method: "PUT",
+            body: JSON.stringify({
+              source: sourceRef.current,
+              externalConflict: true,
+              baseDiskVersion: draftBaseDiskVersion.current
+            })
+          });
+          if (typeof preserved.body.source === "string") apply(preserved.body, false);
+          return;
+        }
+        apply(body, !body.dirty);
+      } else if (body.conflict) {
+        apply(body, !body.dirty);
+      }
+    };
+    void openDocument().then((opened) => {
+      if (!active || !opened) return;
+      events = new EventSource("/__scribe/api/events");
+      events.onopen = () => setConnected(true);
+      events.onerror = () => setConnected(false);
+      events.onmessage = () => void refresh();
+    });
+    return () => {
+      active = false;
+      events?.close();
+    };
   }, [apply]);
+
+  useEffect(() => {
+    if (!state?.recoveryKey || !browserRecoveryReady.current) return;
+    if (!state.dirty && source === state.source) {
+      void clearBrowserRecovery(state.recoveryKey).catch(() => undefined);
+      return;
+    }
+    void writeBrowserRecovery(state.recoveryKey, {
+      kind: "markdown",
+      source,
+      diskVersion: draftBaseDiskVersion.current || diskVersion.current,
+      writtenAt: new Date().toISOString()
+    }).catch(() => {
+      if (!browserRecoveryWarningShown.current) {
+        browserRecoveryWarningShown.current = true;
+        toast.warning("Instant browser crash recovery is unavailable. Drafts are still protected after they reach the local Studio server.");
+      }
+    });
+  }, [source, state?.dirty, state?.source, state?.recoveryKey]);
+
+  useEffect(() => {
+    let active = true;
+    const renew = async () => {
+      try {
+        const { response } = await request("/__scribe/api/lease", { method: "POST", body: "{}" });
+        if (active) setWriter(response.ok);
+      } catch {
+        if (active) setWriter(false);
+      }
+    };
+    void renew();
+    const interval = setInterval(renew, 3_000);
+    const release = () => {
+      void fetch("/__scribe/api/lease/release", {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          "content-type": "application/json",
+          "x-scribe-studio-session": studioSessionToken
+        },
+        body: JSON.stringify({ clientId: studioClientId })
+      });
+    };
+    addEventListener("pagehide", release);
+    return () => {
+      active = false;
+      clearInterval(interval);
+      removeEventListener("pagehide", release);
+      release();
+    };
+  }, []);
 
   useEffect(() => {
     if (authorMode !== "markdown" || !state || source === state.source) return;
     clearTimeout(updateTimer.current);
     updateTimer.current = setTimeout(async () => {
-      const { body } = await request("/__scribe/api/draft", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ source }) });
-      apply(body);
+      const { response, body } = await request("/__scribe/api/draft", {
+        method: "PUT",
+        body: JSON.stringify({
+          source,
+          externalConflict: browserRecoveryConflict.current,
+          baseDiskVersion: draftBaseDiskVersion.current
+        })
+      });
+      if (response.ok) browserRecoveryConflict.current = false;
+      if (typeof body.source === "string") apply(body);
+      if (!response.ok) toast.error(body.error || "Studio could not preserve this draft.");
     }, 280);
     return () => clearTimeout(updateTimer.current);
   }, [source, state, apply, authorMode]);
@@ -422,12 +723,28 @@ function StudioApp() {
   const flushMarkdown = useCallback(async () => {
     clearTimeout(updateTimer.current);
     if (!state || source === state.source) return state;
-    const { body } = await request("/__scribe/api/draft", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ source }) });
+    const { response, body } = await request("/__scribe/api/draft", {
+      method: "PUT",
+      body: JSON.stringify({
+        source,
+        externalConflict: browserRecoveryConflict.current,
+        baseDiskVersion: draftBaseDiskVersion.current
+      })
+    });
+    if (response.ok) browserRecoveryConflict.current = false;
+    if (!response.ok || typeof body.source !== "string") {
+      toast.error(body.error || "Studio could not preserve this draft.");
+      return state;
+    }
     apply(body, true);
     return body;
   }, [state, source, apply]);
 
   const enterRich = useCallback(async () => {
+    if (writer === false) {
+      toast.error("Another Studio tab currently owns this draft.");
+      return;
+    }
     const current = await flushMarkdown();
     if (!current || current.diagnostics.some((item) => item.severity === "error")) {
       toast.error("Fix Markdown diagnostics before entering Rich Text mode.");
@@ -439,10 +756,15 @@ function StudioApp() {
       toast.error(body.error || "This document cannot enter Rich Text mode safely.");
       return;
     }
-    setRichSession({ ...body, tab: "markdown" });
+    setRichSession({
+      ...body,
+      tab: "markdown",
+      baseSource: current.source,
+      baseDiskVersion: draftBaseDiskVersion.current || current.diskVersion
+    });
     setRichError("");
     setAuthorModeState("rich");
-  }, [flushMarkdown]);
+  }, [flushMarkdown, writer]);
 
   const switchAuthorMode = useCallback(async (mode) => {
     if (mode === authorMode) return;
@@ -460,8 +782,32 @@ function StudioApp() {
 
   const hasUnwrittenChanges = Boolean(state && (state.dirty || source !== state.source || richPending));
 
+  const setRichPendingState = useCallback((pending) => {
+    richPendingRef.current = pending;
+    setRichPending(pending);
+  }, []);
+
+  const preserveRichCandidate = useCallback((candidate, session) => {
+    if (!state?.recoveryKey) return;
+    void writeBrowserRecovery(state.recoveryKey, {
+      kind: "rich",
+      candidate,
+      baseSource: session.baseSource,
+      diskVersion: session.baseDiskVersion,
+      writtenAt: new Date().toISOString()
+    }).catch(() => {
+      if (!browserRecoveryWarningShown.current) {
+        browserRecoveryWarningShown.current = true;
+        toast.warning("Instant browser crash recovery is unavailable. Drafts are still protected after they reach the local Studio server.");
+      }
+    });
+  }, [state?.recoveryKey]);
+
   const save = useCallback(async () => {
-    if (!state) return;
+    if (!state || writer === false) {
+      toast.error("This tab is read-only while another Studio tab owns the draft.");
+      return;
+    }
     if (authorMode === "rich" && richFlushRef.current) {
       const accepted = await richFlushRef.current();
       if (!accepted) return;
@@ -469,12 +815,13 @@ function StudioApp() {
     const saved = await request("/__scribe/api/save", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedDiskVersion: diskVersion.current }) });
     if (saved.response.ok) {
       apply(saved.body, true);
+      void clearBrowserRecovery(saved.body.recoveryKey).catch(() => undefined);
       toast.success("Saved to " + saved.body.sourcePath);
     } else {
       if (typeof saved.body.source === "string") apply(saved.body, true);
       toast.error(saved.body.error || "Could not save the article");
     }
-  }, [state, authorMode, flushMarkdown, apply]);
+  }, [state, authorMode, flushMarkdown, apply, writer]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -504,22 +851,35 @@ function StudioApp() {
     try { await navigator.clipboard.writeText(diagnostics); setCopyStatus("Diagnostics copied"); toast.success("Diagnostics copied"); }
     catch { setCopyStatus("Could not copy diagnostics"); toast.error("Clipboard access is unavailable"); }
   };
+  const recoverDiscard = async () => {
+    const { response, body } = await request("/__scribe/api/recover-discard", { method: "POST", body: "{}" });
+    if (!response.ok) return toast.error(body.error || "The discarded draft could not be recovered.");
+    apply(body, true);
+    void clearBrowserRecovery(body.recoveryKey).catch(() => undefined);
+    toast.success("Recovered the discarded draft");
+  };
   const discard = async () => {
-    const { body } = await request("/__scribe/api/discard", { method: "POST" });
+    const { response, body } = await request("/__scribe/api/discard", { method: "POST", body: "{}" });
+    if (!response.ok || typeof body.source !== "string") {
+      toast.error(body.error || "The source could not be reloaded from disk.");
+      return;
+    }
     apply(body, true);
     setAuthorModeState("markdown");
     setRichSession(null);
     setRichError("");
-    toast("Reloaded the source from disk");
+    toast("Reloaded the source from disk", body.discardRecoveryAvailable
+      ? { action: { label: "Undo", onClick: recoverDiscard } }
+      : undefined);
   };
 
   return <Tooltip.Provider delay={350}><main className="studio-shell">
     <header className="studio-toolbar">
       <div className="studio-brand"><span className="studio-mark" aria-hidden="true"><TerminalSquare /></span><div><strong>Scribe Studio</strong><span>Markdown source · visual helper · production renderer</span></div></div>
-      <Status state={state} richError={richError} />
+      <Status state={state} richError={richError} writer={writer} connected={connected} />
       <div className="studio-actions">
         {(state.diagnostics.length > 0 || richError) && <Hint label="Copy diagnostics"><Button id="copy-diagnostics" type="button" size="icon" variant="ghost" aria-label="Copy diagnostics" onClick={copyDiagnostics}><ClipboardCopy aria-hidden="true" /></Button></Hint>}
-        <Button id="save" type="button" variant="default" onClick={save}><Save data-icon="inline-start" aria-hidden="true" />Save <kbd>⌘S</kbd></Button>
+        <Button id="save" type="button" variant="default" onClick={save} disabled={writer === false}><Save data-icon="inline-start" aria-hidden="true" />Save <kbd>⌘S</kbd></Button>
       </div>
     </header>
 
@@ -533,7 +893,7 @@ function StudioApp() {
       <span className="document-meta">{lines} lines <i /> {words} words</span>
     </div>
 
-    <Workspace authorMode={authorMode} state={state} source={source} setSource={setSource} textareaRef={textareaRef} theme={theme} viewport={viewport} richSession={richSession} setRichSession={setRichSession} richError={richError} setRichError={setRichError} setAuthorMode={applyRichState} setRichPending={setRichPending} registerRichFlush={(flush) => { richFlushRef.current = flush; }} revealProtected={revealProtected} />
+    <Workspace authorMode={authorMode} state={state} source={source} setSource={updateSource} textareaRef={textareaRef} theme={theme} viewport={viewport} richSession={richSession} setRichSession={setRichSession} richError={richError} setRichError={setRichError} setAuthorMode={applyRichState} setRichPending={setRichPendingState} preserveRichCandidate={preserveRichCandidate} registerRichFlush={(flush) => { richFlushRef.current = flush; }} revealProtected={revealProtected} writer={writer} />
 
     {richError && <div className="rich-error" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Rich Text edit rejected</strong><span>{richError}</span><small>The Markdown draft was not changed.</small></div><Button type="button" size="sm" onClick={() => switchAuthorMode("markdown")}><FileText data-icon="inline-start" aria-hidden="true" />Edit in Markdown</Button></div>}
     {state.conflict && <div className="conflict-card" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Source changed outside Studio</strong><span>Your unsaved draft and the disk version are both preserved.</span></div><Button type="button" size="sm" onClick={discard}><RotateCcw data-icon="inline-start" aria-hidden="true" />Reload from disk</Button></div>}

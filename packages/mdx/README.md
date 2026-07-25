@@ -6,7 +6,7 @@ Scribe is an open-source publishing SDK that turns ordinary Markdown, MDX, seman
 
 Scribe is for developers who already own a React website built with Next.js or Vite and want publication-grade typography, code, tables, banners, callouts, figures, responsive behavior, and accessibility without assembling a publishing design system themselves. It transforms semantic article content at build time and renders it through a small React component map plus scoped CSS.
 
-Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor, proprietary content format, collaboration service, or replacement for React, Next.js, MDX, routing, deployment, analytics, or content storage. The public alpha is tested against React 19.2.7, Next.js 16.2.10, Vite 8.1.3, and MDX 3.1.1. Broader compatibility will be validated through real integrations.
+Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor, proprietary content format, collaboration service, or replacement for React, Next.js, MDX, routing, deployment, analytics, or content storage. The public alpha is tested against React 19.2.7, Next.js 16.2.11, Vite 8.1.3, and MDX 3.1.1. Broader compatibility will be validated through real integrations.
 
 ## Packages
 
@@ -117,10 +117,10 @@ Initialization is minimal and idempotent. It does not replace existing remark/re
 
 ## Next.js MDX integration
 
-The tested Next.js path uses Next 16.2.10 and React 19.2.7. Install Next’s MDX integration if the host does not already have it:
+The tested Next.js path uses Next 16.2.11 and React 19.2.7. Install Next’s MDX integration if the host does not already have it:
 
 ```bash
-bun add @next/mdx@16.2.10 @mdx-js/loader@3.1.1 @mdx-js/react@3.1.1
+bun add @next/mdx@16.2.11 @mdx-js/loader@3.1.1 @mdx-js/react@3.1.1
 ```
 
 Configure the shared Scribe compiler in `next.config.mjs`:
@@ -460,7 +460,7 @@ Scribe owns publication structure, semantic component mappings, responsive artic
 
 The current public-alpha matrix uses fresh packed tarballs for installation, strict typechecking, and production-build claims:
 
-- Framework integrations: React 19.2.7, MDX 3.1.1, Vite 8.1.3, `@vitejs/plugin-react` 6.0.3, Next.js 16.2.10, `@next/mdx` 16.2.10, and `next-mdx-remote` 6.0.0.
+- Framework integrations: React 19.2.7, MDX 3.1.1, Vite 8.1.3, `@vitejs/plugin-react` 6.0.3, Next.js 16.2.11, `@next/mdx` 16.2.11, and `next-mdx-remote` 6.0.0.
 - Declarations: TypeScript 7.0.2 and 6.0.2 with `skipLibCheck: false`.
 - Package and CLI portability: Linux, Windows, and macOS using Bun 1.3.13 and an npm-compatible install flow.
 - Browser behavior: current Playwright-managed Chromium and Firefox, including console errors, uncaught page errors, host isolation, and narrow-viewport overflow.

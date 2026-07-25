@@ -1,4 +1,6 @@
 import { defineConfig } from "@playwright/test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export default defineConfig({
   testDir: "./tests/studio-browser",
@@ -20,6 +22,9 @@ export default defineConfig({
     cwd: ".",
     url: "http://127.0.0.1:4319",
     reuseExistingServer: false,
-    timeout: 30_000
+    timeout: 30_000,
+    env: {
+      SCRIBE_STUDIO_STATE_DIR: join(tmpdir(), `scribe-studio-playwright-${process.pid}`)
+    }
   }
 });

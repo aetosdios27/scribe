@@ -141,7 +141,7 @@ it("keeps the Scribe Tailwind layer after Tailwind v4's required import", async 
 
 it("creates but never duplicates an unambiguous Next component map", async () => {
   const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, next: "16.2.10", "@next/mdx": "16.2.10" } }),
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, next: "16.2.11", "@next/mdx": "16.2.11" } }),
     "app/globals.css": "body { margin: 0; }\n",
     "next.config.mjs": "import createMDX from '@next/mdx';\nexport default createMDX({})({});\n"
   });
@@ -155,7 +155,7 @@ it("creates but never duplicates an unambiguous Next component map", async () =>
 
 it("names the next-mdx-remote/rsc options prop precisely", async () => {
   const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, next: "16.2.10", "next-mdx-remote": "6.0.0" } }),
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, next: "16.2.11", "next-mdx-remote": "6.0.0" } }),
     "app/globals.css": "body { margin: 0; }\n",
     "app/page.tsx": 'import { MDXRemote } from "next-mdx-remote/rsc"; export default () => <MDXRemote source="# Article" />;'
   });

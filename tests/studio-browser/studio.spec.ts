@@ -70,6 +70,33 @@ test("keeps Markdown canonical while constrained Rich Text edits update the mirr
   await expect(page.getByRole("toolbar", { name: "Markdown formatting" })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("studio-markdown.png"), fullPage: true });
 
+  const diskSource = await source.inputValue();
+  await source.fill("# Browser recovery draft\n");
+  const serverBeforeDebounce = await page.evaluate(async () => (await fetch("/__scribe/api/document")).json());
+  expect(serverBeforeDebounce.source).toBe(diskSource);
+  await expect.poll(() => page.evaluate(async (recoveryKey) => {
+    const database = await new Promise<IDBDatabase>((resolveDatabase, reject) => {
+      const opening = indexedDB.open("scribe-studio-recovery", 1);
+      opening.onsuccess = () => resolveDatabase(opening.result);
+      opening.onerror = () => reject(opening.error);
+    });
+    try {
+      return await new Promise<string | undefined>((resolveDraft, reject) => {
+        const request = database.transaction("drafts", "readonly").objectStore("drafts").get(recoveryKey);
+        request.onsuccess = () => resolveDraft(request.result?.source);
+        request.onerror = () => reject(request.error);
+      });
+    } finally {
+      database.close();
+    }
+  }, serverBeforeDebounce.recoveryKey)).toBe("# Browser recovery draft\n");
+  await page.reload();
+  await expect(source).toHaveValue("# Browser recovery draft\n");
+  await expect(page.locator("#status-text")).not.toHaveText("Read-only tab");
+
+  await preview.locator("body").evaluate(() => {
+    (window as typeof window & { __scribeHmrProof?: string }).__scribeHmrProof = "preserved";
+  });
   await source.fill("# Live studio draft\n\nThe preview uses the production Scribe renderer.\n\n<Callout variant=\"note\">Protected note.</Callout>\n");
   await expect(page.locator("#status-text")).toHaveText("Unsaved draft");
   await expect(page.locator(".save-contract")).toContainText("Draft only — Save writes to");
@@ -79,6 +106,7 @@ test("keeps Markdown canonical while constrained Rich Text edits update the mirr
     return event.defaultPrevented;
   })).toBe(true);
   await expect(preview.locator("h1#live-studio-draft")).toBeVisible();
+  expect(await preview.locator("body").evaluate(() => (window as typeof window & { __scribeHmrProof?: string }).__scribeHmrProof)).toBe("preserved");
 
   await source.fill("<Callout>unfinished");
   await expect(page.locator("#status-text")).toHaveText("Compilation blocked");
