@@ -11,8 +11,8 @@
     "@scribe-sdk/styles": "workspace:*",
     "next": "16.2.11",
     "next-mdx-remote": "6.0.0",
-    "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@types/react": "19.2.17",

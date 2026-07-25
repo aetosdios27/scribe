@@ -13,10 +13,10 @@
     "@scribe-sdk/mdx": "workspace:*",
     "@scribe-sdk/react": "workspace:*",
     "@scribe-sdk/styles": "workspace:*",
-    "@vitejs/plugin-react": "6.0.3",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
-    "vite": "8.1.3"
+    "@vitejs/plugin-react": "6.0.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "vite": "8.1.5"
   },
   "devDependencies": {
     "@types/react": "19.2.17",
