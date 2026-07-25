@@ -154,7 +154,7 @@ After versioning, run every gate from the repository root:
 - [ ] Confirm `SKILL.md` exists in every intended package tarball
 - [ ] Execute README installation commands unchanged in a fresh packed consumer
 - [ ] Scan repository release files for secrets and machine-specific paths
-- [ ] Audit production dependencies: `bun audit --production`
+- [ ] Audit published-package production dependencies: `bun run release:audit`
 - [ ] Run whitespace validation last: `git diff --check`
 
 ## Publish

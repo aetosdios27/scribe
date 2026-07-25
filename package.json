@@ -20,6 +20,7 @@
     "docs:sync": "node scripts/sync-package-docs.mjs",
     "release:inspect": "node scripts/inspect-tarballs.mjs .scribe-release",
     "release:bundle-scan": "node scripts/scan-browser-bundles.mjs",
+    "release:audit": "node scripts/audit-public-packages.mjs",
     "release:check": "node scripts/check-release-alignment.mjs",
     "release:consumers": "node scripts/test-packed-consumers.mjs",
     "release:pack": "node scripts/pack-packages.mjs",

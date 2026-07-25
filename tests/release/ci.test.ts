@@ -52,6 +52,18 @@ describe("public CI contract", () => {
     }
   });
 
+  it("audits every publishable package without treating private framework fixtures as shipped runtime dependencies", async () => {
+    const workflow = await text(".github/workflows/ci.yml");
+    const manifest = JSON.parse(await text("package.json"));
+    const auditScript = await text("scripts/audit-public-packages.mjs");
+
+    expect(manifest.scripts["release:audit"]).toBe("node scripts/audit-public-packages.mjs");
+    expect(workflow).toContain("run: bun run release:audit");
+    expect(workflow).not.toContain("run: bun audit --production");
+    expect(auditScript).toContain('const publicPackages = ["styles", "react", "mdx", "cli"];');
+    expect(auditScript).toContain('join(root, "packages", directory)');
+  });
+
   it("exposes separate portable browser and canonical Helium commands", async () => {
     const manifest = JSON.parse(await text("package.json"));
 

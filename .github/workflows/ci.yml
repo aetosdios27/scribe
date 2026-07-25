@@ -60,7 +60,7 @@ jobs:
       - name: Scan browser bundles
         run: bun run release:bundle-scan
       - name: Audit production dependencies
-        run: bun audit --production
+        run: bun run release:audit
       - name: Check repository whitespace
         run: git diff --check
       - name: Confirm verification leaves tracked files unchanged
