@@ -45,6 +45,13 @@ import { studioClientModule, studioStyles, type StudioClientImports } from "./st
 
 const studioRequire = createRequire(import.meta.url);
 
+const studioTailwindArticleClassName =
+  "prose max-w-none text-[15px] leading-relaxed prose-p:text-[var(--text)] prose-headings:text-[var(--text)] prose-headings:font-bold prose-headings:tracking-tight prose-a:text-[var(--text)] prose-a:underline-offset-4 hover:prose-a:opacity-70 prose-strong:text-[var(--text)] prose-blockquote:border-l-[var(--text)] prose-blockquote:text-[var(--text)] prose-blockquote:opacity-80 prose-hr:border-[var(--text)]/20 prose-li:text-[var(--text)] prose-ul:text-[var(--text)] prose-img:border prose-img:border-[var(--text)]/20 prose-img:w-full [&_:not(pre)>code]:bg-[var(--text)] [&_:not(pre)>code]:text-[var(--bg)] [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:before:content-none [&_:not(pre)>code]:after:content-none";
+
+export function studioPreviewArticleClassName(mode: StyleMode): string | undefined {
+  return mode === "tailwind" ? studioTailwindArticleClassName : undefined;
+}
+
 export interface StudioOptions {
   readonly root: string;
   readonly path: string;
@@ -298,17 +305,11 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
         "react-dom/client",
         "react/jsx-runtime",
         "react/jsx-dev-runtime",
-        "@base-ui/react/button",
-        "@base-ui/react/toggle",
-        "@base-ui/react/toggle-group",
-        "@base-ui/react/tooltip",
+        "@cloudflare/kumo",
         "@mdxeditor/editor",
-        "class-variance-authority",
-        "clsx",
         "lenis",
         "lucide-react",
-        "sonner",
-        "tailwind-merge"
+        "sonner"
       ]
     },
       plugins: [studioPlugin, { ...mdx(createScribeMdxOptions()), enforce: "pre" }, react()]
@@ -928,16 +929,11 @@ function studioRuntimePaths(): StudioRuntimePaths {
     reactDomRoot: studioImportPath("react-dom"),
     reactJsxRuntime: studioImportPath("react/jsx-runtime"),
     reactJsxDevRuntime: studioImportPath("react/jsx-dev-runtime"),
-    baseButton: studioImportPath("@base-ui/react/button"),
-    baseToggle: studioImportPath("@base-ui/react/toggle"),
-    baseToggleGroup: studioImportPath("@base-ui/react/toggle-group"),
-    baseTooltip: studioImportPath("@base-ui/react/tooltip"),
-    cva: studioImportPath("class-variance-authority"),
-    clsx: studioImportPath("clsx"),
+    kumo: studioImportPath("@cloudflare/kumo"),
+    kumoStyle: studioImportPath("@cloudflare/kumo/styles/standalone"),
     lenis: studioImportPath("lenis"),
     lucide: studioImportPath("lucide-react"),
     sonner: studioImportPath("sonner"),
-    tailwindMerge: studioImportPath("tailwind-merge"),
     mdxEditor: studioImportPath("@mdxeditor/editor"),
     mdxEditorStyle: studioImportPath("@mdxeditor/editor/style.css"),
     plexSans400: studioImportPath("@fontsource/ibm-plex-sans/400.css"),
@@ -963,16 +959,11 @@ function studioAliases(runtime: StudioRuntimePaths) {
     { find: "react-dom/client", replacement: runtime.reactDom },
     { find: /^react-dom$/u, replacement: runtime.reactDomRoot },
     { find: /^react$/u, replacement: runtime.react },
-    { find: "@base-ui/react/button", replacement: runtime.baseButton },
-    { find: "@base-ui/react/toggle", replacement: runtime.baseToggle },
-    { find: "@base-ui/react/toggle-group", replacement: runtime.baseToggleGroup },
-    { find: "@base-ui/react/tooltip", replacement: runtime.baseTooltip },
-    { find: "class-variance-authority", replacement: runtime.cva },
-    { find: "clsx", replacement: runtime.clsx },
+    { find: /^@cloudflare\/kumo$/u, replacement: runtime.kumo },
+    { find: "@cloudflare/kumo/styles/standalone", replacement: runtime.kumoStyle },
     { find: "lenis", replacement: runtime.lenis },
     { find: "lucide-react", replacement: runtime.lucide },
     { find: "sonner", replacement: runtime.sonner },
-    { find: "tailwind-merge", replacement: runtime.tailwindMerge },
     { find: "@mdxeditor/editor/style.css", replacement: runtime.mdxEditorStyle },
     { find: "@mdxeditor/editor", replacement: runtime.mdxEditor },
     { find: "@fontsource/ibm-plex-sans/400.css", replacement: runtime.plexSans400 },
@@ -993,6 +984,8 @@ function studioImportPath(specifier: string): string {
 
 function previewModule(mode: StyleMode, runtime: StudioRuntimePaths, hostCss?: string): string {
   const hostImport = hostCss === undefined ? "" : `import ${JSON.stringify(`/@fs/${normalizePath(hostCss)}`)};`;
+  const hostArticleClassName = JSON.stringify(studioPreviewArticleClassName(mode));
+  const mirrorsHostDarkClass = mode === "tailwind";
   const moduleImport = (path: string) => JSON.stringify(`/@fs/${normalizePath(path)}`);
   return `import * as React from "react";
 import { createRoot } from "react-dom/client";
@@ -1010,8 +1003,8 @@ import ${moduleImport(runtime.plexMono600)};
 import ${moduleImport(runtime[mode])};
 ${hostImport}
 import Article from "virtual:scribe-studio-article";
-const theme = new URLSearchParams(location.search).get("theme") === "dark" ? "dark" : "light";
-function Wrapper(props) { return React.createElement(Publication, { ...props, "data-theme": theme }); }
+const studioHostArticleClassName = ${hostArticleClassName};
+const studioMirrorsHostDarkClass = ${mirrorsHostDarkClass};
 function MissingAsset({ path, kind = "image" }) {
   return React.createElement("div", { className: "scribe-studio-missing-asset", role: "status" },
     React.createElement("strong", null, kind === "banner" ? "Banner image not found" : "Image not found"),
@@ -1045,10 +1038,35 @@ function StudioImage(props) {
 if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
   new Lenis({ autoRaf: true, smoothWheel: true, gestureOrientation: "vertical", anchors: true });
 }
-const components = createScribeComponents({ components: { wrapper: Wrapper, Banner: StudioBanner, img: StudioImage } });
 const previewRoot = createRoot(document.querySelector("#preview"));
+function PreviewApp({ ArticleComponent }) {
+  const [theme, setTheme] = React.useState("dark");
+  React.useLayoutEffect(() => {
+    if (!studioMirrorsHostDarkClass) return;
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    return () => document.documentElement.classList.remove("dark");
+  }, [theme]);
+  React.useEffect(() => {
+    const receiveTheme = (event) => {
+      if (event.origin !== location.origin || event.data?.type !== "scribe:theme") return;
+      if (event.data.theme === "light" || event.data.theme === "dark") setTheme(event.data.theme);
+    };
+    addEventListener("message", receiveTheme);
+    return () => removeEventListener("message", receiveTheme);
+  }, []);
+  const components = React.useMemo(() => {
+    function Wrapper({ children, ...props }) {
+      const articleChildren = studioHostArticleClassName
+        ? React.createElement("div", { className: studioHostArticleClassName, "data-scribe-studio-host-article": "" }, children)
+        : children;
+      return React.createElement(Publication, { ...props, "data-theme": theme }, articleChildren);
+    }
+    return createScribeComponents({ components: { wrapper: Wrapper, Banner: StudioBanner, img: StudioImage } });
+  }, [theme]);
+  return React.createElement(ArticleComponent, { components });
+}
 function renderArticle(ArticleComponent) {
-  previewRoot.render(React.createElement(ArticleComponent, { components }));
+  previewRoot.render(React.createElement(PreviewApp, { ArticleComponent }));
 }
 renderArticle(Article);
 if (import.meta.hot) {
@@ -1060,11 +1078,11 @@ if (import.meta.hot) {
 }
 
 function studioHtml(sessionToken: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="scribe-studio-session" content="${sessionToken}"><title>Scribe Studio</title></head><body><div id="scribe-studio"></div><script type="module" src="/@scribe-studio/client.tsx"></script></body></html>`;
+  return `<!doctype html><html lang="en" data-mode="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="scribe-studio-session" content="${sessionToken}"><title>Scribe Studio</title></head><body><div id="scribe-studio"></div><script type="module" src="/@scribe-studio/client.tsx"></script></body></html>`;
 }
 
 function previewHtml(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{--font-body:"IBM Plex Sans","Geist Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-heading:var(--font-body);--font-mono:"IBM Plex Mono","Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716;font-family:var(--font-body)}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}.scribe-studio-missing-asset{display:grid;gap:.35rem;align-content:center;min-block-size:7rem;margin-block:1rem;padding:1rem;border:1px dashed color-mix(in oklab,currentColor 30%,transparent);border-radius:.55rem;color:color-mix(in oklab,currentColor 72%,transparent);background:color-mix(in oklab,currentColor 5%,transparent);font:500 .8rem/1.45 var(--font-body)}.scribe-studio-missing-asset strong{color:inherit}.scribe-studio-missing-asset code{overflow-wrap:anywhere;color:inherit;font-family:var(--font-mono)}.scribe-studio-missing-asset[data-loading]{opacity:.65}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{--font-body:"IBM Plex Sans","Geist Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-heading:var(--font-body);--font-mono:"IBM Plex Mono","Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716;font-family:var(--font-body);transition:background-color 180ms ease,color 180ms ease}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}.scribe-studio-missing-asset{display:grid;gap:.35rem;align-content:center;min-block-size:7rem;margin-block:1rem;padding:1rem;border:1px dashed color-mix(in oklab,currentColor 30%,transparent);border-radius:.55rem;color:color-mix(in oklab,currentColor 72%,transparent);background:color-mix(in oklab,currentColor 5%,transparent);font:500 .8rem/1.45 var(--font-body)}.scribe-studio-missing-asset strong{color:inherit}.scribe-studio-missing-asset code{overflow-wrap:anywhere;color:inherit;font-family:var(--font-mono)}.scribe-studio-missing-asset[data-loading]{opacity:.65}@media(prefers-reduced-motion:reduce){body{transition:none}}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
 }
 
 function publicState(state: StudioState) {

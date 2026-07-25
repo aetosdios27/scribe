@@ -2,11 +2,10 @@ import { expect, it } from "vitest";
 
 import { studioClientModule, studioStyles, type StudioClientImports } from "./studio-ui.js";
 
-it("ships the constrained Rich Text client and the Studio visual tokens", () => {
+it("ships the constrained Rich Text client and the restrained Studio workspace shell", () => {
   const client = studioClientModule({} as StudioClientImports);
   expect(client).toContain("MDXEditor");
   expect(client).toContain("lucide-react");
-  expect(client).toContain("Scribe Studio");
   expect(client).toContain("Rich Text");
   expect(client).toContain("format_align_left: AlignLeft");
   expect(client).toContain("format_align_center: AlignCenter");
@@ -22,8 +21,48 @@ it("ships the constrained Rich Text client and the Studio visual tokens", () => 
   expect(client).toContain('if (!response.ok || typeof body.source !== "string")');
   expect(client).not.toContain("revision: revisionRef.current");
   expect(client).not.toContain('aria-label="Markdown formatting"');
+  expect(client).not.toContain("<strong>Scribe Studio</strong>");
+  expect(client).not.toContain("production renderer");
+  expect(client).not.toContain("detected</span>");
+  expect(client).not.toContain('title="Markdown"');
+  expect(client).not.toContain('title="Preview"');
+  expect(client).toContain('import { Button, Select, Tooltip, TooltipProvider } from "@cloudflare/kumo"');
+  expect(client).toContain('import "@cloudflare/kumo/styles/standalone"');
+  expect(client).toContain("<Select");
+  expect(client).toContain("<Select.Option");
+  expect(client).not.toContain('<select aria-label="Preview viewport"');
+  expect(client).toContain('role="separator"');
+  expect(client).toContain('aria-orientation="vertical"');
+  expect(client).toContain("onDoubleClick={() => setSplit(50)}");
+  expect(client).toContain('wrap="soft"');
+  expect(client).toContain('iframeRef.current?.contentWindow?.postMessage({ type: "scribe:theme", theme }, location.origin)');
+  expect(client).not.toContain('const src = "/preview?theme=" + theme');
+  expect(client).toContain('className="studio-statusbar"');
+  expect(client).toContain("{location.host}");
+  expect(client).toContain("source-line-number");
+  expect(client).toContain("source-highlight");
+  expect(client).toContain("highlightMarkdownLine");
+  expect(client).toContain('data-save-state={saveStatus}');
+  expect(client).toContain('"Resolve conflict"');
+  expect(client).toContain('data-status={connectionStatus}');
+  expect(client).toContain('aria-controls={saveStatus === "conflict" ? "studio-conflict-card" : undefined}');
+  expect(client).not.toContain('className="save-control" data-state={saveStatus}');
+  expect(client).toContain('className="studio-toaster"');
 
   const styles = studioStyles();
-  expect(styles).toContain("#CDFF57");
-  expect(styles).toContain("#0A0A0A");
+  expect(styles).toContain("#2563eb");
+  expect(styles).toContain("#1c1c1e");
+  expect(styles).toContain("grid-template-rows:2.875rem minmax(0,1fr) 1.75rem");
+  expect(styles).not.toContain("#CDFF57");
+  expect(styles).not.toContain("#BFFF36");
+  expect(styles).not.toContain("linear-gradient");
+  expect(styles).toContain("grid-template-columns:minmax(20rem,var(--studio-split)) 1px minmax(20rem,1fr)");
+  expect(styles).toContain(".preview-stage { min-inline-size:0; min-block-size:0; display:grid; place-items:stretch center; overflow:hidden; padding:0");
+  expect(styles).toContain("white-space:pre-wrap");
+  expect(styles).toContain("overflow-wrap:anywhere");
+  expect(styles).toContain("transition:inline-size 320ms cubic-bezier(.22,1,.36,1)");
+  expect(styles).toContain(".preview-device { inline-size:min(100%,var(--preview-width)); block-size:100%; min-inline-size:0; overflow:hidden; border:0; border-radius:0");
+  expect(styles).toContain(".connection-status[data-status=readonly]");
+  expect(styles).toContain("font:.6875rem/1 var(--studio-mono)");
+  expect(styles).toContain(".studio-toaster");
 });

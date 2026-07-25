@@ -1,20 +1,35 @@
-import { mkdir, mkdtemp, readFile, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createNetServer } from "node:net";
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 import { studioRecoveryKey } from "./studio-recovery.js";
-import { formatStudioStartup, parseStudioArguments, runStudio, startStudio, type StudioHandle } from "./studio.js";
+import {
+  formatStudioStartup,
+  parseStudioArguments,
+  runStudio,
+  startStudio,
+  studioPreviewArticleClassName,
+  type StudioHandle
+} from "./studio.js";
 
 const handles: StudioHandle[] = [];
+const fixtureRoots = new Set<string>();
 let operation = 0;
-process.env["SCRIBE_STUDIO_STATE_DIR"] = join(tmpdir(), `scribe-studio-vitest-${process.pid}`);
-afterEach(async () => Promise.all(handles.splice(0).map((handle) => handle.close())));
+const studioStateRoot = join(tmpdir(), `scribe-studio-vitest-${process.pid}`);
+process.env["SCRIBE_STUDIO_STATE_DIR"] = studioStateRoot;
+afterEach(async () => {
+  await Promise.all(handles.splice(0).map((handle) => handle.close()));
+  await Promise.all([...fixtureRoots].map((root) => rm(root, { force: true, recursive: true })));
+  fixtureRoots.clear();
+});
+afterAll(async () => rm(studioStateRoot, { force: true, recursive: true }));
 
 async function fixture(name = "article.mdx", source = "# Peer states\n"): Promise<{ root: string; path: string }> {
   const root = await mkdtemp(join(tmpdir(), "scribe studio test "));
+  fixtureRoots.add(root);
   const path = join(root, "content", name);
   await mkdir(join(root, "content"), { recursive: true });
   await writeFile(path, source);
@@ -71,6 +86,34 @@ it("formats Studio startup with a project-relative source path", () => {
 
   expect(output).toMatch(/Source  content[\\/]peer notes\.mdx/u);
   expect(output).not.toContain(root);
+});
+
+it("mirrors the verified host typography boundary only in Tailwind preview mode", () => {
+  expect(studioPreviewArticleClassName("tailwind")).toBe(
+    "prose max-w-none text-[15px] leading-relaxed prose-p:text-[var(--text)] prose-headings:text-[var(--text)] prose-headings:font-bold prose-headings:tracking-tight prose-a:text-[var(--text)] prose-a:underline-offset-4 hover:prose-a:opacity-70 prose-strong:text-[var(--text)] prose-blockquote:border-l-[var(--text)] prose-blockquote:text-[var(--text)] prose-blockquote:opacity-80 prose-hr:border-[var(--text)]/20 prose-li:text-[var(--text)] prose-ul:text-[var(--text)] prose-img:border prose-img:border-[var(--text)]/20 prose-img:w-full [&_:not(pre)>code]:bg-[var(--text)] [&_:not(pre)>code]:text-[var(--bg)] [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:before:content-none [&_:not(pre)>code]:after:content-none"
+  );
+  expect(studioPreviewArticleClassName("default")).toBeUndefined();
+  expect(studioPreviewArticleClassName("foundation")).toBeUndefined();
+});
+
+it("mirrors the host dark class inside the Tailwind preview document", async () => {
+  const file = await fixture();
+  const hostCss = join(file.root, "src", "app.css");
+  await mkdir(join(file.root, "src"), { recursive: true });
+  await writeFile(hostCss, ".dark { color: white; }\n");
+  const handle = await startStudio({
+    root: file.root,
+    path: file.path,
+    mode: "tailwind",
+    hostCss,
+    port: 0,
+    open: false
+  });
+  handles.push(handle);
+
+  const previewClient = await (await fetch(`${handle.origin}/@scribe-studio/preview.tsx`)).text();
+  expect(previewClient).toContain('document.documentElement.classList.toggle("dark", theme === "dark")');
+  expect(previewClient).toContain("data-scribe-studio-host-article");
 });
 
 it("surfaces recovery read failures before opening the Studio", async () => {

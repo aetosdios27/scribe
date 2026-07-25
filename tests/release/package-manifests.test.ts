@@ -106,12 +106,14 @@ describe("publishable package manifests", () => {
     expect(manifest.exports).toEqual({});
     expect(manifest.dependencies).toEqual({
       "@base-ui/react": "1.6.0",
+      "@cloudflare/kumo": "2.8.0",
       "@fontsource/ibm-plex-mono": "5.2.7",
       "@fontsource/ibm-plex-sans": "5.2.8",
       "@fontsource/ibm-plex-serif": "5.2.7",
       "@mdx-js/mdx": "3.1.1",
       "@mdx-js/rollup": "3.1.1",
       "@mdxeditor/editor": "4.0.4",
+      "@phosphor-icons/react": "2.1.10",
       "@scribe-sdk/mdx": version,
       "@scribe-sdk/react": version,
       "@scribe-sdk/styles": version,
