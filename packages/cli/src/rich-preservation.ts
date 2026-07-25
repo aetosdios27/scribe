@@ -26,6 +26,8 @@ export type RichCandidateResult =
       readonly islandId?: string;
     };
 
+type RichCandidateCompiler = (input: { readonly path: string; readonly value: string }) => Promise<unknown>;
+
 type ProtectedIslandKind =
   | "frontmatter"
   | "mdxjsEsm"
@@ -112,7 +114,7 @@ export async function acceptRichCandidate(
   projection: RichProjection,
   candidate: string,
   path = "scribe-rich-candidate.mdx",
-  compileCandidate: typeof compileScribeMdx = compileScribeMdx
+  compileCandidate: RichCandidateCompiler = compileScribeMdx
 ): Promise<RichCandidateResult> {
   let placeholders: readonly CandidatePlaceholder[];
   try {

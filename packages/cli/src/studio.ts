@@ -1,20 +1,46 @@
-import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
 import { createRequire } from "node:module";
 import { constants } from "node:fs";
-import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { access, realpath, stat } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import mdx from "@mdx-js/rollup";
-import { compileScribeMdx, createScribeMdxOptions } from "@scribe-sdk/mdx";
+import { createScribeMdxOptions } from "@scribe-sdk/mdx";
 import react from "@vitejs/plugin-react";
-import { createServer as createViteServer, normalizePath, type Plugin, type ViteDevServer } from "vite";
+import {
+  createServer as createViteServer,
+  normalizePath,
+  transformWithOxc,
+  type Plugin,
+  type ViteDevServer
+} from "vite";
 
 import { displayPath, suggestClosest } from "./cli-output.js";
 import { resolveProjectStyleMode, type StyleMode } from "./init.js";
-import { acceptRichCandidate, createRichProjection, type RichProjection } from "./rich-preservation.js";
+import {
+  durableWriteStudioFile,
+  readStudioFile,
+  StudioFileConflictError,
+  type StudioFileSnapshot
+} from "./studio-files.js";
+import { StudioCompiler, type StudioCompilerDiagnostic } from "./studio-compiler.js";
+import { StudioEventHub } from "./studio-events.js";
+import {
+  acceptRichCandidate,
+  createRichProjection,
+  type RichCandidateResult,
+  type RichProjection
+} from "./rich-preservation.js";
+import { StudioWriterLease } from "./studio-lease.js";
+import { StudioRecoveryStore, studioRecoveryKey } from "./studio-recovery.js";
+import { authorizeStudioMutation, createStudioSession, studioSessionHeader, type StudioSession } from "./studio-security.js";
+import {
+  StudioTransactionCoordinator,
+  type StudioMutationRequest,
+  type StudioMutationResult
+} from "./studio-transactions.js";
 import { studioClientModule, studioStyles, type StudioClientImports } from "./studio-ui.js";
 
 const studioRequire = createRequire(import.meta.url);
@@ -27,10 +53,15 @@ export interface StudioOptions {
   readonly hostCss?: string;
   readonly port: number;
   readonly open: boolean;
+  /** Override used by isolated tests; normal sessions use the OS state directory. */
+  readonly recoveryRoot?: string;
 }
 
 export interface StudioHandle {
   readonly origin: string;
+  /** Internal capability used by Studio's own client and focused integration tests. */
+  readonly sessionToken: string;
+  readonly hasUnsavedChanges: () => boolean;
   readonly close: () => Promise<void>;
 }
 
@@ -62,14 +93,24 @@ interface StudioState {
   diagnostics: StudioDiagnostic[];
   revision: number;
   richProjection: RichProjection | undefined;
+  fileSnapshot: StudioFileSnapshot;
+  recoveryBaseVersion: string;
+  recovered: boolean;
+  recoveryConflict: boolean;
+  discardRecoveryAvailable: boolean;
+  recoveryKey: string;
 }
 
-interface StudioDiagnostic {
-  readonly severity: "error" | "warning";
-  readonly code: string;
-  readonly message: string;
-  readonly line?: number;
-  readonly column?: number;
+type StudioDiagnostic = StudioCompilerDiagnostic;
+
+interface StudioMutationHttpResult {
+  readonly status: number;
+  readonly error?: string;
+}
+
+interface RichMutationValue {
+  readonly result: RichCandidateResult;
+  readonly projection: RichProjection;
 }
 
 const styleModes = new Set<StyleMode>(["foundation", "default", "tailwind"]);
@@ -136,38 +177,66 @@ export function parseStudioArguments(args: readonly string[]): StudioArguments |
 
 export async function startStudio(options: StudioOptions): Promise<StudioHandle> {
   const root = resolve(options.root);
-  const sourcePath = resolve(root, options.path);
-  assertWithinWorkspace(root, sourcePath, "Source file");
-  if (!articleExtensions.has(extname(sourcePath).toLowerCase())) throw new Error("Studio source must use a .md or .mdx extension.");
-  await access(sourcePath, constants.R_OK | constants.W_OK);
+  const resolvedRoot = await realpath(root);
+  const requestedSourcePath = resolve(root, options.path);
+  assertWithinWorkspace(root, requestedSourcePath, "Source file");
+  if (!articleExtensions.has(extname(requestedSourcePath).toLowerCase())) throw new Error("Studio source must use a .md or .mdx extension.");
+  await access(requestedSourcePath, constants.R_OK | constants.W_OK);
+  const fileSnapshot = await readStudioFile(requestedSourcePath);
+  assertWithinWorkspace(resolvedRoot, fileSnapshot.resolvedPath, "Resolved source file");
+  const sourcePath = fileSnapshot.resolvedPath;
 
   const hostCss = options.hostCss === undefined ? undefined : resolve(root, options.hostCss);
   if (hostCss !== undefined) {
     assertWithinWorkspace(root, hostCss, "Host CSS");
     if (extname(hostCss).toLowerCase() !== ".css") throw new Error("--host-css must reference a .css file.");
     await access(hostCss, constants.R_OK);
+    assertWithinWorkspace(resolvedRoot, await realpath(hostCss), "Resolved host CSS");
   }
 
-  const diskSource = await readUtf8(sourcePath);
+  const recovery = new StudioRecoveryStore(sourcePath, options.recoveryRoot);
+  const recoveredDraft = await recovery.loadDraft();
+  const runtime = studioRuntimePaths();
+  const compiler = new StudioCompiler();
+  const canRecover = recoveredDraft?.sourcePath === sourcePath && recoveredDraft.draftSource !== fileSnapshot.source;
+  const diskSource = fileSnapshot.source;
+  const draftSource = canRecover ? recoveredDraft.draftSource : diskSource;
+  let initialDiagnostics: StudioDiagnostic[];
+  try {
+    initialDiagnostics = await diagnosticsFor(compiler, sourcePath, draftSource);
+  } catch (error) {
+    await compiler.close();
+    throw error;
+  }
+  const recoveredPreview = initialDiagnostics.some(({ severity }) => severity === "error") ? diskSource : draftSource;
   const state: StudioState = {
-    sourcePath: normalizePath(relative(root, sourcePath)),
+    sourcePath: normalizePath(relative(root, requestedSourcePath)),
     diskSource,
-    draftSource: diskSource,
-    previewSource: diskSource,
-    diskVersion: fingerprint(diskSource),
+    draftSource,
+    previewSource: recoveredPreview,
+    diskVersion: fileSnapshot.version,
     previewVersion: 1,
     mode: options.mode,
     modeReason: options.modeReason ?? "Selected explicitly by the Studio caller.",
-    lineEnding: detectLineEnding(diskSource),
-    dirty: false,
-    conflict: false,
-    diagnostics: await diagnosticsFor(sourcePath, diskSource),
-    revision: 1,
-    richProjection: undefined
+    lineEnding: fileSnapshot.lineEnding,
+    dirty: draftSource !== diskSource,
+    conflict: Boolean(canRecover && recoveredDraft.baseDiskVersion !== fileSnapshot.version),
+    diagnostics: initialDiagnostics,
+    revision: canRecover ? Math.max(1, recoveredDraft.revision) : 1,
+    richProjection: undefined,
+    fileSnapshot,
+    recoveryBaseVersion: canRecover ? recoveredDraft.baseDiskVersion : fileSnapshot.version,
+    recovered: Boolean(canRecover),
+    recoveryConflict: Boolean(canRecover && recoveredDraft.baseDiskVersion !== fileSnapshot.version),
+    discardRecoveryAvailable: false,
+    recoveryKey: studioRecoveryKey(sourcePath)
   };
+  const coordinator = new StudioTransactionCoordinator(state.revision);
+  const session = createStudioSession();
+  const lease = new StudioWriterLease();
+  const events = new StudioEventHub();
 
   const articleId = `${sourcePath}.scribe-studio.mdx`;
-  const runtime = studioRuntimePaths();
   let server: ViteDevServer;
   const httpServer = createHttpServer((request, response) => {
     server.middlewares(request, response, (error: unknown) => {
@@ -176,8 +245,23 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
       response.end(error === undefined ? "Not found." : "Scribe Studio request failed.");
     });
   });
-  const studioPlugin = createStudioPlugin({ root, sourcePath, articleId, state, runtime, ...(hostCss === undefined ? {} : { hostCss }) });
-  server = await createViteServer({
+  const studioPlugin = createStudioPlugin({
+    root,
+    sourcePath,
+    requestedSourcePath,
+    articleId,
+    state,
+    runtime,
+    coordinator,
+    session,
+    lease,
+    recovery,
+    compiler,
+    events,
+    ...(hostCss === undefined ? {} : { hostCss })
+  });
+  try {
+    server = await createViteServer({
     configFile: false,
     root,
     appType: "custom",
@@ -187,7 +271,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
       port: options.port,
       strictPort: options.port !== 0,
       open: false,
-      hmr: false,
+      hmr: { server: httpServer },
       fs: { strict: true, allow: [root, ...Object.values(runtime).map(dirname)] }
     },
     resolve: {
@@ -195,6 +279,8 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
       dedupe: ["react", "react-dom"]
     },
     optimizeDeps: {
+      noDiscovery: true,
+      holdUntilCrawlEnd: false,
       include: [
         "react",
         "react-dom",
@@ -214,51 +300,105 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
         "tailwind-merge"
       ]
     },
-    plugins: [studioPlugin, { ...mdx(createScribeMdxOptions()), enforce: "pre" }, react()]
-  });
+      plugins: [studioPlugin, { ...mdx(createScribeMdxOptions()), enforce: "pre" }, react()]
+    });
+  } catch (error) {
+    await compiler.close();
+    throw error;
+  }
 
   try {
     await listenOnLoopback(httpServer, options.port);
   } catch (error) {
-    await server.close();
+    await Promise.all([server.close(), compiler.close()]);
     throw new Error(`Could not start Scribe Studio on 127.0.0.1:${options.port}: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   server.watcher.add(sourcePath);
-  server.watcher.on("change", async (path) => {
+  const handleExternalChange = (path: string) => {
     if (resolve(path) !== sourcePath) return;
-    const source = await readUtf8(sourcePath);
-    if (source === state.diskSource) return;
-    const wasClean = !state.dirty;
-    state.diskSource = source;
-    state.diskVersion = fingerprint(source);
-    state.lineEnding = detectLineEnding(source);
-    if (wasClean) {
-      state.draftSource = source;
-      state.previewSource = source;
-      state.diagnostics = await diagnosticsFor(sourcePath, source);
-      state.previewVersion += 1;
-      state.revision += 1;
-      state.richProjection = undefined;
-      invalidateArticle(server, articleId);
-    } else {
+    void coordinator.system(async () => {
+      const snapshot = await readStudioFile(requestedSourcePath);
+      if (snapshot.resolvedPath !== sourcePath) {
+        state.conflict = true;
+        state.recoveryConflict = true;
+        state.diagnostics = [sourceTargetChangedDiagnostic()];
+        return { changed: true as const, value: undefined };
+      }
+      const source = snapshot.source;
+      if (snapshot.version === state.diskVersion) {
+        return { changed: false as const, value: undefined };
+      }
+      const wasClean = !state.dirty;
+      state.fileSnapshot = snapshot;
+      state.diskSource = source;
+      state.diskVersion = snapshot.version;
+      state.lineEnding = snapshot.lineEnding;
+      if (wasClean) {
+        state.draftSource = source;
+        state.previewSource = source;
+        state.diagnostics = await diagnosticsFor(compiler, sourcePath, source);
+        state.previewVersion += 1;
+        state.richProjection = undefined;
+        state.recoveryBaseVersion = snapshot.version;
+        state.recovered = false;
+        state.recoveryConflict = false;
+        await reloadArticleSafely(server, articleId, state);
+      } else {
+        state.conflict = true;
+        state.recoveryConflict = true;
+      }
+      return { changed: true as const, value: undefined };
+    }).then(({ changed, revision }) => {
+      state.revision = revision;
+      if (changed) events.publish(revision);
+    }).catch((error: unknown) => {
       state.conflict = true;
-    }
-  });
+      state.diagnostics = [watcherDiagnostic(error)];
+      events.publish(state.revision);
+    });
+  };
+  server.watcher.on("change", handleExternalChange);
+  server.watcher.on("add", handleExternalChange);
   server.watcher.on("unlink", (path) => {
     if (resolve(path) !== sourcePath) return;
-    state.conflict = true;
-    state.diagnostics = [missingSourceDiagnostic()];
+    void coordinator.system(async () => {
+      state.conflict = true;
+      state.diagnostics = [missingSourceDiagnostic()];
+      return { changed: true as const, value: undefined };
+    }).then(({ revision }) => {
+      state.revision = revision;
+      events.publish(revision);
+    });
+  });
+  server.watcher.on("error", (error) => {
+    void coordinator.system(async () => {
+      state.conflict = true;
+      state.diagnostics = [watcherDiagnostic(error)];
+      return { changed: true as const, value: undefined };
+    }).then(({ revision }) => {
+      state.revision = revision;
+      events.publish(revision);
+    });
   });
 
   const address = httpServer.address();
   if (!address || typeof address === "string") {
-    await closeStudioServers(server, httpServer);
+    await closeStudioServers(server, httpServer, compiler);
     throw new Error("Scribe Studio did not expose a local HTTP address.");
   }
   const origin = `http://127.0.0.1:${address.port}`;
+  session.origin = origin;
   if (options.open) openBrowser(origin);
-  return { origin, close: async () => closeStudioServers(server, httpServer) };
+  return {
+    origin,
+    sessionToken: session.token,
+    hasUnsavedChanges: () => state.dirty,
+    close: async () => {
+      events.close();
+      await closeStudioServers(server, httpServer, compiler);
+    }
+  };
 }
 
 export async function runStudio(
@@ -318,6 +458,9 @@ export async function runStudio(
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
   });
+  if (handle.hasUnsavedChanges()) {
+    stderr("Studio stopped with an unsaved draft. It was preserved in local recovery storage and will be offered when this article is reopened.\n");
+  }
   await handle.close();
   return 0;
 }
@@ -330,15 +473,21 @@ export function formatStudioStartup(root: string, sourcePath: string, mode: Styl
 function createStudioPlugin(context: {
   readonly root: string;
   readonly sourcePath: string;
+  readonly requestedSourcePath: string;
   readonly hostCss?: string;
   readonly articleId: string;
   readonly runtime: StudioRuntimePaths;
   readonly state: StudioState;
+  readonly coordinator: StudioTransactionCoordinator;
+  readonly session: StudioSession;
+  readonly lease: StudioWriterLease;
+  readonly recovery: StudioRecoveryStore;
+  readonly compiler: StudioCompiler;
+  readonly events: StudioEventHub;
 }): Plugin {
   const previewId = "\0scribe-studio-preview.tsx";
-  const virtualDirectory = dirname(fileURLToPath(import.meta.url));
-  const clientId = normalizePath(resolve(virtualDirectory, "studio-client.virtual.tsx"));
-  const stylesId = normalizePath(resolve(virtualDirectory, "studio-styles.virtual.css"));
+  const clientId = "\0scribe-studio-client.tsx";
+  const stylesId = "\0scribe-studio-styles.css";
   return {
     name: "scribe-studio",
     enforce: "pre",
@@ -356,14 +505,62 @@ function createStudioPlugin(context: {
       if (id === stylesId) return studioStyles();
       return undefined;
     },
+    async transform(code, id) {
+      if (id !== clientId) return undefined;
+      return transformWithOxc(code, "scribe-studio-client.tsx");
+    },
     configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
         const url = new URL(request.url ?? "/", "http://127.0.0.1");
+        if (isStudioMutation(url.pathname, request.method)) {
+          const authorizationError = authorizeStudioMutation(request, context.session);
+          if (authorizationError !== undefined) {
+            return json(response, 403, { error: authorizationError });
+          }
+        }
         if (url.pathname === "/__scribe/api/asset" && request.method === "GET") {
           return json(response, 200, { exists: await publicAssetExists(context.root, url.searchParams.get("path")) });
         }
         if (url.pathname === "/__scribe/api/document" && request.method === "GET") {
           return json(response, 200, publicState(context.state));
+        }
+        if (url.pathname === "/__scribe/api/events" && request.method === "GET") {
+          response.statusCode = 200;
+          response.setHeader("content-type", "text/event-stream; charset=utf-8");
+          response.setHeader("cache-control", "no-store");
+          response.setHeader("connection", "keep-alive");
+          response.write(`data: ${context.state.revision}\n\n`);
+          const unsubscribe = context.events.subscribe((revision) => response.write(`data: ${revision}\n\n`));
+          const unsubscribeClose = context.events.onClose(() => response.end());
+          const heartbeat = setInterval(() => response.write(": keepalive\n\n"), 15_000);
+          request.once("close", () => {
+            clearInterval(heartbeat);
+            unsubscribe();
+            unsubscribeClose();
+          });
+          return;
+        }
+        if (url.pathname === "/__scribe/api/lease" && request.method === "POST") {
+          try {
+            const body = await readJsonBody(request) as Record<string, unknown>;
+            if (typeof body.clientId !== "string" || body.clientId.length < 1 || body.clientId.length > 128) {
+              return json(response, 400, { error: "A writer lease requires a valid clientId." });
+            }
+            const lease = context.lease.acquire(body.clientId);
+            return json(response, lease.granted ? 200 : 423, lease);
+          } catch (error) {
+            return json(response, 400, { error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        if (url.pathname === "/__scribe/api/lease/release" && request.method === "POST") {
+          try {
+            const body = await readJsonBody(request) as Record<string, unknown>;
+            if (typeof body.clientId !== "string") return json(response, 400, { error: "Lease release requires clientId." });
+            context.lease.release(body.clientId);
+            return json(response, 200, { released: true });
+          } catch (error) {
+            return json(response, 400, { error: error instanceof Error ? error.message : String(error) });
+          }
         }
         if (url.pathname === "/__scribe/api/rich-projection" && request.method === "GET") {
           if (context.state.diagnostics.some(({ severity }) => severity === "error")) {
@@ -385,13 +582,28 @@ function createStudioPlugin(context: {
         }
         if (url.pathname === "/__scribe/api/draft" && request.method === "PUT") {
           try {
-            const body = await readJsonBody(request) as { source?: unknown };
-            if (typeof body.source !== "string") {
-              return json(response, 400, { error: "Draft requires string source." });
+            const body = await readJsonBody(request) as Record<string, unknown>;
+            const mutation = parseMutationRequest(body);
+            if (typeof body.source !== "string" || mutation === undefined) {
+              return json(response, 400, { error: mutationUsage("Draft requires string source.") });
             }
-            await applyDraft(context, server, previewId, normalizeLineEndings(body.source, context.state.lineEnding));
-            context.state.revision += 1;
-            context.state.richProjection = undefined;
+            if (!ensureWriter(context.lease, mutation.clientId)) return writerLocked(response);
+            const result = await context.coordinator.mutate(mutation, async () => {
+              const baseDiskVersion = typeof body.baseDiskVersion === "string"
+                ? body.baseDiskVersion
+                : context.state.recoveryBaseVersion;
+              context.state.recoveryBaseVersion = baseDiskVersion;
+              await applyDraft(context, server, previewId, normalizeLineEndings(body.source as string, context.state.lineEnding));
+              if (body.externalConflict === true || baseDiskVersion !== context.state.diskVersion) {
+                context.state.conflict = true;
+                context.state.recoveryConflict = true;
+              }
+              context.state.richProjection = undefined;
+              return { accepted: true as const, value: undefined };
+            });
+            if (result.kind === "stale") return staleMutation(response, context.state, result);
+            context.state.revision = result.revision;
+            context.events.publish(result.revision);
             const hasErrors = context.state.diagnostics.some(({ severity }) => severity === "error");
             return json(response, 200, { ok: !hasErrors, ...publicState(context.state) });
           } catch (error) {
@@ -400,21 +612,67 @@ function createStudioPlugin(context: {
         }
         if (url.pathname === "/__scribe/api/rich-draft" && request.method === "PUT") {
           try {
-            const body = await readJsonBody(request) as { source?: unknown; revision?: unknown };
-            if (typeof body.source !== "string" || !Number.isInteger(body.revision)) {
-              return json(response, 400, { error: "Rich Text draft requires string source and an integer revision." });
+            const body = await readJsonBody(request) as Record<string, unknown>;
+            const mutation = parseMutationRequest(body);
+            if (typeof body.source !== "string" || mutation === undefined) {
+              return json(response, 400, { error: mutationUsage("Rich Text draft requires string source.") });
             }
-            if (body.revision !== context.state.revision) {
+            if (!ensureWriter(context.lease, mutation.clientId)) return writerLocked(response);
+            const transaction = await context.coordinator.mutate<RichMutationValue>(mutation, async () => {
+              const baseSource = typeof body.baseSource === "string" ? body.baseSource : context.state.draftSource;
+              const baseDiskVersion = typeof body.baseDiskVersion === "string"
+                ? body.baseDiskVersion
+                : context.state.recoveryBaseVersion;
+              const projection = baseSource === context.state.draftSource
+                ? await ensureRichProjection(context.state)
+                : await createRichProjection(baseSource);
+              let acceptedDiagnostics: StudioDiagnostic[] = [];
+              const result = await acceptRichCandidate(
+                projection,
+                body.source as string,
+                context.sourcePath,
+                async ({ path, value }) => {
+                  acceptedDiagnostics = await context.compiler.compile(path, value);
+                  const error = acceptedDiagnostics.find(({ severity }) => severity === "error");
+                  if (error !== undefined) {
+                    throw Object.assign(new Error(error.message), {
+                      ruleId: error.code,
+                      ...(error.line === undefined ? {} : { line: error.line }),
+                      ...(error.column === undefined ? {} : { column: error.column })
+                    });
+                  }
+                }
+              );
+              if (!result.ok) return { accepted: false as const, value: { result, projection } };
+              context.state.recoveryBaseVersion = baseDiskVersion;
+              await applyDraft(
+                context,
+                server,
+                previewId,
+                normalizeLineEndings(result.markdown, context.state.lineEnding),
+                acceptedDiagnostics
+              );
+              if (baseDiskVersion !== context.state.diskVersion) {
+                context.state.conflict = true;
+                context.state.recoveryConflict = true;
+              }
+              const nextProjection = await createRichProjection(context.state.draftSource);
+              context.state.richProjection = nextProjection;
+              return { accepted: true as const, value: { result, projection: nextProjection } };
+            });
+            if (transaction.kind === "stale") {
               return json(response, 409, {
                 ok: false,
                 code: "SCB_RICH_STALE_PROJECTION",
                 error: "The Markdown draft changed after Rich Text mode opened. Reload Rich Text from the current draft.",
-                ...publicState(context.state)
+                ...publicStateWithRevision(context.state, transaction.revision)
               });
             }
-            const projection = await ensureRichProjection(context.state);
-            const result = await acceptRichCandidate(projection, body.source, context.sourcePath);
-            if (!result.ok) {
+            context.state.revision = transaction.revision;
+            context.events.publish(transaction.revision);
+            if (transaction.kind === "rejected") {
+              const { result, projection } = transaction.value;
+              if (result.ok) throw new Error("Studio rejected an accepted Rich Text candidate.");
               return json(response, 422, {
                 ok: false,
                 code: result.code,
@@ -425,13 +683,10 @@ function createStudioPlugin(context: {
                 ...publicState(context.state)
               });
             }
-            await applyDraft(context, server, previewId, normalizeLineEndings(result.markdown, context.state.lineEnding));
-            context.state.revision += 1;
-            context.state.richProjection = await createRichProjection(context.state.draftSource);
             return json(response, 200, {
               ok: true,
-              projectionMarkdown: context.state.richProjection.projectionMarkdown,
-              islands: context.state.richProjection.islands,
+              projectionMarkdown: transaction.value.projection.projectionMarkdown,
+              islands: transaction.value.projection.islands,
               ...publicState(context.state)
             });
           } catch (error) {
@@ -440,66 +695,176 @@ function createStudioPlugin(context: {
         }
         if (url.pathname === "/__scribe/api/save" && request.method === "PUT") {
           try {
-            const body = await readJsonBody(request) as { expectedDiskVersion?: unknown };
-            let diskSource: string;
-            try {
-              diskSource = await readUtf8(context.sourcePath);
-            } catch {
-              context.state.conflict = true;
-              context.state.diagnostics = [missingSourceDiagnostic()];
-              return json(response, 409, {
-                error: "The source file was deleted or renamed outside Studio. Restore it before saving.",
-                ...publicState(context.state)
+            const body = await readJsonBody(request) as Record<string, unknown>;
+            const mutation = parseMutationRequest(body);
+            if (mutation === undefined) return json(response, 400, { error: mutationUsage("Save requires expectedDiskVersion.") });
+            if (!ensureWriter(context.lease, mutation.clientId)) return writerLocked(response);
+            const transaction = await context.coordinator.mutate<StudioMutationHttpResult>(mutation, async () => {
+              let diskSnapshot: StudioFileSnapshot;
+              try {
+                diskSnapshot = await readStudioFile(context.requestedSourcePath);
+              } catch {
+                context.state.conflict = true;
+                context.state.diagnostics = [missingSourceDiagnostic()];
+                return { accepted: true as const, value: { status: 409, error: "The source file was deleted or renamed outside Studio. Restore it before saving." } };
+              }
+              if (diskSnapshot.resolvedPath !== context.sourcePath) {
+                context.state.conflict = true;
+                context.state.recoveryConflict = true;
+                context.state.diagnostics = [sourceTargetChangedDiagnostic()];
+                return { accepted: true as const, value: { status: 409, error: "The source symlink or file target changed outside Studio. The unsaved draft was not written." } };
+              }
+              if (
+                body.expectedDiskVersion !== context.state.diskVersion
+                || context.state.conflict
+                || diskSnapshot.version !== body.expectedDiskVersion
+              ) {
+                context.state.fileSnapshot = diskSnapshot;
+                context.state.diskSource = diskSnapshot.source;
+                context.state.diskVersion = diskSnapshot.version;
+                context.state.lineEnding = diskSnapshot.lineEnding;
+                context.state.conflict = true;
+                return { accepted: true as const, value: { status: 409, error: "The source changed outside Studio. Reload or reconcile before saving." } };
+              }
+              await context.recovery.writeHistory({
+                sourcePath: context.sourcePath,
+                baseDiskVersion: diskSnapshot.version,
+                draftSource: diskSnapshot.source,
+                revision: context.coordinator.revision
+              }, "checkpoint");
+              const committed = await durableWriteStudioFile({
+                requestedPath: context.requestedSourcePath,
+                resolvedPath: diskSnapshot.resolvedPath,
+                expectedVersion: diskSnapshot.version,
+                expectedDevice: diskSnapshot.device,
+                expectedInode: diskSnapshot.inode,
+                source: context.state.draftSource,
+                lineEnding: diskSnapshot.lineEnding,
+                bom: diskSnapshot.bom,
+                mode: diskSnapshot.mode
               });
-            }
-            const diskVersion = fingerprint(diskSource);
-            if (body.expectedDiskVersion !== context.state.diskVersion || context.state.conflict || diskVersion !== body.expectedDiskVersion) {
-              context.state.diskSource = diskSource;
-              context.state.diskVersion = diskVersion;
-              context.state.lineEnding = detectLineEnding(diskSource);
-              context.state.conflict = true;
-              return json(response, 409, { error: "The source changed outside Studio. Reload or reconcile before saving.", ...publicState(context.state) });
-            }
-            await atomicWrite(context.sourcePath, context.state.draftSource);
-            context.state.diskSource = context.state.draftSource;
-            context.state.diskVersion = fingerprint(context.state.diskSource);
-            context.state.dirty = false;
-            context.state.conflict = false;
-            return json(response, 200, { ok: true, ...publicState(context.state) });
+              context.state.fileSnapshot = committed;
+              context.state.diskSource = committed.source;
+              context.state.diskVersion = committed.version;
+              context.state.lineEnding = committed.lineEnding;
+              context.state.dirty = false;
+              context.state.conflict = false;
+              context.state.recoveryBaseVersion = committed.version;
+              context.state.recovered = false;
+              context.state.recoveryConflict = false;
+              context.state.discardRecoveryAvailable = false;
+              await context.recovery.archiveDraft("saved").catch(() => undefined);
+              return { accepted: true as const, value: { status: 200 } };
+            });
+            if (transaction.kind === "stale") return staleMutation(response, context.state, transaction);
+            context.state.revision = transaction.revision;
+            context.events.publish(transaction.revision);
+            return json(response, transaction.value.status, {
+              ok: transaction.value.status === 200,
+              ...(transaction.value.error === undefined ? {} : { error: transaction.value.error }),
+              ...publicState(context.state)
+            });
           } catch (error) {
+            if (error instanceof StudioFileConflictError) {
+              context.state.conflict = true;
+              return json(response, 409, { error: error.message, ...publicState(context.state) });
+            }
             return json(response, 500, { error: error instanceof Error ? error.message : String(error) });
           }
         }
         if (url.pathname === "/__scribe/api/discard" && request.method === "POST") {
-          let diskSource: string;
           try {
-            diskSource = await readUtf8(context.sourcePath);
-          } catch {
-            context.state.conflict = true;
-            context.state.diagnostics = [missingSourceDiagnostic()];
-            return json(response, 409, {
-              error: "The source file was deleted or renamed outside Studio. The unsaved draft is still preserved.",
+            const body = await readJsonBody(request) as Record<string, unknown>;
+            const mutation = parseMutationRequest(body);
+            if (mutation === undefined) return json(response, 400, { error: mutationUsage("Discard requires a mutation envelope.") });
+            if (!ensureWriter(context.lease, mutation.clientId)) return writerLocked(response);
+            const transaction = await context.coordinator.mutate<StudioMutationHttpResult>(mutation, async () => {
+              let diskSnapshot: StudioFileSnapshot;
+              try {
+                diskSnapshot = await readStudioFile(context.requestedSourcePath);
+              } catch {
+                context.state.conflict = true;
+                context.state.diagnostics = [missingSourceDiagnostic()];
+                return { accepted: true as const, value: { status: 409, error: "The source file was deleted or renamed outside Studio. The unsaved draft is still preserved." } };
+              }
+              if (diskSnapshot.resolvedPath !== context.sourcePath) {
+                context.state.conflict = true;
+                context.state.recoveryConflict = true;
+                context.state.diagnostics = [sourceTargetChangedDiagnostic()];
+                return { accepted: true as const, value: { status: 409, error: "The source symlink or file target changed outside Studio. The unsaved draft is still preserved." } };
+              }
+              const archived = await context.recovery.archiveDraft("discarded");
+              context.state.fileSnapshot = diskSnapshot;
+              context.state.diskSource = diskSnapshot.source;
+              context.state.diskVersion = diskSnapshot.version;
+              context.state.lineEnding = diskSnapshot.lineEnding;
+              context.state.draftSource = diskSnapshot.source;
+              context.state.previewSource = diskSnapshot.source;
+              context.state.dirty = false;
+              context.state.conflict = false;
+              context.state.diagnostics = await diagnosticsFor(context.compiler, context.sourcePath, diskSnapshot.source);
+              context.state.previewVersion += 1;
+              context.state.richProjection = undefined;
+              context.state.recoveryBaseVersion = diskSnapshot.version;
+              context.state.recovered = false;
+              context.state.recoveryConflict = false;
+              context.state.discardRecoveryAvailable = archived !== undefined;
+              await reloadArticleSafely(server, context.articleId, context.state);
+              return { accepted: true as const, value: { status: 200 } };
+            });
+            if (transaction.kind === "stale") return staleMutation(response, context.state, transaction);
+            context.state.revision = transaction.revision;
+            context.events.publish(transaction.revision);
+            return json(response, transaction.value.status, {
+              ok: transaction.value.status === 200,
+              ...(transaction.value.error === undefined ? {} : { error: transaction.value.error }),
               ...publicState(context.state)
             });
+          } catch (error) {
+            return json(response, 400, { error: error instanceof Error ? error.message : String(error) });
           }
-          context.state.diskSource = diskSource;
-          context.state.diskVersion = fingerprint(diskSource);
-          context.state.lineEnding = detectLineEnding(diskSource);
-          context.state.draftSource = diskSource;
-          context.state.previewSource = diskSource;
-          context.state.dirty = false;
-          context.state.conflict = false;
-          context.state.diagnostics = await diagnosticsFor(context.sourcePath, diskSource);
-          context.state.previewVersion += 1;
-          context.state.revision += 1;
-          context.state.richProjection = undefined;
-          invalidateArticle(server, context.articleId);
-          return json(response, 200, { ok: true, ...publicState(context.state) });
+        }
+        if (url.pathname === "/__scribe/api/recover-discard" && request.method === "POST") {
+          try {
+            const body = await readJsonBody(request) as Record<string, unknown>;
+            const mutation = parseMutationRequest(body);
+            if (mutation === undefined) return json(response, 400, { error: mutationUsage("Recovery requires a mutation envelope.") });
+            if (!ensureWriter(context.lease, mutation.clientId)) return writerLocked(response);
+            const transaction = await context.coordinator.mutate<StudioMutationHttpResult>(mutation, async () => {
+              const archived = await context.recovery.loadLatestArchive("discarded");
+              if (archived === undefined || archived.sourcePath !== context.sourcePath) {
+                return { accepted: false as const, value: { status: 404, error: "No discarded Studio draft is available to recover." } };
+              }
+              const previousBase = context.state.recoveryBaseVersion;
+              context.state.recoveryBaseVersion = archived.baseDiskVersion;
+              try {
+                await applyDraft(context, server, previewId, archived.draftSource);
+              } catch (error) {
+                context.state.recoveryBaseVersion = previousBase;
+                throw error;
+              }
+              context.state.recovered = true;
+              context.state.recoveryConflict = archived.baseDiskVersion !== context.state.diskVersion;
+              context.state.conflict ||= context.state.recoveryConflict;
+              context.state.discardRecoveryAvailable = false;
+              return { accepted: true as const, value: { status: 200 } };
+            });
+            if (transaction.kind === "stale") return staleMutation(response, context.state, transaction);
+            context.state.revision = transaction.revision;
+            context.events.publish(transaction.revision);
+            return json(response, transaction.value.status, {
+              ok: transaction.kind === "accepted",
+              ...(transaction.value.error === undefined ? {} : { error: transaction.value.error }),
+              ...publicState(context.state)
+            });
+          } catch (error) {
+            return json(response, 400, { error: error instanceof Error ? error.message : String(error) });
+          }
         }
         if (url.pathname === "/" || url.pathname === "/studio") {
           response.statusCode = 200;
           response.setHeader("content-type", "text/html; charset=utf-8");
-          response.end(await server.transformIndexHtml(url.pathname, studioHtml()));
+          response.end(await server.transformIndexHtml(url.pathname, studioHtml(context.session.token)));
           return;
         }
         if (url.pathname === "/preview") {
@@ -655,12 +1020,21 @@ if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
   new Lenis({ autoRaf: true, smoothWheel: true, gestureOrientation: "vertical", anchors: true });
 }
 const components = createScribeComponents({ components: { wrapper: Wrapper, Banner: StudioBanner, img: StudioImage } });
-createRoot(document.querySelector("#preview")).render(React.createElement(Article, { components }));
+const previewRoot = createRoot(document.querySelector("#preview"));
+function renderArticle(ArticleComponent) {
+  previewRoot.render(React.createElement(ArticleComponent, { components }));
+}
+renderArticle(Article);
+if (import.meta.hot) {
+  import.meta.hot.accept("virtual:scribe-studio-article", (module) => {
+    if (module?.default) renderArticle(module.default);
+  });
+}
 `;
 }
 
-function studioHtml(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scribe Studio</title></head><body><div id="scribe-studio"></div><script type="module" src="/@scribe-studio/client.tsx"></script></body></html>`;
+function studioHtml(sessionToken: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="scribe-studio-session" content="${sessionToken}"><title>Scribe Studio</title></head><body><div id="scribe-studio"></div><script type="module" src="/@scribe-studio/client.tsx"></script></body></html>`;
 }
 
 function previewHtml(): string {
@@ -677,10 +1051,73 @@ function publicState(state: StudioState) {
     modeReason: state.modeReason,
     dirty: state.dirty,
     conflict: state.conflict,
+    recovered: state.recovered,
+    recoveryConflict: state.recoveryConflict,
+    discardRecoveryAvailable: state.discardRecoveryAvailable,
+    recoveryKey: state.recoveryKey,
     diagnostics: state.diagnostics,
     revision: state.revision,
     frontmatter: frontmatter(state.draftSource)
   };
+}
+
+function publicStateWithRevision(state: StudioState, revision: number) {
+  return { ...publicState(state), revision };
+}
+
+function isStudioMutation(pathname: string, method: string | undefined): boolean {
+  return (method === "PUT" || method === "POST") && pathname.startsWith("/__scribe/api/");
+}
+
+function parseMutationRequest(body: Record<string, unknown>): StudioMutationRequest | undefined {
+  if (
+    typeof body.clientId !== "string"
+    || body.clientId.length < 1
+    || body.clientId.length > 128
+    || typeof body.operationId !== "string"
+    || body.operationId.length < 1
+    || body.operationId.length > 128
+    || !Number.isSafeInteger(body.baseRevision)
+    || (body.baseRevision as number) < 0
+  ) {
+    return undefined;
+  }
+  return {
+    clientId: body.clientId,
+    operationId: body.operationId,
+    baseRevision: body.baseRevision as number
+  };
+}
+
+function mutationUsage(prefix: string): string {
+  return `${prefix} Include clientId, operationId, and integer baseRevision from the current Studio document.`;
+}
+
+function ensureWriter(lease: StudioWriterLease, clientId: string): boolean {
+  return lease.holds(clientId) || lease.acquire(clientId).granted;
+}
+
+function writerLocked(response: import("node:http").ServerResponse): void {
+  json(response, 423, {
+    ok: false,
+    code: "SCB_STUDIO_WRITER_LOCKED",
+    error: "Another Studio tab currently owns this draft. This tab remains read-only until that writer disconnects."
+  });
+}
+
+function staleMutation(
+  response: import("node:http").ServerResponse,
+  state: StudioState,
+  result: Extract<StudioMutationResult<unknown>, { readonly kind: "stale" }>
+): void {
+  json(response, 409, {
+    ok: false,
+    code: "SCB_STUDIO_STALE_REVISION",
+    error: state.conflict
+      ? "The source changed outside Studio. Reload or reconcile before retrying."
+      : "The Studio draft changed before this operation was applied. Reload the current draft and retry.",
+    ...publicStateWithRevision(state, result.revision)
+  });
 }
 
 async function ensureRichProjection(state: StudioState): Promise<RichProjection> {
@@ -689,42 +1126,46 @@ async function ensureRichProjection(state: StudioState): Promise<RichProjection>
 }
 
 async function applyDraft(
-  context: { readonly sourcePath: string; readonly articleId: string; readonly state: StudioState },
+  context: {
+    readonly sourcePath: string;
+    readonly articleId: string;
+    readonly state: StudioState;
+    readonly coordinator: StudioTransactionCoordinator;
+    readonly recovery: StudioRecoveryStore;
+    readonly compiler: StudioCompiler;
+  },
   server: ViteDevServer,
   previewId: string,
-  source: string
+  source: string,
+  knownDiagnostics?: StudioDiagnostic[]
 ): Promise<void> {
+  const dirty = source !== context.state.diskSource;
+  const diagnostics = knownDiagnostics ?? await diagnosticsFor(context.compiler, context.sourcePath, source);
+  if (dirty) {
+    await context.recovery.writeDraft({
+      sourcePath: context.sourcePath,
+      baseDiskVersion: context.state.recoveryBaseVersion,
+      draftSource: source,
+      revision: context.coordinator.revision + 1
+    });
+  } else {
+    await context.recovery.archiveDraft("reverted");
+  }
   context.state.draftSource = source;
-  context.state.dirty = source !== context.state.diskSource;
-  context.state.diagnostics = await diagnosticsFor(context.sourcePath, source);
-  if (context.state.diagnostics.some(({ severity }) => severity === "error")) return;
+  context.state.dirty = dirty;
+  context.state.diagnostics = diagnostics;
+  context.state.recovered = false;
+  context.state.recoveryConflict = context.state.conflict;
+  if (diagnostics.some(({ severity }) => severity === "error")) return;
   context.state.previewSource = source;
   context.state.previewVersion += 1;
-  invalidateArticle(server, context.articleId);
+  await reloadArticleSafely(server, context.articleId, context.state);
   const preview = server.moduleGraph.getModuleById(previewId);
   if (preview) server.moduleGraph.invalidateModule(preview);
 }
 
-async function diagnosticsFor(path: string, source: string): Promise<StudioDiagnostic[]> {
-  try {
-    const file = await compileScribeMdx({ path, value: source });
-    return file.messages.map((message) => ({
-      severity: "warning" as const,
-      code: message.ruleId ?? "SCB0001",
-      message: message.reason,
-      ...(message.line === undefined ? {} : { line: message.line }),
-      ...(message.column === undefined ? {} : { column: message.column })
-    }));
-  } catch (error) {
-    const diagnostic = error as { reason?: string; message?: string; ruleId?: string; line?: number; column?: number };
-    return [{
-      severity: "error",
-      code: diagnostic.ruleId ?? "SCB0001",
-      message: diagnostic.reason ?? diagnostic.message ?? String(error),
-      ...(diagnostic.line === undefined ? {} : { line: diagnostic.line }),
-      ...(diagnostic.column === undefined ? {} : { column: diagnostic.column })
-    }];
-  }
+async function diagnosticsFor(compiler: StudioCompiler, path: string, source: string): Promise<StudioDiagnostic[]> {
+  return compiler.compile(path, source);
 }
 
 function frontmatter(source: string): Record<string, string> {
@@ -740,10 +1181,6 @@ function normalizeLineEndings(source: string, ending: "\n" | "\r\n"): string {
   return source.replace(/\r\n?|\n/gu, "\n").replaceAll("\n", ending);
 }
 
-function detectLineEnding(source: string): "\n" | "\r\n" {
-  return source.includes("\r\n") ? "\r\n" : "\n";
-}
-
 function missingSourceDiagnostic(): StudioDiagnostic {
   return {
     severity: "error",
@@ -752,17 +1189,28 @@ function missingSourceDiagnostic(): StudioDiagnostic {
   };
 }
 
-async function readUtf8(path: string): Promise<string> {
-  const bytes = await readFile(path);
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error(`Studio could not decode ${path} as UTF-8.`);
-  }
+function watcherDiagnostic(error: unknown): StudioDiagnostic {
+  return {
+    severity: "error",
+    code: "SCB2002",
+    message: `Studio could not process an external source change: ${error instanceof Error ? error.message : String(error)}`
+  };
 }
 
-function fingerprint(source: string): string {
-  return createHash("sha256").update(source).digest("hex");
+function sourceTargetChangedDiagnostic(): StudioDiagnostic {
+  return {
+    severity: "error",
+    code: "SCB2003",
+    message: "The source symlink or file target changed outside Studio. The current draft is preserved, but saving is blocked."
+  };
+}
+
+function previewReloadDiagnostic(error: unknown): StudioDiagnostic {
+  return {
+    severity: "warning",
+    code: "SCB2004",
+    message: `The draft is preserved, but Studio could not refresh the preview: ${error instanceof Error ? error.message : String(error)}`
+  };
 }
 
 function assertWithinWorkspace(root: string, path: string, label: string): void {
@@ -780,23 +1228,25 @@ async function publicAssetExists(root: string, requestedPath: string | null): Pr
   const assetPath = resolve(publicRoot, `.${requestedPath}`);
   try {
     assertWithinWorkspace(publicRoot, assetPath, "Public asset");
-    return (await stat(assetPath)).isFile();
+    const [resolvedPublicRoot, resolvedAssetPath] = await Promise.all([realpath(publicRoot), realpath(assetPath)]);
+    assertWithinWorkspace(resolvedPublicRoot, resolvedAssetPath, "Resolved public asset");
+    return (await stat(resolvedAssetPath)).isFile();
   } catch {
     return false;
   }
 }
 
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const info = await stat(path);
-  const temporary = `${path}.scribe-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`;
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(temporary, content, { encoding: "utf8", mode: info.mode });
-  await rename(temporary, path);
+async function reloadArticle(server: ViteDevServer, articleId: string): Promise<void> {
+  const module = server.moduleGraph.getModuleById(articleId);
+  if (module) await server.reloadModule(module);
 }
 
-function invalidateArticle(server: ViteDevServer, articleId: string): void {
-  const module = server.moduleGraph.getModuleById(articleId);
-  if (module) server.moduleGraph.invalidateModule(module);
+async function reloadArticleSafely(server: ViteDevServer, articleId: string, state: StudioState): Promise<void> {
+  try {
+    await reloadArticle(server, articleId);
+  } catch (error) {
+    state.diagnostics = [...state.diagnostics, previewReloadDiagnostic(error)];
+  }
 }
 
 async function readJsonBody(request: import("node:http").IncomingMessage): Promise<unknown> {
@@ -838,13 +1288,32 @@ async function listenOnLoopback(server: HttpServer, port: number): Promise<void>
   });
 }
 
-async function closeStudioServers(vite: ViteDevServer, http: HttpServer): Promise<void> {
+async function closeStudioServers(vite: ViteDevServer, http: HttpServer, compiler: StudioCompiler): Promise<void> {
+  http.closeIdleConnections();
+  http.closeAllConnections();
+  const httpClosed = !http.listening
+    ? Promise.resolve()
+    : new Promise<void>((resolveClose, rejectClose) => {
+        http.close((error) => error === undefined ? resolveClose() : rejectClose(error));
+      });
   try {
-    await vite.close();
+    await shutdownStep(compiler.close(), "compiler worker");
+    await shutdownStep(vite.close(), "Vite server");
   } finally {
-    if (!http.listening) return;
-    await new Promise<void>((resolveClose, rejectClose) => {
-      http.close((error) => error === undefined ? resolveClose() : rejectClose(error));
-    });
+    await shutdownStep(httpClosed, "Studio HTTP server");
+  }
+}
+
+async function shutdownStep(operation: Promise<unknown>, label: string): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Timed out closing the ${label}.`)), 3_000);
+      })
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }

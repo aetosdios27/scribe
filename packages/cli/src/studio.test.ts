@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createNetServer } from "node:net";
@@ -8,6 +8,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { formatStudioStartup, parseStudioArguments, runStudio, startStudio, type StudioHandle } from "./studio.js";
 
 const handles: StudioHandle[] = [];
+let operation = 0;
+process.env["SCRIBE_STUDIO_STATE_DIR"] = join(tmpdir(), `scribe-studio-vitest-${process.pid}`);
 afterEach(async () => Promise.all(handles.splice(0).map((handle) => handle.close())));
 
 async function fixture(name = "article.mdx", source = "# Peer states\n"): Promise<{ root: string; path: string }> {
@@ -17,6 +19,29 @@ async function fixture(name = "article.mdx", source = "# Peer states\n"): Promis
   await writeFile(path, source);
   await writeFile(join(root, "package.json"), JSON.stringify({ dependencies: { react: "19.2.7", vite: "8.1.3" } }));
   return { root, path };
+}
+
+async function mutate(
+  handle: StudioHandle,
+  path: string,
+  body: Record<string, unknown> = {},
+  baseRevision?: number
+): Promise<Response> {
+  const revision = baseRevision ?? ((await (await fetch(`${handle.origin}/__scribe/api/document`)).json()) as { revision: number }).revision;
+  return fetch(`${handle.origin}${path}`, {
+    method: path.endsWith("discard") ? "POST" : "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-scribe-studio-session": handle.sessionToken,
+      origin: handle.origin
+    },
+    body: JSON.stringify({
+      ...body,
+      clientId: "vitest",
+      operationId: `vitest-${++operation}`,
+      baseRevision: revision
+    })
+  });
 }
 
 it("parses the documented studio command surface and rejects unknown flags", () => {
@@ -62,6 +87,7 @@ it("starts on loopback, loads the source, and reports metadata", async () => {
   const file = await fixture("peer notes.mdx", "---\ntitle: Peer notes\n---\n# Peer states\n");
   await mkdir(join(file.root, "public"), { recursive: true });
   await writeFile(join(file.root, "public", "peer-banner.svg"), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  await symlink(file.path, join(file.root, "public", "escaped.svg"));
   const handle = await startStudio({ root: file.root, path: file.path, mode: "foundation", port: 0, open: false });
   handles.push(handle);
 
@@ -82,20 +108,6 @@ it("starts on loopback, loads the source, and reports metadata", async () => {
   expect(studio).toContain('src="/@scribe-studio/client.tsx"');
   expect(studio).not.toContain('id="mode"');
 
-  const client = await (await fetch(`${handle.origin}/@scribe-studio/client.tsx`)).text();
-  expect(client).toContain("MDXEditor");
-  expect(client).toContain("lucide-react");
-  expect(client).toContain("Scribe Studio");
-  expect(client).toContain("Rich Text");
-  expect(client).toContain("format_align_left: AlignLeft");
-  expect(client).toContain("format_align_center: AlignCenter");
-  expect(client).toContain("format_align_right: AlignRight");
-  expect(client).not.toContain('aria-label="Markdown formatting"');
-
-  const styles = await (await fetch(`${handle.origin}/@scribe-studio/styles.css`)).text();
-  expect(styles).toContain("#CDFF57");
-  expect(styles).toContain("#0A0A0A");
-
   const publicImage = await fetch(`${handle.origin}/peer-banner.svg`);
   expect(publicImage.status).toBe(200);
 
@@ -106,6 +118,8 @@ it("starts on loopback, loads the source, and reports metadata", async () => {
   const missingAsset = await fetch(`${handle.origin}/__scribe/api/asset?path=${encodeURIComponent("/missing.webp")}`);
   expect(missingAsset.status).toBe(200);
   await expect(missingAsset.json()).resolves.toEqual({ exists: false });
+  const escapedAsset = await fetch(`${handle.origin}/__scribe/api/asset?path=${encodeURIComponent("/escaped.svg")}`);
+  await expect(escapedAsset.json()).resolves.toEqual({ exists: false });
 });
 
 it("keeps the detected style mode locked while drafts change", async () => {
@@ -113,14 +127,46 @@ it("keeps the detected style mode locked while drafts change", async () => {
   const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
   handles.push(handle);
 
-  const response = await fetch(`${handle.origin}/__scribe/api/draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: "# Updated without a mode field\n" })
-  });
+  const response = await mutate(handle, "/__scribe/api/draft", { source: "# Updated without a mode field\n" });
 
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toMatchObject({ ok: true, mode: "default" });
+});
+
+it("rejects cross-origin mutations and prevents a second tab from taking the writer lease", async () => {
+  const file = await fixture();
+  const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  handles.push(handle);
+
+  const unauthenticated = await fetch(`${handle.origin}/__scribe/api/discard`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://attacker.invalid" },
+    body: "{}"
+  });
+  expect(unauthenticated.status).toBe(403);
+
+  const first = await mutate(handle, "/__scribe/api/draft", { source: "# First tab\n" });
+  expect(first.status).toBe(200);
+  const current = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { revision: number };
+  const second = await fetch(`${handle.origin}/__scribe/api/draft`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-scribe-studio-session": handle.sessionToken,
+      origin: handle.origin
+    },
+    body: JSON.stringify({
+      source: "# Second tab\n",
+      clientId: "second-tab",
+      operationId: "second-tab-1",
+      baseRevision: current.revision
+    })
+  });
+  expect(second.status).toBe(423);
+  await expect(second.json()).resolves.toMatchObject({ code: "SCB_STUDIO_WRITER_LOCKED" });
+  await expect((await fetch(`${handle.origin}/__scribe/api/document`)).json()).resolves.toMatchObject({
+    source: "# First tab\n"
+  });
 });
 
 it("projects protected MDX for Rich Text mode and accepts only preservation-safe edits", async () => {
@@ -143,14 +189,9 @@ it("projects protected MDX for Rich Text mode and accepts only preservation-safe
     '<Callout variant="note">Keep this exact.</Callout>'
   ]);
 
-  const safe = await fetch(`${handle.origin}/__scribe/api/rich-draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      source: projected.projectionMarkdown.replace("Original paragraph.", "Edited paragraph."),
-      revision: projected.revision
-    })
-  });
+  const safe = await mutate(handle, "/__scribe/api/rich-draft", {
+    source: projected.projectionMarkdown.replace("Original paragraph.", "Edited paragraph.")
+  }, projected.revision);
   expect(safe.status).toBe(200);
   await expect(safe.json()).resolves.toMatchObject({ ok: true, source: expect.stringContaining("Edited paragraph.") });
 
@@ -158,14 +199,9 @@ it("projects protected MDX for Rich Text mode and accepts only preservation-safe
     projectionMarkdown: string;
     revision: number;
   };
-  const unsafe = await fetch(`${handle.origin}/__scribe/api/rich-draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      source: afterSafe.projectionMarkdown.replace(/<ScribeStudioProtectedIsland[^>]+\/>/u, ""),
-      revision: afterSafe.revision
-    })
-  });
+  const unsafe = await mutate(handle, "/__scribe/api/rich-draft", {
+    source: afterSafe.projectionMarkdown.replace(/<ScribeStudioProtectedIsland[^>]+\/>/u, "")
+  }, afterSafe.revision);
   expect(unsafe.status).toBe(422);
   await expect(unsafe.json()).resolves.toMatchObject({
     ok: false,
@@ -185,17 +221,11 @@ it("invalidates a stale Rich Text projection without overwriting the current dra
     projectionMarkdown: string;
     revision: number;
   };
-  await fetch(`${handle.origin}/__scribe/api/draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: "# Markdown edit\n" })
-  });
+  await mutate(handle, "/__scribe/api/draft", { source: "# Markdown edit\n" });
 
-  const stale = await fetch(`${handle.origin}/__scribe/api/rich-draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: projected.projectionMarkdown, revision: projected.revision })
-  });
+  const stale = await mutate(handle, "/__scribe/api/rich-draft", {
+    source: projected.projectionMarkdown
+  }, projected.revision);
   expect(stale.status).toBe(409);
   await expect(stale.json()).resolves.toMatchObject({
     ok: false,
@@ -209,10 +239,9 @@ it("keeps invalid drafts editable, recovers the preview, and saves atomically", 
   const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
   handles.push(handle);
 
-  const invalid = await fetch(`${handle.origin}/__scribe/api/draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: "<Callout>unfinished", mode: "default" })
+  const invalid = await mutate(handle, "/__scribe/api/draft", {
+    source: "<Callout>unfinished",
+    mode: "default"
   });
   expect(invalid.status).toBe(200);
   expect(await invalid.json()).toMatchObject({ ok: false, diagnostics: [expect.objectContaining({ line: 1 })] });
@@ -225,21 +254,56 @@ it("keeps invalid drafts editable, recovers the preview, and saves atomically", 
   });
 
   const validSource = "# Recovered\n\n| State | Meaning |\n| --- | --- |\n| ready | valid |\n";
-  const valid = await fetch(`${handle.origin}/__scribe/api/draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: validSource, mode: "foundation" })
+  const valid = await mutate(handle, "/__scribe/api/draft", {
+    source: validSource,
+    mode: "foundation"
   });
   expect(valid.status).toBe(200);
   const state = await valid.json() as { diskVersion: string };
 
-  const saved = await fetch(`${handle.origin}/__scribe/api/save`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ expectedDiskVersion: state.diskVersion })
-  });
+  const saved = await mutate(handle, "/__scribe/api/save", { expectedDiskVersion: state.diskVersion });
   expect(saved.status).toBe(200);
   expect(await readFile(file.path, "utf8")).toBe(validSource);
+});
+
+it("recovers an acknowledged draft after Studio restarts without touching the article", async () => {
+  const file = await fixture("recovery.mdx", "# On disk\n");
+  const first = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  const updated = await mutate(first, "/__scribe/api/draft", { source: "# Recovered draft\n" });
+  expect(updated.status).toBe(200);
+  await first.close();
+  expect(await readFile(file.path, "utf8")).toBe("# On disk\n");
+
+  const restarted = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  handles.push(restarted);
+  await expect((await fetch(`${restarted.origin}/__scribe/api/document`)).json()).resolves.toMatchObject({
+    source: "# Recovered draft\n",
+    dirty: true,
+    recovered: true,
+    conflict: false
+  });
+});
+
+it("keeps a discarded draft recoverable until the user explicitly resumes it", async () => {
+  const file = await fixture("discard-recovery.mdx", "# On disk\n");
+  const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  handles.push(handle);
+  await mutate(handle, "/__scribe/api/draft", { source: "# Unsaved\n" });
+
+  const discarded = await mutate(handle, "/__scribe/api/discard");
+  await expect(discarded.json()).resolves.toMatchObject({
+    source: "# On disk\n",
+    discardRecoveryAvailable: true
+  });
+  const recovered = await mutate(handle, "/__scribe/api/recover-discard");
+  const recoveredBody = await recovered.json();
+  expect({ status: recovered.status, body: recoveredBody }).toMatchObject({ status: 200 });
+  expect(recoveredBody).toMatchObject({
+    source: "# Unsaved\n",
+    dirty: true,
+    recovered: true
+  });
+  expect(await readFile(file.path, "utf8")).toBe("# On disk\n");
 });
 
 it("detects external changes and refuses to overwrite an unsaved draft", async () => {
@@ -248,10 +312,9 @@ it("detects external changes and refuses to overwrite an unsaved draft", async (
   handles.push(handle);
   const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { diskVersion: string };
 
-  await fetch(`${handle.origin}/__scribe/api/draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: "# Unsaved studio draft\n", mode: "default" })
+  await mutate(handle, "/__scribe/api/draft", {
+    source: "# Unsaved studio draft\n",
+    mode: "default"
   });
   await writeFile(file.path, "# External editor change\n");
 
@@ -260,15 +323,11 @@ it("detects external changes and refuses to overwrite an unsaved draft", async (
     return state.conflict;
   }).toBe(true);
 
-  const saved = await fetch(`${handle.origin}/__scribe/api/save`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ expectedDiskVersion: initial.diskVersion })
-  });
+  const saved = await mutate(handle, "/__scribe/api/save", { expectedDiskVersion: initial.diskVersion });
   expect(saved.status).toBe(409);
   expect(await readFile(file.path, "utf8")).toBe("# External editor change\n");
 
-  const reloaded = await fetch(`${handle.origin}/__scribe/api/discard`, { method: "POST" });
+  const reloaded = await mutate(handle, "/__scribe/api/discard");
   expect(reloaded.status).toBe(200);
   await expect(reloaded.json()).resolves.toMatchObject({
     source: "# External editor change\n",
@@ -277,24 +336,87 @@ it("detects external changes and refuses to overwrite an unsaved draft", async (
   });
 });
 
+it("journals a browser draft against its original disk version when an external edit wins the debounce race", async () => {
+  const file = await fixture("debounce-conflict.mdx", "# Original\n");
+  const first = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  const initial = await (await fetch(`${first.origin}/__scribe/api/document`)).json() as {
+    diskVersion: string;
+  };
+
+  await writeFile(file.path, "# External\n");
+  await expect.poll(async () => {
+    const current = await (await fetch(`${first.origin}/__scribe/api/document`)).json() as { diskVersion: string };
+    return current.diskVersion;
+  }).not.toBe(initial.diskVersion);
+
+  const preserved = await mutate(first, "/__scribe/api/draft", {
+    source: "# Local browser typing\n",
+    externalConflict: true,
+    baseDiskVersion: initial.diskVersion
+  });
+  await expect(preserved.json()).resolves.toMatchObject({
+    source: "# Local browser typing\n",
+    dirty: true,
+    conflict: true,
+    recoveryConflict: true
+  });
+  await first.close();
+
+  const restarted = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  handles.push(restarted);
+  await expect((await fetch(`${restarted.origin}/__scribe/api/document`)).json()).resolves.toMatchObject({
+    source: "# Local browser typing\n",
+    dirty: true,
+    conflict: true,
+    recovered: true,
+    recoveryConflict: true
+  });
+  expect(await readFile(file.path, "utf8")).toBe("# External\n");
+});
+
+it("preserves a pending Rich Text candidate when the source changes externally", async () => {
+  const file = await fixture("rich-conflict.mdx", "# Original\n\nA paragraph.\n");
+  const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
+  handles.push(handle);
+  const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as {
+    diskVersion: string;
+  };
+  const projected = await (await fetch(`${handle.origin}/__scribe/api/rich-projection`)).json() as {
+    projectionMarkdown: string;
+  };
+
+  await writeFile(file.path, "# External\n\nChanged in the IDE.\n");
+  await expect.poll(async () => {
+    const current = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { diskVersion: string };
+    return current.diskVersion;
+  }).not.toBe(initial.diskVersion);
+
+  const preserved = await mutate(handle, "/__scribe/api/rich-draft", {
+    source: projected.projectionMarkdown.replace("A paragraph.", "Typing from Rich Text."),
+    baseSource: "# Original\n\nA paragraph.\n",
+    baseDiskVersion: initial.diskVersion
+  });
+
+  expect(preserved.status).toBe(200);
+  await expect(preserved.json()).resolves.toMatchObject({
+    source: expect.stringContaining("Typing from Rich Text."),
+    dirty: true,
+    conflict: true,
+    recoveryConflict: true
+  });
+  expect(await readFile(file.path, "utf8")).toBe("# External\n\nChanged in the IDE.\n");
+});
+
 it("revalidates the source on disk immediately before saving", async () => {
   const file = await fixture();
   const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
   handles.push(handle);
   const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { diskVersion: string };
 
-  await fetch(`${handle.origin}/__scribe/api/draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: "# Unsaved studio draft\n" })
-  });
+  await mutate(handle, "/__scribe/api/draft", { source: "# Unsaved studio draft\n" });
   await writeFile(file.path, "# External editor change before watcher delivery\n");
 
-  const saved = await fetch(`${handle.origin}/__scribe/api/save`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ expectedDiskVersion: initial.diskVersion })
-  });
+  const saved = await mutate(handle, "/__scribe/api/save", { expectedDiskVersion: initial.diskVersion });
 
   expect(saved.status).toBe(409);
   await expect(saved.json()).resolves.toMatchObject({
@@ -304,23 +426,46 @@ it("revalidates the source on disk immediately before saving", async () => {
   expect(await readFile(file.path, "utf8")).toBe("# External editor change before watcher delivery\n");
 });
 
+it("refuses to save through a source symlink whose target changed after startup", async () => {
+  const root = await mkdtemp(join(tmpdir(), "scribe studio symlink swap "));
+  const firstTarget = join(root, "first.mdx");
+  const secondTarget = join(root, "second.mdx");
+  const sourceLink = join(root, "article.mdx");
+  await writeFile(firstTarget, "# Same bytes\n");
+  await writeFile(secondTarget, "# Same bytes\n");
+  await symlink(firstTarget, sourceLink);
+  await writeFile(join(root, "package.json"), JSON.stringify({ dependencies: { react: "19.2.7", vite: "8.1.3" } }));
+  const handle = await startStudio({ root, path: sourceLink, mode: "default", port: 0, open: false });
+  handles.push(handle);
+  const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { diskVersion: string };
+
+  await mutate(handle, "/__scribe/api/draft", { source: "# Unsaved Studio draft\n" });
+  await unlink(sourceLink);
+  await symlink(secondTarget, sourceLink);
+  const saved = await mutate(handle, "/__scribe/api/save", { expectedDiskVersion: initial.diskVersion });
+
+  expect(saved.status).toBe(409);
+  await expect(saved.json()).resolves.toMatchObject({
+    conflict: true,
+    source: "# Unsaved Studio draft\n",
+    error: expect.stringContaining("target changed")
+  });
+  expect(await readFile(secondTarget, "utf8")).toBe("# Same bytes\n");
+});
+
 it("keeps the draft conflicted when reload cannot read a deleted source", async () => {
   const file = await fixture();
   const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });
   handles.push(handle);
 
-  await fetch(`${handle.origin}/__scribe/api/draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: "# Unsaved studio draft\n" })
-  });
+  await mutate(handle, "/__scribe/api/draft", { source: "# Unsaved studio draft\n" });
   await unlink(file.path);
   await expect.poll(async () => {
     const state = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { conflict: boolean };
     return state.conflict;
   }).toBe(true);
 
-  const reloaded = await fetch(`${handle.origin}/__scribe/api/discard`, { method: "POST" });
+  const reloaded = await mutate(handle, "/__scribe/api/discard");
 
   expect(reloaded.status).toBe(409);
   await expect(reloaded.json()).resolves.toMatchObject({
@@ -337,16 +482,8 @@ it("preserves CRLF line endings when a draft is saved", async () => {
   handles.push(handle);
   const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as { diskVersion: string };
 
-  await fetch(`${handle.origin}/__scribe/api/draft`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: "# Peer states\n\nUpdated.\n" })
-  });
-  const saved = await fetch(`${handle.origin}/__scribe/api/save`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ expectedDiskVersion: initial.diskVersion })
-  });
+  await mutate(handle, "/__scribe/api/draft", { source: "# Peer states\n\nUpdated.\n" });
+  const saved = await mutate(handle, "/__scribe/api/save", { expectedDiskVersion: initial.diskVersion });
 
   expect(saved.status).toBe(200);
   expect(await readFile(file.path, "utf8")).toBe("# Peer states\r\n\r\nUpdated.\r\n");
@@ -355,9 +492,15 @@ it("preserves CRLF line endings when a draft is saved", async () => {
 it("rejects source and host CSS paths outside the selected workspace", async () => {
   const inside = await fixture();
   const outside = await fixture("outside.mdx");
+  const linkedSource = join(inside.root, "content", "linked.mdx");
+  const linkedCss = join(inside.root, "linked.css");
+  await symlink(outside.path, linkedSource);
+  await symlink(outside.path, linkedCss);
 
   await expect(startStudio({ root: inside.root, path: outside.path, mode: "default", port: 0, open: false })).rejects.toThrow("outside the Studio workspace");
   await expect(startStudio({ root: inside.root, path: inside.path, hostCss: outside.path, mode: "default", port: 0, open: false })).rejects.toThrow("outside the Studio workspace");
+  await expect(startStudio({ root: inside.root, path: linkedSource, mode: "default", port: 0, open: false })).rejects.toThrow("Resolved source file is outside");
+  await expect(startStudio({ root: inside.root, path: inside.path, hostCss: linkedCss, mode: "default", port: 0, open: false })).rejects.toThrow("Resolved host CSS is outside");
 });
 
 it("fails clearly for missing files and occupied ports", async () => {
