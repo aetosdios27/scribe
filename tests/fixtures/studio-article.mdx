@@ -35,3 +35,12 @@ pub enum PeerState {
     Choked,
 }
 ```
+
+| id | message | meaning |
+| --- | --- | --- |
+| 0 | `choke` | I am not serving you. |
+| 1 | `not interested` | You currently have no pieces I want. |
+
+| id | message | payload | offset | length | direction | state | notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 7 | `piece` | block | 0 | 16384 | inbound | complete | A deliberately wide protocol row. |

@@ -11,6 +11,9 @@ export interface StudioClientImports {
   readonly sonner: string;
   readonly mdxEditor: string;
   readonly mdxEditorStyle: string;
+  readonly monaco: string;
+  readonly monacoMarkdown: string;
+  readonly monacoWorker: string;
 }
 
 export function studioClientModule(_paths: StudioClientImports): string {
@@ -18,6 +21,9 @@ export function studioClientModule(_paths: StudioClientImports): string {
 import { createRoot } from "react-dom/client";
 	import { Button, Select, Tooltip, TooltipProvider } from "@cloudflare/kumo";
 import Lenis from "lenis";
+import * as monaco from "monaco-editor";
+import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker.js?worker";
+import "monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js";
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bold, Check, ChevronDown, Circle,
   Code2, Copy, Edit3, ExternalLink, FileCode2, FileText,
@@ -49,11 +55,66 @@ import "/@scribe-studio/styles.css";
 
 const { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } = React;
 
+globalThis.MonacoEnvironment = {
+  getWorker() {
+    return new EditorWorker();
+  }
+};
+
+monaco.editor.defineTheme("scribe-studio", {
+  base: "vs-dark",
+  inherit: true,
+  rules: [
+    { token: "", foreground: "D4D4D8" },
+    { token: "keyword", foreground: "60A5FA", fontStyle: "bold" },
+    { token: "keyword.md", foreground: "60A5FA", fontStyle: "bold" },
+    { token: "keyword.table.header", foreground: "A5B4FC", fontStyle: "bold" },
+    { token: "comment", foreground: "8B8B94", fontStyle: "italic" },
+    { token: "comment.content", foreground: "8B8B94", fontStyle: "italic" },
+    { token: "string", foreground: "A8B2C1" },
+    { token: "string.link", foreground: "60A5FA" },
+    { token: "string.target", foreground: "93C5FD" },
+    { token: "variable", foreground: "E4E4E7" },
+    { token: "variable.source", foreground: "D4D4D8" },
+    { token: "strong", foreground: "F4F4F5", fontStyle: "bold" },
+    { token: "emphasis", foreground: "D4D4D8", fontStyle: "italic" },
+    { token: "tag", foreground: "7DD3FC" },
+    { token: "attribute.name.html", foreground: "A5B4FC" },
+    { token: "string.html", foreground: "A8B2C1" }
+  ],
+  colors: {
+    "editor.background": "#111113",
+    "editor.foreground": "#D4D4D8",
+    "editorCursor.foreground": "#2563EB",
+    "editor.selectionBackground": "#2563EB52",
+    "editor.inactiveSelectionBackground": "#2563EB29",
+    "editor.selectionHighlightBackground": "#2563EB1F",
+    "editor.lineHighlightBackground": "#FFFFFF06",
+    "editor.lineHighlightBorder": "#00000000",
+    "editorLineNumber.foreground": "#62626B",
+    "editorLineNumber.activeForeground": "#2563EB",
+    "editorGutter.background": "#111113",
+    "editorIndentGuide.background1": "#28282B",
+    "editorIndentGuide.activeBackground1": "#3F3F46",
+    "editorWhitespace.foreground": "#3F3F46",
+    "editor.findMatchBackground": "#2563EB66",
+    "editor.findMatchHighlightBackground": "#2563EB2B",
+    "editorWidget.background": "#1C1C1F",
+    "editorWidget.border": "#29292D",
+    "scrollbar.shadow": "#00000000",
+    "scrollbarSlider.background": "#52525B66",
+    "scrollbarSlider.hoverBackground": "#71717A80",
+    "scrollbarSlider.activeBackground": "#2563EB80",
+    "focusBorder": "#2563EB"
+  }
+});
+
 	function Hint({ label, children }) {
 	  return <Tooltip content={label} delay={350} render={children} />;
 }
 
 const viewportOptions = [
+  { value: "fit", label: "Fit pane" },
   { value: "desktop", label: "Desktop" },
   { value: "tablet", label: "Tablet" },
   { value: "mobile", label: "Mobile" }
@@ -205,84 +266,185 @@ function PanelHeading({ icon: Icon, title, state, tabs }) {
   </div>;
 }
 
-const markdownFence = String.fromCharCode(96);
-
-function highlightInlineMarkdown(value, keyPrefix) {
-  const segments = value.split(markdownFence);
-  return segments.flatMap((segment, segmentIndex) => {
-    if (segmentIndex % 2 === 1) {
-      return <span className="source-token source-token--code" key={keyPrefix + "-code-" + segmentIndex}>{markdownFence}{segment}{markdownFence}</span>;
+function frontmatterEditorDecorations(model) {
+  if (model.getLineCount() < 2 || model.getLineContent(1).trim() !== "---") return [];
+  let closingLine = 0;
+  for (let line = 2; line <= model.getLineCount(); line += 1) {
+    if (model.getLineContent(line).trim() === "---") {
+      closingLine = line;
+      break;
     }
-    const parts = segment.split(/(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|_[^_]+_)/g);
-    return parts.map((part, partIndex) => {
-      if (!part) return null;
-      const className = part.startsWith("[")
-        ? "source-token source-token--link"
-        : part.startsWith("**") || part.startsWith("_")
-          ? "source-token source-token--emphasis"
-          : "";
-      return className
-        ? <span className={className} key={keyPrefix + "-inline-" + segmentIndex + "-" + partIndex}>{part}</span>
-        : part;
+  }
+  if (!closingLine) return [];
+  const decorations = [1, closingLine].map((line) => ({
+    range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
+    options: { inlineClassName: "source-frontmatter-delimiter" }
+  }));
+  for (let line = 2; line < closingLine; line += 1) {
+    const content = model.getLineContent(line);
+    const match = /^(\s*)([A-Za-z_][\w-]*)(\s*:)(.*)$/.exec(content);
+    if (!match) continue;
+    const keyStart = match[1].length + 1;
+    const keyEnd = keyStart + match[2].length;
+    const delimiterEnd = keyEnd + match[3].length;
+    decorations.push({
+      range: new monaco.Range(line, keyStart, line, keyEnd),
+      options: { inlineClassName: "source-frontmatter-key" }
     });
-  });
-}
-
-function highlightMarkdownLine(line, index, context) {
-  const trimmed = line.trimStart();
-  if (index === 0 && trimmed === "---") {
-    context.frontmatter = true;
-    return <span className="source-token source-token--meta">{line}</span>;
-  }
-  if (context.frontmatter) {
-    if (trimmed === "---") {
-      context.frontmatter = false;
-      return <span className="source-token source-token--meta">{line}</span>;
+    decorations.push({
+      range: new monaco.Range(line, keyEnd, line, delimiterEnd),
+      options: { inlineClassName: "source-frontmatter-punctuation" }
+    });
+    if (match[4]) {
+      decorations.push({
+        range: new monaco.Range(line, delimiterEnd, line, model.getLineMaxColumn(line)),
+        options: { inlineClassName: "source-frontmatter-value" }
+      });
     }
-    const property = line.match(/^(\s*)([\w-]+)(:)(.*)$/);
-    if (property) return <>{property[1]}<span className="source-token source-token--property">{property[2]}</span><span className="source-token source-token--punctuation">{property[3]}</span>{property[4]}</>;
-    return line;
   }
-
-  const isFence = trimmed.startsWith(markdownFence.repeat(3)) || trimmed.startsWith("~~~");
-  if (isFence) {
-    context.fenced = !context.fenced;
-    return <span className="source-token source-token--fence">{line}</span>;
-  }
-  if (context.fenced) return <span className="source-token source-token--code-body">{line}</span>;
-
-  const heading = line.match(/^(\s{0,3})(#{1,6})(\s+)(.*)$/);
-  if (heading) return <>{heading[1]}<span className="source-token source-token--marker">{heading[2]}</span>{heading[3]}<span className="source-token source-token--heading">{highlightInlineMarkdown(heading[4], "heading-" + index)}</span></>;
-
-  const list = line.match(/^(\s*)([-+*]|\d+\.)(\s+)(.*)$/);
-  if (list) return <>{list[1]}<span className="source-token source-token--marker">{list[2]}</span>{list[3]}{highlightInlineMarkdown(list[4], "list-" + index)}</>;
-
-  const quote = line.match(/^(\s*)(>)(\s?)(.*)$/);
-  if (quote) return <>{quote[1]}<span className="source-token source-token--marker">{quote[2]}</span>{quote[3]}<span className="source-token source-token--quote">{highlightInlineMarkdown(quote[4], "quote-" + index)}</span></>;
-
-  return highlightInlineMarkdown(line, "line-" + index);
+  return decorations;
 }
 
-	function highlightMarkdown(source) {
-	  const context = { frontmatter: false, fenced: false };
-	  return source.split("\n").map((line, index) => <span className="source-highlight__line" key={index}>
-	    <span className="source-line-number">{index + 1}</span>
-	    <span className="source-highlight__content">{line ? highlightMarkdownLine(line, index, context) : String.fromCharCode(160)}</span>
-	  </span>);
-	}
+function MonacoMarkdownEditor({ value, onChange, onSustainedEdit, editorRef, readOnly }) {
+  const hostRef = useRef(null);
+  const modelRef = useRef(null);
+  const monacoRef = useRef(null);
+  const changeRef = useRef(onChange);
+  const revealRef = useRef(onSustainedEdit);
+  const revealTimer = useRef();
+  const applyingExternalValue = useRef(false);
 
-	function MarkdownPanel({ state, source, setSource, textareaRef, writer }) {
+  useEffect(() => {
+    changeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    revealRef.current = onSustainedEdit;
+  }, [onSustainedEdit]);
+
+  useEffect(() => {
+    if (!hostRef.current) return;
+    const uri = monaco.Uri.parse("inmemory://scribe/" + studioClientId + "/article.mdx");
+    const model = monaco.editor.createModel(value, "markdown", uri);
+    const editor = monaco.editor.create(hostRef.current, {
+      model,
+      theme: "scribe-studio",
+      ariaLabel: readOnly ? "Article source (read-only in this tab)" : "Article source",
+      readOnly,
+      domReadOnly: readOnly,
+      automaticLayout: true,
+      fontFamily: '"IBM Plex Mono", "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace',
+      fontSize: 14,
+      lineHeight: 24,
+      letterSpacing: 0.1,
+      fontWeight: "400",
+      fontLigatures: false,
+      lineNumbers: "on",
+      lineNumbersMinChars: 3,
+      lineDecorationsWidth: 22,
+      glyphMargin: true,
+      folding: false,
+      minimap: { enabled: false },
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      renderLineHighlight: "all",
+      renderLineHighlightOnlyWhenFocus: true,
+      renderWhitespace: "selection",
+      roundedSelection: false,
+      cursorBlinking: "smooth",
+      cursorSmoothCaretAnimation: "on",
+      cursorWidth: 2,
+      scrollBeyondLastLine: false,
+      smoothScrolling: true,
+      wordWrap: "on",
+      wrappingIndent: "same",
+      wrappingStrategy: "advanced",
+      tabSize: 2,
+      insertSpaces: true,
+      stickyScroll: { enabled: false },
+      guides: { indentation: false, bracketPairs: false },
+      bracketPairColorization: { enabled: false },
+      unicodeHighlight: {
+        nonBasicASCII: false,
+        ambiguousCharacters: false,
+        invisibleCharacters: true
+      },
+      padding: { top: 20, bottom: 72 },
+      scrollbar: {
+        verticalScrollbarSize: 9,
+        horizontalScrollbarSize: 9,
+        useShadows: false
+      }
+    });
+    const frontmatterDecorations = editor.createDecorationsCollection(frontmatterEditorDecorations(model));
+    const subscription = model.onDidChangeContent(() => {
+      frontmatterDecorations.set(frontmatterEditorDecorations(model));
+      if (!applyingExternalValue.current) {
+        changeRef.current(model.getValue());
+        clearTimeout(revealTimer.current);
+        revealTimer.current = setTimeout(() => {
+          revealRef.current?.(editor.getPosition()?.lineNumber ?? 1);
+        }, 520);
+      }
+    });
+    modelRef.current = model;
+    monacoRef.current = editor;
+    editorRef.current = {
+      focus() {
+        editor.focus();
+      },
+      setSelectionRange(start, end) {
+        const startPosition = model.getPositionAt(start);
+        const endPosition = model.getPositionAt(end);
+        const range = new monaco.Range(
+          startPosition.lineNumber,
+          startPosition.column,
+          endPosition.lineNumber,
+          endPosition.column
+        );
+        editor.setSelection(range);
+        editor.revealRangeInCenterIfOutsideViewport(range);
+      }
+    };
+    return () => {
+      clearTimeout(revealTimer.current);
+      subscription.dispose();
+      frontmatterDecorations.clear();
+      editorRef.current = null;
+      monacoRef.current = null;
+      modelRef.current = null;
+      editor.dispose();
+      model.dispose();
+    };
+  }, []);
+
+  useEffect(() => {
+    const editor = monacoRef.current;
+    if (!editor) return;
+    editor.updateOptions({
+      ariaLabel: readOnly ? "Article source (read-only in this tab)" : "Article source",
+      readOnly,
+      domReadOnly: readOnly
+    });
+  }, [readOnly]);
+
+  useEffect(() => {
+    const model = modelRef.current;
+    if (!model || model.getValue() === value) return;
+    applyingExternalValue.current = true;
+    model.setValue(value);
+    applyingExternalValue.current = false;
+  }, [value]);
+
+  return <div ref={hostRef} className="source-monaco" data-lenis-prevent />;
+}
+
+	function MarkdownPanel({ state, source, setSource, revealSourceLine, editorRef, writer }) {
 	  const diagnostics = formatDiagnostics(state.diagnostics);
-	  const highlightRef = useRef(null);
 	  return <section className="studio-panel source-panel" aria-label="Markdown editor">
 	    <div className="source-editor">
 	      <div className="source-code">
-	        <pre ref={highlightRef} className="source-highlight" aria-hidden="true">{highlightMarkdown(source)}</pre>
-	        <textarea ref={textareaRef} id="source" className="source-textarea" value={source} onChange={(event) => setSource(event.target.value)} onScroll={(event) => {
-	          if (highlightRef.current) {
-	            highlightRef.current.scrollTop = event.currentTarget.scrollTop;
-	          }
-	        }} readOnly={writer === false} spellCheck="false" wrap="soft" aria-label={writer === false ? "Article source (read-only in this tab)" : "Article source"} data-lenis-prevent />
+	        <MonacoMarkdownEditor value={source} onChange={setSource} onSustainedEdit={revealSourceLine} editorRef={editorRef} readOnly={writer === false} />
 	      </div>
 	    </div>
     {diagnostics && <pre id="diagnostics" className="diagnostics" aria-live="polite">{diagnostics}</pre>}
@@ -290,19 +452,27 @@ function highlightMarkdownLine(line, index, context) {
 }
 
 	const previewPresets = {
+	  fit: { label: "Fit pane", width: null },
 	  desktop: { label: "Desktop", width: 1280 },
 	  tablet: { label: "Tablet", width: 820 },
 	  mobile: { label: "Mobile", width: 414 }
 	};
 
-	function PreviewPanel({ theme, viewport, previewVersion, compact = false }) {
+	function PreviewPanel({ theme, viewport, previewVersion, revealRequest, compact = false }) {
 	  const iframeRef = useRef(null);
 	  const preset = previewPresets[viewport];
-	  const dimensions = { "--preview-width": preset.width + "px" };
+	  const dimensions = { "--preview-width": preset.width === null ? "100%" : preset.width + "px" };
 	  const syncTheme = useCallback(() => {
 	    iframeRef.current?.contentWindow?.postMessage({ type: "scribe:theme", theme }, location.origin);
 	  }, [theme]);
 	  useEffect(syncTheme, [syncTheme]);
+	  useEffect(() => {
+	    if (!revealRequest) return;
+	    iframeRef.current?.contentWindow?.postMessage({
+	      type: "scribe:reveal-source",
+	      line: revealRequest.line
+	    }, location.origin);
+	  }, [previewVersion, revealRequest]);
 	  return <section className={"studio-panel preview-panel" + (compact ? " preview-panel--compact" : "")} aria-label="Production preview">
 	    <div className="preview-stage" data-viewport={viewport}>
 	      <div className="preview-device" style={dimensions} data-preview-version={previewVersion}>
@@ -495,10 +665,32 @@ function SecondaryPane({ tab, setTab, source, state, theme, viewport }) {
   </section>;
 }
 
-function Workspace({ state, source, setSource, textareaRef, theme, viewport, writer }) {
+function Workspace({ state, source, setSource, revealSourceLine, revealRequest, editorRef, theme, viewport, writer }) {
   const workspaceRef = useRef(null);
   const dragging = useRef(false);
+  const dragOffset = useRef(0);
   const [split, setSplit] = useState(50);
+
+  const fitSelectedViewport = useCallback(() => {
+    if (viewport === "fit") {
+      setSplit(50);
+      return;
+    }
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width < 1) return;
+    const minimumPane = Math.min(42, 320 / bounds.width * 100);
+    const target = (bounds.width - previewPresets[viewport].width - 1) / bounds.width * 100;
+    setSplit(Math.min(100 - minimumPane, Math.max(minimumPane, target)));
+  }, [viewport]);
+
+  useEffect(() => {
+    fitSelectedViewport();
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const observer = new ResizeObserver(fitSelectedViewport);
+    observer.observe(workspace);
+    return () => observer.disconnect();
+  }, [fitSelectedViewport]);
 
   const updateSplit = useCallback((clientX) => {
     const bounds = workspaceRef.current?.getBoundingClientRect();
@@ -515,7 +707,7 @@ function Workspace({ state, source, setSource, textareaRef, theme, viewport, wri
   }, []);
 
   return <div ref={workspaceRef} className="studio-workspace studio-workspace--markdown" style={{ "--studio-split": split + "%" }}>
-    <MarkdownPanel state={state} source={source} setSource={setSource} textareaRef={textareaRef} writer={writer} />
+    <MarkdownPanel state={state} source={source} setSource={setSource} revealSourceLine={revealSourceLine} editorRef={editorRef} writer={writer} />
     <div
       className="studio-splitter"
       role="separator"
@@ -527,11 +719,12 @@ function Workspace({ state, source, setSource, textareaRef, theme, viewport, wri
       tabIndex="0"
       onPointerDown={(event) => {
         dragging.current = true;
+        const divider = event.currentTarget.getBoundingClientRect();
+        dragOffset.current = event.clientX - (divider.left + divider.width / 2);
         event.currentTarget.setPointerCapture(event.pointerId);
         document.body.classList.add("is-resizing-studio");
-        updateSplit(event.clientX);
       }}
-	      onPointerMove={(event) => { if (dragging.current) updateSplit(event.clientX); }}
+	      onPointerMove={(event) => { if (dragging.current) updateSplit(event.clientX - dragOffset.current); }}
 	      onPointerUp={finishDrag}
 	      onPointerCancel={finishDrag}
 	      onDoubleClick={() => setSplit(50)}
@@ -541,7 +734,7 @@ function Workspace({ state, source, setSource, textareaRef, theme, viewport, wri
         setSplit((current) => Math.min(75, Math.max(25, current + (event.key === "ArrowLeft" ? -2 : 2))));
       }}
     />
-    <PreviewPanel theme={theme} viewport={viewport} previewVersion={state.previewVersion} />
+    <PreviewPanel theme={theme} viewport={viewport} previewVersion={state.previewVersion} revealRequest={revealRequest} />
   </div>;
 }
 
@@ -551,15 +744,17 @@ function StudioApp() {
   const [authorMode, setAuthorModeState] = useState("markdown");
   const [richSession, setRichSession] = useState(null);
   const [richError, setRichError] = useState("");
-  const [viewport, setViewport] = useState("desktop");
+  const [viewport, setViewport] = useState("fit");
   const [theme, setTheme] = useState("dark");
   const [savePhase, setSavePhase] = useState("idle");
   const [richPending, setRichPending] = useState(false);
   const [writer, setWriter] = useState(null);
   const [connected, setConnected] = useState(true);
+  const [previewReveal, setPreviewReveal] = useState(null);
+  const previewRevealSequence = useRef(0);
   const diskVersion = useRef("");
   const draftBaseDiskVersion = useRef("");
-  const textareaRef = useRef(null);
+  const sourceEditorRef = useRef(null);
   const updateTimer = useRef();
   const richFlushRef = useRef(null);
   const pendingSelection = useRef(null);
@@ -587,6 +782,11 @@ function StudioApp() {
     sourceRef.current = next;
     setSource(next);
     setSavePhase("idle");
+  }, []);
+
+  const revealSourceLine = useCallback((line) => {
+    previewRevealSequence.current += 1;
+    setPreviewReveal({ line, sequence: previewRevealSequence.current });
   }, []);
 
   const applyRichState = useCallback((body) => apply(body, true), [apply]);
@@ -771,8 +971,8 @@ function StudioApp() {
     const range = pendingSelection.current;
     pendingSelection.current = null;
     requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(range.start, range.end);
+      sourceEditorRef.current?.focus();
+      sourceEditorRef.current?.setSelectionRange(range.start, range.end);
     });
   }, [authorMode]);
 
@@ -983,7 +1183,7 @@ function StudioApp() {
       </Hint>
     </header>
 
-    <Workspace state={state} source={source} setSource={updateSource} textareaRef={textareaRef} theme={theme} viewport={viewport} writer={writer} />
+    <Workspace state={state} source={source} setSource={updateSource} revealSourceLine={revealSourceLine} revealRequest={previewReveal} editorRef={sourceEditorRef} theme={theme} viewport={viewport} writer={writer} />
 
     <footer className="studio-statusbar">
       <span className="studio-statusbar__path" title={state.sourcePath}>{state.sourcePath}</span>
@@ -991,7 +1191,7 @@ function StudioApp() {
         <span>{lines.toLocaleString()} lines</span><i aria-hidden="true">·</i>
         <span>{words.toLocaleString()} words</span><i aria-hidden="true">·</i>
         <span>{location.host}</span><i aria-hidden="true">·</i>
-        <span>{previewPresets[viewport].width}px</span><i aria-hidden="true">·</i>
+        <span>{previewPresets[viewport].width === null ? "Fit" : previewPresets[viewport].width + "px"}</span><i aria-hidden="true">·</i>
         <span className="connection-status" data-status={connectionStatus}><b aria-hidden="true" />{connectionLabel}</span>
       </span>
     </footer>
@@ -1010,16 +1210,16 @@ createRoot(document.querySelector("#scribe-studio")).render(<StudioApp />);
 export function studioStyles(): string {
   return String.raw`:root {
   color-scheme: dark;
-  --studio-canvas: #161618;
-  --studio-shell: #1c1c1e;
-  --studio-panel: #1c1c1e;
-  --studio-panel-raised: #202023;
-  --studio-control: #27272a;
-  --studio-control-hover: #303034;
-  --studio-border: #343438;
-  --studio-border-strong: #45454a;
-  --studio-text: #f4f4f5;
-  --studio-muted: #a1a1aa;
+  --studio-canvas: #0d0d0f;
+  --studio-shell: #161618;
+  --studio-panel: #111113;
+  --studio-panel-raised: #18181b;
+  --studio-control: #1c1c1f;
+  --studio-control-hover: #232327;
+  --studio-border: #29292d;
+  --studio-border-strong: #3a3a40;
+  --studio-text: #f2f2f3;
+  --studio-muted: #8e8e96;
   --studio-accent: #2563eb;
   --studio-accent-strong: #2563eb;
   --studio-danger: #ef6a68;
@@ -1031,7 +1231,7 @@ export function studioStyles(): string {
   --font-mono: var(--studio-mono);
   --color-kumo-canvas: var(--studio-canvas);
   --color-kumo-elevated: var(--studio-panel-raised);
-  --color-kumo-recessed: #18181a;
+  --color-kumo-recessed: var(--studio-canvas);
   --color-kumo-base: var(--studio-panel);
   --color-kumo-tint: var(--studio-control-hover);
   --color-kumo-overlay: var(--studio-panel-raised);
@@ -1069,8 +1269,8 @@ svg { inline-size: 1rem; block-size: 1rem; stroke-width: 1.8; }
 .studio-loading svg { animation: studio-spin .9s linear infinite; }
 .studio-toolbar { min-inline-size:0; display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding-inline:.625rem; border-block-end:1px solid var(--studio-border); background:var(--studio-shell); }
 .studio-toolbar__left { display:flex; align-items:center; gap:.25rem; min-inline-size:0; }
-.viewport-select { min-inline-size:7.25rem; color:var(--studio-text)!important; background:transparent!important; font:500 .75rem/1 var(--studio-font)!important; box-shadow:inset 0 0 0 1px transparent!important; transition:background-color 140ms ease,box-shadow 140ms ease!important; }
-.viewport-select:hover,.viewport-select[data-popup-open] { background:var(--studio-control)!important; box-shadow:inset 0 0 0 1px var(--studio-border)!important; }
+.viewport-select { min-inline-size:7.25rem; color:var(--studio-text)!important; background:var(--studio-control)!important; font:500 .75rem/1 var(--studio-font)!important; box-shadow:inset 0 0 0 1px var(--studio-border)!important; transition:background-color 140ms ease,box-shadow 140ms ease!important; }
+.viewport-select:hover,.viewport-select[data-popup-open] { background:var(--studio-control-hover)!important; box-shadow:inset 0 0 0 1px var(--studio-border-strong)!important; }
 .viewport-select:focus-visible { box-shadow:inset 0 0 0 1px var(--studio-accent),0 0 0 2px color-mix(in srgb,var(--studio-accent) 28%,transparent)!important; }
 .save-control { min-inline-size:4.875rem; color:var(--studio-text)!important; background:var(--studio-control)!important; box-shadow:inset 0 0 0 1px var(--studio-border)!important; transition:color 140ms ease,background-color 140ms ease,box-shadow 140ms ease!important; }
 .save-control:hover { color:#fff!important; background:var(--studio-control-hover)!important; box-shadow:inset 0 0 0 1px var(--studio-border-strong)!important; }
@@ -1083,32 +1283,29 @@ svg { inline-size: 1rem; block-size: 1rem; stroke-width: 1.8; }
 .theme-control { color:var(--studio-muted)!important; }
 .theme-control:hover { color:var(--studio-text)!important; background:var(--studio-control)!important; }
 .save-control:focus-visible,.theme-control:focus-visible,.secondary-tabs button:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
-.studio-workspace { --studio-split:50%; min-block-size:0; display:grid; grid-template-columns:minmax(20rem,var(--studio-split)) 1px minmax(20rem,1fr); overflow:hidden; background:var(--studio-canvas); }
+.studio-workspace { --studio-split:50%; min-block-size:0; display:grid; grid-template-columns:minmax(20rem,var(--studio-split)) 1px minmax(20rem,1fr); overflow:hidden; background:var(--studio-canvas); transition:grid-template-columns 320ms cubic-bezier(.22,1,.36,1); }
 .studio-splitter { position:relative; z-index:5; min-block-size:0; cursor:col-resize; outline:0; background:var(--studio-border); touch-action:none; }
 .studio-splitter::after { content:""; position:absolute; inset-block:0; inset-inline:-.375rem; }
 .studio-splitter:hover,.studio-splitter:focus-visible { background:var(--studio-accent-strong); }
 .is-resizing-studio,.is-resizing-studio * { cursor:col-resize!important; user-select:none!important; }
+.is-resizing-studio .studio-workspace { transition:none; }
 .studio-panel { position:relative; block-size:100%; min-inline-size:0; min-block-size:0; display:grid; grid-template-rows:minmax(0,1fr); overflow:hidden; background:var(--studio-panel); }
 .panel-heading { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding-inline:.85rem; border-block-end:1px solid var(--studio-border); color:var(--studio-muted); font:600 .625rem/1 var(--studio-mono); text-transform:uppercase; letter-spacing:.085em; }
 .panel-heading > div { display:inline-flex; align-items:center; gap:.45rem; }
 .panel-heading svg { inline-size:.78rem; block-size:.78rem; }
 .panel-state { color:var(--studio-muted); font-size:.58rem; }
-.source-editor,.source-code { position:relative; inline-size:100%; block-size:100%; min-inline-size:0; min-block-size:0; overflow:hidden; background:var(--studio-panel); }
-.source-highlight,.source-textarea { position:absolute; inset:0; inline-size:100%; block-size:100%; min-block-size:0; margin:0; padding:1rem 1.25rem 4rem 0; border:0; font:.8125rem/1.65 var(--studio-mono); tab-size:2; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
-.source-highlight { overflow:hidden; color:#d4d4d8; background:var(--studio-panel); pointer-events:none; }
-.source-highlight__line { display:grid; grid-template-columns:3rem minmax(0,1fr); min-block-size:1.65em; }
-.source-line-number { padding-inline-end:.625rem; border-inline-end:1px solid var(--studio-border); color:#5f5f67; text-align:end; user-select:none; }
-.source-highlight__content { min-inline-size:0; padding-inline-start:.875rem; white-space:pre-wrap; overflow-wrap:anywhere; }
-.source-token--marker,.source-token--property,.source-token--link { color:var(--studio-accent); }
-.source-token--heading { color:#fafafa; font-weight:500; }
-.source-token--meta,.source-token--punctuation,.source-token--fence { color:color-mix(in srgb,var(--studio-accent) 72%,var(--studio-muted)); }
-.source-token--emphasis { color:#e4e4e7; }
-.source-token--code { color:color-mix(in srgb,var(--studio-accent) 55%,#fff); }
-.source-token--code-body { color:#d4d4d8; }
-.source-token--quote { color:#b4b4bc; font-style:italic; }
-.source-textarea { resize:none; outline:0; overflow:auto; padding-inline-start:3.875rem; color:transparent; caret-color:var(--studio-accent); background:transparent; -webkit-text-fill-color:transparent; }
-.source-textarea::selection { background:#2563eb59; }
-.source-panel:focus-within .source-line-number { border-inline-end-color:var(--studio-accent); }
+.source-editor,.source-code,.source-monaco { position:relative; inline-size:100%; block-size:100%; min-inline-size:0; min-block-size:0; overflow:hidden; background:var(--studio-panel); }
+.source-monaco .monaco-editor,.source-monaco .overflow-guard { inline-size:100%!important; block-size:100%!important; }
+.source-monaco .monaco-editor,.source-monaco .monaco-editor-background { background:var(--studio-panel)!important; }
+.source-monaco .monaco-editor.focused { outline:0; }
+.source-monaco .monaco-editor .margin { background:var(--studio-panel)!important; }
+.source-monaco .line-numbers { font-variant-numeric:tabular-nums; text-align:center!important; transition:color 120ms ease; }
+.source-monaco .line-numbers.active-line-number { color:var(--studio-accent)!important; font-weight:600; }
+.source-monaco .source-frontmatter-delimiter { color:#2563eb!important; font-weight:600; }
+.source-monaco .source-frontmatter-key { color:#60a5fa!important; font-weight:500; }
+.source-monaco .source-frontmatter-punctuation { color:#71717a!important; }
+.source-monaco .source-frontmatter-value { color:#d4d4d8!important; }
+.source-monaco .monaco-scrollable-element > .scrollbar > .slider { border-radius:999px; }
 .diagnostics { position:absolute; z-index:3; inset-inline:.75rem; inset-block-end:.75rem; max-block-size:26%; overflow:auto; margin:0; padding:.625rem .75rem; border:1px solid #633a3d; border-radius:var(--studio-radius); color:#ffb4b0; background:#211416; font:.68rem/1.55 var(--studio-mono); white-space:pre-wrap; }
 .preview-stage { min-inline-size:0; min-block-size:0; display:grid; place-items:stretch center; overflow:hidden; padding:0; background:var(--studio-panel); }
 .preview-device { inline-size:min(100%,var(--preview-width)); block-size:100%; min-inline-size:0; overflow:hidden; border:0; border-radius:0; background:#fff; transition:inline-size 320ms cubic-bezier(.22,1,.36,1); }
@@ -1159,7 +1356,7 @@ svg { inline-size: 1rem; block-size: 1rem; stroke-width: 1.8; }
 .rich-error strong,.rich-error span,.rich-error small,.conflict-card strong,.conflict-card span { display:block; }
 .rich-error span,.conflict-card span { margin-block-start:.15rem; color:var(--studio-muted); font-size:.72rem; }
 .rich-error small { margin-block-start:.25rem; color:#ffaaa0; font-size:.64rem; }
-.studio-statusbar { min-inline-size:0; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding-inline:.625rem; border-block-start:1px solid var(--studio-border); color:#71717a; background:#19191b; font:.6875rem/1 var(--studio-mono); }
+.studio-statusbar { min-inline-size:0; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding-inline:.625rem; border-block-start:1px solid var(--studio-border); color:#71717a; background:var(--studio-shell); font:.6875rem/1 var(--studio-mono); }
 .studio-statusbar__path { min-inline-size:0; overflow:hidden; color:#a1a1aa; text-overflow:ellipsis; white-space:nowrap; }
 .studio-statusbar__meta { flex:none; display:flex; align-items:center; gap:.375rem; white-space:nowrap; }
 .studio-statusbar__meta i { color:#52525b; font-style:normal; }

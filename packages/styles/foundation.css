@@ -127,7 +127,7 @@
     border-collapse: collapse;
   }
 
-  :where(.scribe .scribe-table-scroll:has(tr > :nth-child(4)) > table) {
+  :where(.scribe .scribe-table-scroll[data-scribe-table-layout="wide"] > table) {
     inline-size: max-content !important;
   }
 
@@ -142,7 +142,7 @@
     vertical-align: top;
   }
 
-  :where(.scribe .scribe-table-scroll:has(tr > :nth-child(4)) table :is(th, td)) {
+  :where(.scribe .scribe-table-scroll[data-scribe-table-layout="wide"] table :is(th, td)) {
     min-inline-size: 8rem;
   }
 

@@ -279,6 +279,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     ...(hostCss === undefined ? {} : { hostCss })
   });
   try {
+    const scribeMdxOptions = createScribeMdxOptions();
     server = await createViteServer({
     configFile: false,
     root,
@@ -312,7 +313,18 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
         "sonner"
       ]
     },
-      plugins: [studioPlugin, { ...mdx(createScribeMdxOptions()), enforce: "pre" }, react()]
+      plugins: [
+        studioPlugin,
+        {
+          ...mdx({
+            ...scribeMdxOptions,
+            rehypePlugins: [...scribeMdxOptions.rehypePlugins, rehypeStudioSourceLines],
+            recmaPlugins: [recmaStudioRefreshBoundary]
+          }),
+          enforce: "pre"
+        },
+        react({ include: /\.(mdx|js|jsx|ts|tsx)$/u })
+      ]
     });
   } catch (error) {
     await compiler.close();
@@ -519,6 +531,7 @@ function createStudioPlugin(context: {
     name: "scribe-studio",
     enforce: "pre",
     resolveId(id) {
+      if (id === context.articleId) return context.articleId;
       if (id === "/@scribe-studio/preview.tsx") return previewId;
       if (id === "/@scribe-studio/client.tsx") return clientId;
       if (id === "/@scribe-studio/styles.css") return stylesId;
@@ -620,7 +633,7 @@ function createStudioPlugin(context: {
                 ? body.baseDiskVersion
                 : context.state.recoveryBaseVersion;
               context.state.recoveryBaseVersion = baseDiskVersion;
-              await applyDraft(context, server, previewId, normalizeLineEndings(body.source as string, context.state.lineEnding));
+              await applyDraft(context, server, normalizeLineEndings(body.source as string, context.state.lineEnding));
               if (body.externalConflict === true || baseDiskVersion !== context.state.diskVersion) {
                 context.state.conflict = true;
                 context.state.recoveryConflict = true;
@@ -675,7 +688,6 @@ function createStudioPlugin(context: {
               await applyDraft(
                 context,
                 server,
-                previewId,
                 normalizeLineEndings(result.markdown, context.state.lineEnding),
                 acceptedDiagnostics
               );
@@ -865,7 +877,7 @@ function createStudioPlugin(context: {
               const previousBase = context.state.recoveryBaseVersion;
               context.state.recoveryBaseVersion = archived.baseDiskVersion;
               try {
-                await applyDraft(context, server, previewId, archived.draftSource);
+                await applyDraft(context, server, archived.draftSource);
               } catch (error) {
                 context.state.recoveryBaseVersion = previousBase;
                 throw error;
@@ -936,6 +948,9 @@ function studioRuntimePaths(): StudioRuntimePaths {
     sonner: studioImportPath("sonner"),
     mdxEditor: studioImportPath("@mdxeditor/editor"),
     mdxEditorStyle: studioImportPath("@mdxeditor/editor/style.css"),
+    monaco: studioImportPath("monaco-editor"),
+    monacoMarkdown: studioImportPath("monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js"),
+    monacoWorker: studioRequire.resolve("monaco-editor/esm/vs/editor/editor.worker.js"),
     plexSans400: studioImportPath("@fontsource/ibm-plex-sans/400.css"),
     plexSans500: studioImportPath("@fontsource/ibm-plex-sans/500.css"),
     plexSans600: studioImportPath("@fontsource/ibm-plex-sans/600.css"),
@@ -966,6 +981,15 @@ function studioAliases(runtime: StudioRuntimePaths) {
     { find: "sonner", replacement: runtime.sonner },
     { find: "@mdxeditor/editor/style.css", replacement: runtime.mdxEditorStyle },
     { find: "@mdxeditor/editor", replacement: runtime.mdxEditor },
+    {
+      find: /^monaco-editor\/esm\/vs\/editor\/editor\.worker\.js(?:\?worker)?$/u,
+      replacement: `${runtime.monacoWorker}?worker`
+    },
+    {
+      find: /^monaco-editor\/esm\/vs\/basic-languages\/markdown\/markdown\.contribution\.js$/u,
+      replacement: runtime.monacoMarkdown
+    },
+    { find: /^monaco-editor$/u, replacement: runtime.monaco },
     { find: "@fontsource/ibm-plex-sans/400.css", replacement: runtime.plexSans400 },
     { find: "@fontsource/ibm-plex-sans/500.css", replacement: runtime.plexSans500 },
     { find: "@fontsource/ibm-plex-sans/600.css", replacement: runtime.plexSans600 },
@@ -974,12 +998,72 @@ function studioAliases(runtime: StudioRuntimePaths) {
     { find: "@fontsource/ibm-plex-serif/600.css", replacement: runtime.plexSerif600 },
     { find: "@fontsource/ibm-plex-mono/400.css", replacement: runtime.plexMono400 },
     { find: "@fontsource/ibm-plex-mono/500.css", replacement: runtime.plexMono500 },
-    { find: "@fontsource/ibm-plex-mono/600.css", replacement: runtime.plexMono600 }
+    { find: "@fontsource/ibm-plex-mono/600.css", replacement: runtime.plexMono600 },
+    { find: "@scribe-sdk/styles/foundation.css", replacement: runtime.foundation },
+    { find: "@scribe-sdk/styles/default.css", replacement: runtime.default },
+    { find: "@scribe-sdk/styles/tailwind.css", replacement: runtime.tailwind }
   ];
 }
 
 function studioImportPath(specifier: string): string {
   return fileURLToPath(import.meta.resolve(specifier));
+}
+
+const studioSourceMappedElements = new Set([
+  "article", "aside", "blockquote", "div", "figure", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6",
+  "hr", "li", "ol", "p", "pre", "section", "table", "ul"
+]);
+
+function rehypeStudioSourceLines() {
+  return (tree: unknown) => {
+    annotateStudioSourceLines(tree);
+  };
+}
+
+function annotateStudioSourceLines(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const child of value) annotateStudioSourceLines(child);
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  const node = value as Record<string, unknown>;
+  const position = node.position as { readonly start?: { readonly line?: unknown } } | undefined;
+  const line = position?.start?.line;
+  if (Number.isSafeInteger(line)) {
+    if (node.type === "element" && typeof node.tagName === "string" && studioSourceMappedElements.has(node.tagName)) {
+      const properties = (node.properties ??= {}) as Record<string, unknown>;
+      properties["data-scribe-source-line"] = String(line);
+    } else if (node.type === "mdxJsxFlowElement") {
+      const attributes = Array.isArray(node.attributes) ? node.attributes : (node.attributes = []);
+      attributes.push({
+        type: "mdxJsxAttribute",
+        name: "data-scribe-source-line",
+        value: String(line)
+      });
+    }
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (key !== "position") annotateStudioSourceLines(child);
+  }
+}
+
+function recmaStudioRefreshBoundary() {
+  return (tree: unknown) => {
+    renameGeneratedMdxBody(tree);
+  };
+}
+
+function renameGeneratedMdxBody(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const child of value) renameGeneratedMdxBody(child);
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  const node = value as Record<string, unknown>;
+  if (node.type === "Identifier" && node.name === "_createMdxContent") {
+    node.name = "MdxContentBody";
+  }
+  for (const child of Object.values(node)) renameGeneratedMdxBody(child);
 }
 
 function previewModule(mode: StyleMode, runtime: StudioRuntimePaths, hostCss?: string): string {
@@ -1039,7 +1123,7 @@ if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
   new Lenis({ autoRaf: true, smoothWheel: true, gestureOrientation: "vertical", anchors: true });
 }
 const previewRoot = createRoot(document.querySelector("#preview"));
-function PreviewApp({ ArticleComponent }) {
+function PreviewApp() {
   const [theme, setTheme] = React.useState("dark");
   React.useLayoutEffect(() => {
     if (!studioMirrorsHostDarkClass) return;
@@ -1054,6 +1138,29 @@ function PreviewApp({ ArticleComponent }) {
     addEventListener("message", receiveTheme);
     return () => removeEventListener("message", receiveTheme);
   }, []);
+  React.useEffect(() => {
+    const receiveReveal = (event) => {
+      if (event.origin !== location.origin || event.data?.type !== "scribe:reveal-source") return;
+      const line = Number(event.data.line);
+      if (!Number.isSafeInteger(line) || line < 1) return;
+      const candidates = Array.from(document.querySelectorAll("[data-scribe-source-line]"));
+      const target = candidates.reduce((closest, element) => {
+        const elementLine = Number(element.getAttribute("data-scribe-source-line"));
+        if (!Number.isSafeInteger(elementLine)) return closest;
+        if (closest === null) return element;
+        const closestLine = Number(closest.getAttribute("data-scribe-source-line"));
+        const elementDistance = elementLine <= line ? line - elementLine : Number.POSITIVE_INFINITY;
+        const closestDistance = closestLine <= line ? line - closestLine : Number.POSITIVE_INFINITY;
+        return elementDistance < closestDistance ? element : closest;
+      }, null);
+      target?.scrollIntoView({
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "center"
+      });
+    };
+    addEventListener("message", receiveReveal);
+    return () => removeEventListener("message", receiveReveal);
+  }, []);
   const components = React.useMemo(() => {
     function Wrapper({ children, ...props }) {
       const articleChildren = studioHostArticleClassName
@@ -1063,17 +1170,9 @@ function PreviewApp({ ArticleComponent }) {
     }
     return createScribeComponents({ components: { wrapper: Wrapper, Banner: StudioBanner, img: StudioImage } });
   }, [theme]);
-  return React.createElement(ArticleComponent, { components });
+  return React.createElement(Article, { components });
 }
-function renderArticle(ArticleComponent) {
-  previewRoot.render(React.createElement(PreviewApp, { ArticleComponent }));
-}
-renderArticle(Article);
-if (import.meta.hot) {
-  import.meta.hot.accept("virtual:scribe-studio-article", (module) => {
-    if (module?.default) renderArticle(module.default);
-  });
-}
+previewRoot.render(React.createElement(PreviewApp));
 `;
 }
 
@@ -1082,7 +1181,7 @@ function studioHtml(sessionToken: string): string {
 }
 
 function previewHtml(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{--font-body:"IBM Plex Sans","Geist Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-heading:var(--font-body);--font-mono:"IBM Plex Mono","Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716;font-family:var(--font-body);transition:background-color 180ms ease,color 180ms ease}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}.scribe-studio-missing-asset{display:grid;gap:.35rem;align-content:center;min-block-size:7rem;margin-block:1rem;padding:1rem;border:1px dashed color-mix(in oklab,currentColor 30%,transparent);border-radius:.55rem;color:color-mix(in oklab,currentColor 72%,transparent);background:color-mix(in oklab,currentColor 5%,transparent);font:500 .8rem/1.45 var(--font-body)}.scribe-studio-missing-asset strong{color:inherit}.scribe-studio-missing-asset code{overflow-wrap:anywhere;color:inherit;font-family:var(--font-mono)}.scribe-studio-missing-asset[data-loading]{opacity:.65}@media(prefers-reduced-motion:reduce){body{transition:none}}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{--font-body:"IBM Plex Sans","Geist Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-heading:var(--font-body);--font-mono:"IBM Plex Mono","Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716;font-family:var(--font-body);transition:background-color 180ms ease,color 180ms ease}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}[data-scribe-studio-host-article] :where(table,table caption,table thead,table tbody,table tr,table th,table td,table p,table strong,table em,table a,.scribe-code-frame,.scribe-code-frame__header,.scribe-code-frame__pre,.scribe-code-frame__pre code,.scribe-code-frame__pre code *){color:#171716!important}html.dark [data-scribe-studio-host-article] :where(table,table caption,table thead,table tbody,table tr,table th,table td,table p,table strong,table em,table a,.scribe-code-frame,.scribe-code-frame__header,.scribe-code-frame__pre,.scribe-code-frame__pre code,.scribe-code-frame__pre code *){color:#f5f5f4!important}[data-scribe-studio-host-article] .scribe-banner__metadata{color:var(--text,#171716)!important}.scribe-studio-missing-asset{display:grid;gap:.35rem;align-content:center;min-block-size:7rem;margin-block:1rem;padding:1rem;border:1px dashed color-mix(in oklab,currentColor 30%,transparent);border-radius:.55rem;color:color-mix(in oklab,currentColor 72%,transparent);background:color-mix(in oklab,currentColor 5%,transparent);font:500 .8rem/1.45 var(--font-body)}.scribe-studio-missing-asset strong{color:inherit}.scribe-studio-missing-asset code{overflow-wrap:anywhere;color:inherit;font-family:var(--font-mono)}.scribe-studio-missing-asset[data-loading]{opacity:.65}@media(prefers-reduced-motion:reduce){body{transition:none}}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
 }
 
 function publicState(state: StudioState) {
@@ -1179,7 +1278,6 @@ async function applyDraft(
     readonly compiler: StudioCompiler;
   },
   server: ViteDevServer,
-  previewId: string,
   source: string,
   knownDiagnostics?: StudioDiagnostic[]
 ): Promise<void> {
@@ -1204,8 +1302,6 @@ async function applyDraft(
   context.state.previewSource = source;
   context.state.previewVersion += 1;
   await reloadArticleSafely(server, context.articleId, context.state);
-  const preview = server.moduleGraph.getModuleById(previewId);
-  if (preview) server.moduleGraph.invalidateModule(preview);
 }
 
 async function diagnosticsFor(compiler: StudioCompiler, path: string, source: string): Promise<StudioDiagnostic[]> {

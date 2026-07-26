@@ -100,7 +100,7 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
   const file = await fixture();
   const hostCss = join(file.root, "src", "app.css");
   await mkdir(join(file.root, "src"), { recursive: true });
-  await writeFile(hostCss, ".dark { color: white; }\n");
+  await writeFile(hostCss, '@import "@scribe-sdk/styles/tailwind.css";\n.dark { color: white; }\n');
   const handle = await startStudio({
     root: file.root,
     path: file.path,
@@ -114,6 +114,17 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
   const previewClient = await (await fetch(`${handle.origin}/@scribe-studio/preview.tsx`)).text();
   expect(previewClient).toContain('document.documentElement.classList.toggle("dark", theme === "dark")');
   expect(previewClient).toContain("data-scribe-studio-host-article");
+
+  const previewDocument = await (await fetch(`${handle.origin}/preview`)).text();
+  expect(previewDocument).toContain("[data-scribe-studio-host-article] :where(table");
+  expect(previewDocument).toContain(".scribe-banner__metadata");
+  expect(previewDocument).toContain(".scribe-banner__metadata{color:var(--text,#171716)!important}");
+  expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#171716!important}");
+  expect(previewDocument).toContain("html.dark [data-scribe-studio-host-article]");
+  expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#f5f5f4!important}");
+
+  const transformedHostCss = await (await fetch(`${handle.origin}/src/app.css`)).text();
+  expect(transformedHostCss).toContain('[data-scribe-table-layout=\\"wide\\"]');
 });
 
 it("surfaces recovery read failures before opening the Studio", async () => {

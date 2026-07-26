@@ -32,6 +32,10 @@ describe("published CSS contract", () => {
   it("keeps technical tables legible and code-frame identity intact in narrow containers", () => {
     expect(defaultCss).toContain("table tbody tr:nth-child(even) td");
     expect(defaultCss).toContain("table :is(th, td) + :is(th, td)");
+    for (const css of [foundationCss, defaultCss]) {
+      expect(css).toContain('[data-scribe-table-layout="wide"]');
+      expect(css).not.toContain(".scribe-table-scroll:has(");
+    }
     expect(defaultCss).not.toMatch(/@container scribe \(max-width: 46rem\)[\s\S]*?\.scribe-code-frame, \.scribe \.scribe-table-scroll\)[\s\S]*?border-inline:\s*0;/u);
   });
 
