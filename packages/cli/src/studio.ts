@@ -45,6 +45,13 @@ import { studioClientModule, studioStyles, type StudioClientImports } from "./st
 
 const studioRequire = createRequire(import.meta.url);
 
+const studioTailwindArticleClassName =
+  "prose max-w-none text-[15px] leading-relaxed prose-p:text-[var(--text)] prose-headings:text-[var(--text)] prose-headings:font-bold prose-headings:tracking-tight prose-a:text-[var(--text)] prose-a:underline-offset-4 hover:prose-a:opacity-70 prose-strong:text-[var(--text)] prose-blockquote:border-l-[var(--text)] prose-blockquote:text-[var(--text)] prose-blockquote:opacity-80 prose-hr:border-[var(--text)]/20 prose-li:text-[var(--text)] prose-ul:text-[var(--text)] prose-img:border prose-img:border-[var(--text)]/20 prose-img:w-full [&_:not(pre)>code]:bg-[var(--text)] [&_:not(pre)>code]:text-[var(--bg)] [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:before:content-none [&_:not(pre)>code]:after:content-none";
+
+export function studioPreviewArticleClassName(mode: StyleMode): string | undefined {
+  return mode === "tailwind" ? studioTailwindArticleClassName : undefined;
+}
+
 export interface StudioOptions {
   readonly root: string;
   readonly path: string;
@@ -272,6 +279,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     ...(hostCss === undefined ? {} : { hostCss })
   });
   try {
+    const scribeMdxOptions = createScribeMdxOptions();
     server = await createViteServer({
     configFile: false,
     root,
@@ -298,20 +306,26 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
         "react-dom/client",
         "react/jsx-runtime",
         "react/jsx-dev-runtime",
-        "@base-ui/react/button",
-        "@base-ui/react/toggle",
-        "@base-ui/react/toggle-group",
-        "@base-ui/react/tooltip",
+        "@cloudflare/kumo",
         "@mdxeditor/editor",
-        "class-variance-authority",
-        "clsx",
         "lenis",
         "lucide-react",
-        "sonner",
-        "tailwind-merge"
+        "monaco-editor",
+        "sonner"
       ]
     },
-      plugins: [studioPlugin, { ...mdx(createScribeMdxOptions()), enforce: "pre" }, react()]
+      plugins: [
+        studioPlugin,
+        {
+          ...mdx({
+            ...scribeMdxOptions,
+            rehypePlugins: [...scribeMdxOptions.rehypePlugins, rehypeStudioSourceLines],
+            recmaPlugins: [recmaStudioRefreshBoundary]
+          }),
+          enforce: "pre"
+        },
+        react({ include: /\.(mdx|js|jsx|ts|tsx)$/u })
+      ]
     });
   } catch (error) {
     await compiler.close();
@@ -394,6 +408,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     }).then(({ revision }) => {
       state.revision = revision;
       events.publish(revision);
+    }).catch((error: unknown) => {
+      state.conflict = true;
+      state.diagnostics = [watcherDiagnostic(error)];
+      events.publish(state.revision);
     });
   });
   server.watcher.on("error", (error) => {
@@ -405,6 +423,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     }).then(({ revision }) => {
       state.revision = revision;
       events.publish(revision);
+    }).catch((failure: unknown) => {
+      state.conflict = true;
+      state.diagnostics = [watcherDiagnostic(failure)];
+      events.publish(state.revision);
     });
   });
 
@@ -518,6 +540,7 @@ function createStudioPlugin(context: {
     name: "scribe-studio",
     enforce: "pre",
     resolveId(id) {
+      if (id === context.articleId) return context.articleId;
       if (id === "/@scribe-studio/preview.tsx") return previewId;
       if (id === "/@scribe-studio/client.tsx") return clientId;
       if (id === "/@scribe-studio/styles.css") return stylesId;
@@ -618,8 +641,9 @@ function createStudioPlugin(context: {
               const baseDiskVersion = typeof body.baseDiskVersion === "string"
                 ? body.baseDiskVersion
                 : context.state.recoveryBaseVersion;
-              context.state.recoveryBaseVersion = baseDiskVersion;
-              await applyDraft(context, server, previewId, normalizeLineEndings(body.source as string, context.state.lineEnding));
+              await withRecoveryBaseVersion(context.state, baseDiskVersion, async () => {
+                await applyDraft(context, server, normalizeLineEndings(body.source as string, context.state.lineEnding));
+              });
               if (body.externalConflict === true || baseDiskVersion !== context.state.diskVersion) {
                 context.state.conflict = true;
                 context.state.recoveryConflict = true;
@@ -670,14 +694,14 @@ function createStudioPlugin(context: {
                 }
               );
               if (!result.ok) return { accepted: false as const, value: { result, projection } };
-              context.state.recoveryBaseVersion = baseDiskVersion;
-              await applyDraft(
-                context,
-                server,
-                previewId,
-                normalizeLineEndings(result.markdown, context.state.lineEnding),
-                acceptedDiagnostics
-              );
+              await withRecoveryBaseVersion(context.state, baseDiskVersion, async () => {
+                await applyDraft(
+                  context,
+                  server,
+                  normalizeLineEndings(result.markdown, context.state.lineEnding),
+                  acceptedDiagnostics
+                );
+              });
               if (baseDiskVersion !== context.state.diskVersion) {
                 context.state.conflict = true;
                 context.state.recoveryConflict = true;
@@ -793,6 +817,7 @@ function createStudioPlugin(context: {
           } catch (error) {
             if (error instanceof StudioFileConflictError) {
               context.state.conflict = true;
+              context.events.publish(context.state.revision);
               return json(response, 409, { error: error.message, ...publicState(context.state) });
             }
             return json(response, 500, { error: error instanceof Error ? error.message : String(error) });
@@ -861,14 +886,9 @@ function createStudioPlugin(context: {
               if (archived === undefined || archived.sourcePath !== context.sourcePath) {
                 return { accepted: false as const, value: { status: 404, error: "No discarded Studio draft is available to recover." } };
               }
-              const previousBase = context.state.recoveryBaseVersion;
-              context.state.recoveryBaseVersion = archived.baseDiskVersion;
-              try {
-                await applyDraft(context, server, previewId, archived.draftSource);
-              } catch (error) {
-                context.state.recoveryBaseVersion = previousBase;
-                throw error;
-              }
+              await withRecoveryBaseVersion(context.state, archived.baseDiskVersion, async () => {
+                await applyDraft(context, server, archived.draftSource);
+              });
               context.state.recovered = true;
               context.state.recoveryConflict = archived.baseDiskVersion !== context.state.diskVersion;
               context.state.conflict ||= context.state.recoveryConflict;
@@ -928,18 +948,16 @@ function studioRuntimePaths(): StudioRuntimePaths {
     reactDomRoot: studioImportPath("react-dom"),
     reactJsxRuntime: studioImportPath("react/jsx-runtime"),
     reactJsxDevRuntime: studioImportPath("react/jsx-dev-runtime"),
-    baseButton: studioImportPath("@base-ui/react/button"),
-    baseToggle: studioImportPath("@base-ui/react/toggle"),
-    baseToggleGroup: studioImportPath("@base-ui/react/toggle-group"),
-    baseTooltip: studioImportPath("@base-ui/react/tooltip"),
-    cva: studioImportPath("class-variance-authority"),
-    clsx: studioImportPath("clsx"),
+    kumo: studioImportPath("@cloudflare/kumo"),
+    kumoStyle: studioImportPath("@cloudflare/kumo/styles/standalone"),
     lenis: studioImportPath("lenis"),
     lucide: studioImportPath("lucide-react"),
     sonner: studioImportPath("sonner"),
-    tailwindMerge: studioImportPath("tailwind-merge"),
     mdxEditor: studioImportPath("@mdxeditor/editor"),
     mdxEditorStyle: studioImportPath("@mdxeditor/editor/style.css"),
+    monaco: studioImportPath("monaco-editor"),
+    monacoMarkdown: studioImportPath("monaco-editor/languages/definitions/markdown/register.js"),
+    monacoWorker: studioRequire.resolve("monaco-editor/editor/editor.worker.js"),
     plexSans400: studioImportPath("@fontsource/ibm-plex-sans/400.css"),
     plexSans500: studioImportPath("@fontsource/ibm-plex-sans/500.css"),
     plexSans600: studioImportPath("@fontsource/ibm-plex-sans/600.css"),
@@ -963,18 +981,22 @@ function studioAliases(runtime: StudioRuntimePaths) {
     { find: "react-dom/client", replacement: runtime.reactDom },
     { find: /^react-dom$/u, replacement: runtime.reactDomRoot },
     { find: /^react$/u, replacement: runtime.react },
-    { find: "@base-ui/react/button", replacement: runtime.baseButton },
-    { find: "@base-ui/react/toggle", replacement: runtime.baseToggle },
-    { find: "@base-ui/react/toggle-group", replacement: runtime.baseToggleGroup },
-    { find: "@base-ui/react/tooltip", replacement: runtime.baseTooltip },
-    { find: "class-variance-authority", replacement: runtime.cva },
-    { find: "clsx", replacement: runtime.clsx },
+    { find: /^@cloudflare\/kumo$/u, replacement: runtime.kumo },
+    { find: "@cloudflare/kumo/styles/standalone", replacement: runtime.kumoStyle },
     { find: "lenis", replacement: runtime.lenis },
     { find: "lucide-react", replacement: runtime.lucide },
     { find: "sonner", replacement: runtime.sonner },
-    { find: "tailwind-merge", replacement: runtime.tailwindMerge },
     { find: "@mdxeditor/editor/style.css", replacement: runtime.mdxEditorStyle },
     { find: "@mdxeditor/editor", replacement: runtime.mdxEditor },
+    {
+      find: /^monaco-editor\/editor\/editor\.worker\.js(?:\?worker)?$/u,
+      replacement: `${runtime.monacoWorker}?worker`
+    },
+    {
+      find: /^monaco-editor\/languages\/definitions\/markdown\/register\.js$/u,
+      replacement: runtime.monacoMarkdown
+    },
+    { find: /^monaco-editor$/u, replacement: runtime.monaco },
     { find: "@fontsource/ibm-plex-sans/400.css", replacement: runtime.plexSans400 },
     { find: "@fontsource/ibm-plex-sans/500.css", replacement: runtime.plexSans500 },
     { find: "@fontsource/ibm-plex-sans/600.css", replacement: runtime.plexSans600 },
@@ -983,7 +1005,10 @@ function studioAliases(runtime: StudioRuntimePaths) {
     { find: "@fontsource/ibm-plex-serif/600.css", replacement: runtime.plexSerif600 },
     { find: "@fontsource/ibm-plex-mono/400.css", replacement: runtime.plexMono400 },
     { find: "@fontsource/ibm-plex-mono/500.css", replacement: runtime.plexMono500 },
-    { find: "@fontsource/ibm-plex-mono/600.css", replacement: runtime.plexMono600 }
+    { find: "@fontsource/ibm-plex-mono/600.css", replacement: runtime.plexMono600 },
+    { find: "@scribe-sdk/styles/foundation.css", replacement: runtime.foundation },
+    { find: "@scribe-sdk/styles/default.css", replacement: runtime.default },
+    { find: "@scribe-sdk/styles/tailwind.css", replacement: runtime.tailwind }
   ];
 }
 
@@ -991,8 +1016,68 @@ function studioImportPath(specifier: string): string {
   return fileURLToPath(import.meta.resolve(specifier));
 }
 
+const studioSourceMappedElements = new Set([
+  "article", "aside", "blockquote", "div", "figure", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6",
+  "hr", "li", "ol", "p", "pre", "section", "table", "ul"
+]);
+
+function rehypeStudioSourceLines() {
+  return (tree: unknown) => {
+    annotateStudioSourceLines(tree);
+  };
+}
+
+function annotateStudioSourceLines(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const child of value) annotateStudioSourceLines(child);
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  const node = value as Record<string, unknown>;
+  const position = node.position as { readonly start?: { readonly line?: unknown } } | undefined;
+  const line = position?.start?.line;
+  if (Number.isSafeInteger(line)) {
+    if (node.type === "element" && typeof node.tagName === "string" && studioSourceMappedElements.has(node.tagName)) {
+      const properties = (node.properties ??= {}) as Record<string, unknown>;
+      properties["data-scribe-source-line"] = String(line);
+    } else if (node.type === "mdxJsxFlowElement") {
+      const attributes = Array.isArray(node.attributes) ? node.attributes : (node.attributes = []);
+      attributes.push({
+        type: "mdxJsxAttribute",
+        name: "data-scribe-source-line",
+        value: String(line)
+      });
+    }
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (key !== "position") annotateStudioSourceLines(child);
+  }
+}
+
+function recmaStudioRefreshBoundary() {
+  return (tree: unknown) => {
+    renameGeneratedMdxBody(tree);
+  };
+}
+
+function renameGeneratedMdxBody(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const child of value) renameGeneratedMdxBody(child);
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  const node = value as Record<string, unknown>;
+  if (node.type === "Identifier" && node.name === "_createMdxContent") {
+    // React Refresh recognizes the generated MDX body as a boundary only when its identifier is capitalized.
+    node.name = "MdxContentBody";
+  }
+  for (const child of Object.values(node)) renameGeneratedMdxBody(child);
+}
+
 function previewModule(mode: StyleMode, runtime: StudioRuntimePaths, hostCss?: string): string {
   const hostImport = hostCss === undefined ? "" : `import ${JSON.stringify(`/@fs/${normalizePath(hostCss)}`)};`;
+  const hostArticleClassName = JSON.stringify(studioPreviewArticleClassName(mode));
+  const mirrorsHostDarkClass = mode === "tailwind";
   const moduleImport = (path: string) => JSON.stringify(`/@fs/${normalizePath(path)}`);
   return `import * as React from "react";
 import { createRoot } from "react-dom/client";
@@ -1010,8 +1095,8 @@ import ${moduleImport(runtime.plexMono600)};
 import ${moduleImport(runtime[mode])};
 ${hostImport}
 import Article from "virtual:scribe-studio-article";
-const theme = new URLSearchParams(location.search).get("theme") === "dark" ? "dark" : "light";
-function Wrapper(props) { return React.createElement(Publication, { ...props, "data-theme": theme }); }
+const studioHostArticleClassName = ${hostArticleClassName};
+const studioMirrorsHostDarkClass = ${mirrorsHostDarkClass};
 function MissingAsset({ path, kind = "image" }) {
   return React.createElement("div", { className: "scribe-studio-missing-asset", role: "status" },
     React.createElement("strong", null, kind === "banner" ? "Banner image not found" : "Image not found"),
@@ -1045,26 +1130,72 @@ function StudioImage(props) {
 if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
   new Lenis({ autoRaf: true, smoothWheel: true, gestureOrientation: "vertical", anchors: true });
 }
-const components = createScribeComponents({ components: { wrapper: Wrapper, Banner: StudioBanner, img: StudioImage } });
 const previewRoot = createRoot(document.querySelector("#preview"));
-function renderArticle(ArticleComponent) {
-  previewRoot.render(React.createElement(ArticleComponent, { components }));
+const PreviewThemeContext = React.createContext("dark");
+function StudioWrapper({ children, ...props }) {
+  const theme = React.useContext(PreviewThemeContext);
+  const articleChildren = studioHostArticleClassName
+    ? React.createElement("div", { className: studioHostArticleClassName, "data-scribe-studio-host-article": "" }, children)
+    : children;
+  return React.createElement(Publication, { ...props, "data-theme": theme }, articleChildren);
 }
-renderArticle(Article);
-if (import.meta.hot) {
-  import.meta.hot.accept("virtual:scribe-studio-article", (module) => {
-    if (module?.default) renderArticle(module.default);
-  });
+const previewComponents = createScribeComponents({
+  components: { wrapper: StudioWrapper, Banner: StudioBanner, img: StudioImage }
+});
+function PreviewApp() {
+  const [theme, setTheme] = React.useState("dark");
+  React.useLayoutEffect(() => {
+    if (!studioMirrorsHostDarkClass) return;
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    return () => document.documentElement.classList.remove("dark");
+  }, [theme]);
+  React.useEffect(() => {
+    const receiveTheme = (event) => {
+      if (event.origin !== location.origin || event.data?.type !== "scribe:theme") return;
+      if (event.data.theme === "light" || event.data.theme === "dark") setTheme(event.data.theme);
+    };
+    addEventListener("message", receiveTheme);
+    return () => removeEventListener("message", receiveTheme);
+  }, []);
+  React.useEffect(() => {
+    const receiveReveal = (event) => {
+      if (event.origin !== location.origin || event.data?.type !== "scribe:reveal-source") return;
+      const line = Number(event.data.line);
+      if (!Number.isSafeInteger(line) || line < 1) return;
+      const candidates = Array.from(document.querySelectorAll("[data-scribe-source-line]"));
+      const target = candidates.reduce((closest, element) => {
+        const elementLine = Number(element.getAttribute("data-scribe-source-line"));
+        if (!Number.isSafeInteger(elementLine)) return closest;
+        if (closest === null) return element;
+        const closestLine = Number(closest.getAttribute("data-scribe-source-line"));
+        const elementDistance = elementLine <= line ? line - elementLine : Number.POSITIVE_INFINITY;
+        const closestDistance = closestLine <= line ? line - closestLine : Number.POSITIVE_INFINITY;
+        return elementDistance < closestDistance ? element : closest;
+      }, null);
+      target?.scrollIntoView({
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "center"
+      });
+    };
+    addEventListener("message", receiveReveal);
+    return () => removeEventListener("message", receiveReveal);
+  }, []);
+  return React.createElement(
+    PreviewThemeContext.Provider,
+    { value: theme },
+    React.createElement(Article, { components: previewComponents })
+  );
 }
+previewRoot.render(React.createElement(PreviewApp));
 `;
 }
 
 function studioHtml(sessionToken: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="scribe-studio-session" content="${sessionToken}"><title>Scribe Studio</title></head><body><div id="scribe-studio"></div><script type="module" src="/@scribe-studio/client.tsx"></script></body></html>`;
+  return `<!doctype html><html lang="en" data-mode="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="scribe-studio-session" content="${sessionToken}"><title>Scribe Studio</title></head><body><div id="scribe-studio"></div><script type="module" src="/@scribe-studio/client.tsx"></script></body></html>`;
 }
 
 function previewHtml(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{--font-body:"IBM Plex Sans","Geist Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-heading:var(--font-body);--font-mono:"IBM Plex Mono","Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716;font-family:var(--font-body)}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}.scribe-studio-missing-asset{display:grid;gap:.35rem;align-content:center;min-block-size:7rem;margin-block:1rem;padding:1rem;border:1px dashed color-mix(in oklab,currentColor 30%,transparent);border-radius:.55rem;color:color-mix(in oklab,currentColor 72%,transparent);background:color-mix(in oklab,currentColor 5%,transparent);font:500 .8rem/1.45 var(--font-body)}.scribe-studio-missing-asset strong{color:inherit}.scribe-studio-missing-asset code{overflow-wrap:anywhere;color:inherit;font-family:var(--font-mono)}.scribe-studio-missing-asset[data-loading]{opacity:.65}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{--font-body:"IBM Plex Sans","Geist Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-heading:var(--font-body);--font-mono:"IBM Plex Mono","Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716;font-family:var(--font-body);transition:background-color 180ms ease,color 180ms ease}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}[data-scribe-studio-host-article] :where(table,table caption,table thead,table tbody,table tr,table th,table td,table p,table strong,table em,table a,.scribe-code-frame,.scribe-code-frame__header,.scribe-code-frame__pre,.scribe-code-frame__pre code,.scribe-code-frame__pre code *){color:#171716!important}html.dark [data-scribe-studio-host-article] :where(table,table caption,table thead,table tbody,table tr,table th,table td,table p,table strong,table em,table a,.scribe-code-frame,.scribe-code-frame__header,.scribe-code-frame__pre,.scribe-code-frame__pre code,.scribe-code-frame__pre code *){color:#f5f5f4!important}[data-scribe-studio-host-article] .scribe-banner__metadata{color:var(--text,#171716)!important}.scribe-studio-missing-asset{display:grid;gap:.35rem;align-content:center;min-block-size:7rem;margin-block:1rem;padding:1rem;border:1px dashed color-mix(in oklab,currentColor 30%,transparent);border-radius:.55rem;color:color-mix(in oklab,currentColor 72%,transparent);background:color-mix(in oklab,currentColor 5%,transparent);font:500 .8rem/1.45 var(--font-body)}.scribe-studio-missing-asset strong{color:inherit}.scribe-studio-missing-asset code{overflow-wrap:anywhere;color:inherit;font-family:var(--font-mono)}.scribe-studio-missing-asset[data-loading]{opacity:.65}@media(prefers-reduced-motion:reduce){body{transition:none}}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
 }
 
 function publicState(state: StudioState) {
@@ -1161,7 +1292,6 @@ async function applyDraft(
     readonly compiler: StudioCompiler;
   },
   server: ViteDevServer,
-  previewId: string,
   source: string,
   knownDiagnostics?: StudioDiagnostic[]
 ): Promise<void> {
@@ -1186,8 +1316,21 @@ async function applyDraft(
   context.state.previewSource = source;
   context.state.previewVersion += 1;
   await reloadArticleSafely(server, context.articleId, context.state);
-  const preview = server.moduleGraph.getModuleById(previewId);
-  if (preview) server.moduleGraph.invalidateModule(preview);
+}
+
+async function withRecoveryBaseVersion<T>(
+  state: StudioState,
+  baseDiskVersion: string,
+  action: () => Promise<T>
+): Promise<T> {
+  const previousBaseDiskVersion = state.recoveryBaseVersion;
+  state.recoveryBaseVersion = baseDiskVersion;
+  try {
+    return await action();
+  } catch (error) {
+    state.recoveryBaseVersion = previousBaseDiskVersion;
+    throw error;
+  }
 }
 
 async function diagnosticsFor(compiler: StudioCompiler, path: string, source: string): Promise<StudioDiagnostic[]> {
@@ -1314,7 +1457,7 @@ async function listenOnLoopback(server: HttpServer, port: number): Promise<void>
   });
 }
 
-async function closeStudioServers(vite: ViteDevServer, http: HttpServer, compiler: StudioCompiler): Promise<void> {
+export async function closeStudioServers(vite: ViteDevServer, http: HttpServer, compiler: StudioCompiler): Promise<void> {
   http.closeIdleConnections();
   http.closeAllConnections();
   const httpClosed = !http.listening
@@ -1322,15 +1465,23 @@ async function closeStudioServers(vite: ViteDevServer, http: HttpServer, compile
     : new Promise<void>((resolveClose, rejectClose) => {
         http.close((error) => error === undefined ? resolveClose() : rejectClose(error));
       });
+  void httpClosed.catch(() => undefined);
   try {
-    await shutdownStep(compiler.close(), "compiler worker");
-    await shutdownStep(vite.close(), "Vite server");
+    const shutdowns = await Promise.allSettled([
+      shutdownStep(compiler.close(), "compiler worker"),
+      shutdownStep(vite.close(), "Vite server")
+    ]);
+    const failure = shutdowns.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected"
+    );
+    if (failure !== undefined) throw failure.reason;
   } finally {
     await shutdownStep(httpClosed, "Studio HTTP server");
   }
 }
 
 async function shutdownStep(operation: Promise<unknown>, label: string): Promise<void> {
+  void operation.catch(() => undefined);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([

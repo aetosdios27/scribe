@@ -1,20 +1,36 @@
-import { mkdir, mkdtemp, readFile, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createNetServer } from "node:net";
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 import { studioRecoveryKey } from "./studio-recovery.js";
-import { formatStudioStartup, parseStudioArguments, runStudio, startStudio, type StudioHandle } from "./studio.js";
+import {
+  formatStudioStartup,
+  parseStudioArguments,
+  runStudio,
+  startStudio,
+  studioPreviewArticleClassName,
+  closeStudioServers,
+  type StudioHandle
+} from "./studio.js";
 
 const handles: StudioHandle[] = [];
+const fixtureRoots = new Set<string>();
 let operation = 0;
-process.env["SCRIBE_STUDIO_STATE_DIR"] = join(tmpdir(), `scribe-studio-vitest-${process.pid}`);
-afterEach(async () => Promise.all(handles.splice(0).map((handle) => handle.close())));
+const studioStateRoot = join(tmpdir(), `scribe-studio-vitest-${process.pid}`);
+process.env["SCRIBE_STUDIO_STATE_DIR"] = studioStateRoot;
+afterEach(async () => {
+  await Promise.all(handles.splice(0).map((handle) => handle.close()));
+  await Promise.all([...fixtureRoots].map((root) => rm(root, { force: true, recursive: true })));
+  fixtureRoots.clear();
+});
+afterAll(async () => rm(studioStateRoot, { force: true, recursive: true }));
 
 async function fixture(name = "article.mdx", source = "# Peer states\n"): Promise<{ root: string; path: string }> {
   const root = await mkdtemp(join(tmpdir(), "scribe studio test "));
+  fixtureRoots.add(root);
   const path = join(root, "content", name);
   await mkdir(join(root, "content"), { recursive: true });
   await writeFile(path, source);
@@ -73,9 +89,52 @@ it("formats Studio startup with a project-relative source path", () => {
   expect(output).not.toContain(root);
 });
 
+it("mirrors the verified host typography boundary only in Tailwind preview mode", () => {
+  expect(studioPreviewArticleClassName("tailwind")).toBe(
+    "prose max-w-none text-[15px] leading-relaxed prose-p:text-[var(--text)] prose-headings:text-[var(--text)] prose-headings:font-bold prose-headings:tracking-tight prose-a:text-[var(--text)] prose-a:underline-offset-4 hover:prose-a:opacity-70 prose-strong:text-[var(--text)] prose-blockquote:border-l-[var(--text)] prose-blockquote:text-[var(--text)] prose-blockquote:opacity-80 prose-hr:border-[var(--text)]/20 prose-li:text-[var(--text)] prose-ul:text-[var(--text)] prose-img:border prose-img:border-[var(--text)]/20 prose-img:w-full [&_:not(pre)>code]:bg-[var(--text)] [&_:not(pre)>code]:text-[var(--bg)] [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:before:content-none [&_:not(pre)>code]:after:content-none"
+  );
+  expect(studioPreviewArticleClassName("default")).toBeUndefined();
+  expect(studioPreviewArticleClassName("foundation")).toBeUndefined();
+});
+
+it("mirrors the host dark class inside the Tailwind preview document", async () => {
+  const file = await fixture();
+  const hostCss = join(file.root, "src", "app.css");
+  await mkdir(join(file.root, "src"), { recursive: true });
+  await writeFile(hostCss, '@import "@scribe-sdk/styles/tailwind.css";\n.dark { color: white; }\n');
+  const handle = await startStudio({
+    root: file.root,
+    path: file.path,
+    mode: "tailwind",
+    hostCss,
+    port: 0,
+    open: false
+  });
+  handles.push(handle);
+
+  const previewClient = await (await fetch(`${handle.origin}/@scribe-studio/preview.tsx`)).text();
+  expect(previewClient).toContain('document.documentElement.classList.toggle("dark", theme === "dark")');
+  expect(previewClient).toContain("data-scribe-studio-host-article");
+  expect(previewClient).toContain("const PreviewThemeContext = React.createContext");
+  expect(previewClient).toContain("const previewComponents = createScribeComponents");
+  expect(previewClient).not.toContain("React.useMemo");
+
+  const previewDocument = await (await fetch(`${handle.origin}/preview`)).text();
+  expect(previewDocument).toContain("[data-scribe-studio-host-article] :where(table");
+  expect(previewDocument).toContain(".scribe-banner__metadata");
+  expect(previewDocument).toContain(".scribe-banner__metadata{color:var(--text,#171716)!important}");
+  expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#171716!important}");
+  expect(previewDocument).toContain("html.dark [data-scribe-studio-host-article]");
+  expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#f5f5f4!important}");
+
+  const transformedHostCss = await (await fetch(`${handle.origin}/src/app.css`)).text();
+  expect(transformedHostCss).toContain('[data-scribe-table-layout=\\"wide\\"]');
+});
+
 it("surfaces recovery read failures before opening the Studio", async () => {
   const file = await fixture();
   const recoveryRoot = await mkdtemp(join(tmpdir(), "scribe recovery failure "));
+  fixtureRoots.add(recoveryRoot);
   await mkdir(join(recoveryRoot, "recovery", `${studioRecoveryKey(file.path)}.json`), { recursive: true });
 
   await expect(startStudio({
@@ -86,6 +145,25 @@ it("surfaces recovery read failures before opening the Studio", async () => {
     open: false,
     recoveryRoot
   })).rejects.toThrow("Studio could not read its local recovery state");
+});
+
+it("attempts Vite shutdown even when compiler shutdown fails", async () => {
+  const viteClose = vi.fn(async () => undefined);
+  const compilerClose = vi.fn(async () => {
+    throw new Error("compiler close failed");
+  });
+  const http = {
+    listening: false,
+    closeIdleConnections: vi.fn(),
+    closeAllConnections: vi.fn()
+  };
+
+  await expect(closeStudioServers(
+    { close: viteClose } as never,
+    http as never,
+    { close: compilerClose } as never
+  )).rejects.toThrow("compiler close failed");
+  expect(viteClose).toHaveBeenCalledOnce();
 });
 
 it("requires an explicit Studio mode when project detection is ambiguous", async () => {
@@ -403,6 +481,82 @@ it("journals a browser draft against its original disk version when an external 
     recoveryConflict: true
   });
   expect(await readFile(file.path, "utf8")).toBe("# External\n");
+});
+
+it("restores the recovery base version when a Markdown draft journal fails", async () => {
+  const file = await fixture("journal-failure.mdx", "# Original\n");
+  const recoveryRoot = await mkdtemp(join(tmpdir(), "scribe recovery rollback "));
+  fixtureRoots.add(recoveryRoot);
+  const handle = await startStudio({
+    root: file.root,
+    path: file.path,
+    mode: "default",
+    port: 0,
+    open: false,
+    recoveryRoot
+  });
+  handles.push(handle);
+  const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as {
+    diskVersion: string;
+  };
+  const recoveryDirectory = join(recoveryRoot, "recovery");
+  await writeFile(recoveryDirectory, "block recovery directory creation");
+
+  const failed = await mutate(handle, "/__scribe/api/draft", {
+    source: "# Failed journal\n",
+    baseDiskVersion: "poisoned-version"
+  });
+  expect(failed.status).toBe(400);
+
+  await unlink(recoveryDirectory);
+  const retried = await mutate(handle, "/__scribe/api/draft", { source: "# Recovered journal\n" });
+  expect(retried.status).toBe(200);
+  const record = JSON.parse(
+    await readFile(join(recoveryDirectory, `${studioRecoveryKey(file.path)}.json`), "utf8")
+  ) as { baseDiskVersion: string };
+  expect(record.baseDiskVersion).toBe(initial.diskVersion);
+});
+
+it("restores the recovery base version when a Rich Text draft journal fails", async () => {
+  const file = await fixture("rich-journal-failure.mdx", "# Original\n\nA paragraph.\n");
+  const recoveryRoot = await mkdtemp(join(tmpdir(), "scribe rich recovery rollback "));
+  fixtureRoots.add(recoveryRoot);
+  const handle = await startStudio({
+    root: file.root,
+    path: file.path,
+    mode: "default",
+    port: 0,
+    open: false,
+    recoveryRoot
+  });
+  handles.push(handle);
+  const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as {
+    diskVersion: string;
+  };
+  const projected = await (await fetch(`${handle.origin}/__scribe/api/rich-projection`)).json() as {
+    projectionMarkdown: string;
+  };
+  const candidate = projected.projectionMarkdown.replace("A paragraph.", "Edited paragraph.");
+  const recoveryDirectory = join(recoveryRoot, "recovery");
+  await writeFile(recoveryDirectory, "block recovery directory creation");
+
+  const failed = await mutate(handle, "/__scribe/api/rich-draft", {
+    source: candidate,
+    baseSource: "# Original\n\nA paragraph.\n",
+    baseDiskVersion: "poisoned-version"
+  });
+  expect(failed.status).toBe(422);
+
+  await unlink(recoveryDirectory);
+  const retried = await mutate(handle, "/__scribe/api/rich-draft", {
+    source: candidate,
+    baseSource: "# Original\n\nA paragraph.\n"
+  });
+  expect(retried.status).toBe(200);
+  const record = JSON.parse(
+    await readFile(join(recoveryDirectory, `${studioRecoveryKey(file.path)}.json`), "utf8")
+  ) as { baseDiskVersion: string };
+  expect(record.baseDiskVersion).toBe(initial.diskVersion);
 });
 
 it("preserves a pending Rich Text candidate when the source changes externally", async () => {

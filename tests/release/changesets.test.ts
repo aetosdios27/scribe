@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -26,10 +26,14 @@ describe("Changesets release policy", () => {
 
   it("leaves the real repository in the intentional alpha prerelease cycle", async () => {
     const pre = await readJson(join(root, ".changeset", "pre.json"));
+    const fragmentIds = (await readdir(join(root, ".changeset")))
+      .filter((name) => name.endsWith(".md") && name !== "README.md")
+      .map((name) => name.slice(0, -3))
+      .sort();
 
     expect(pre.mode).toBe("pre");
     expect(pre.tag).toBe("alpha");
-    expect(pre.changesets).toEqual(["bright-pages-publish", "calm-sites-publish", "quiet-code-contrasts", "steady-studios-close"]);
+    expect([...pre.changesets].sort()).toEqual(fragmentIds);
     expect(pre.initialVersions).toEqual(Object.fromEntries(publicPackages.map((name) => [name, "0.1.0-alpha.1"])));
   });
 
@@ -52,13 +56,15 @@ describe("Changesets release policy", () => {
       readJson(join(root, "packages", directory, "package.json"))
     ));
     const versions = new Set(manifests.map((manifest) => manifest.version));
+    const [version] = versions;
 
-    expect(versions).toEqual(new Set(["0.1.0-alpha.5"]));
+    expect(versions.size).toBe(1);
+    expect(version).toMatch(/^0\.1\.0-alpha\.\d+$/);
     expect(manifests.every((manifest) => manifest.license === "Apache-2.0")).toBe(true);
     expect(manifests.find((manifest) => manifest.name === "@scribe-sdk/cli")?.dependencies).toMatchObject({
-      "@scribe-sdk/mdx": "0.1.0-alpha.5",
-      "@scribe-sdk/react": "0.1.0-alpha.5",
-      "@scribe-sdk/styles": "0.1.0-alpha.5"
+      "@scribe-sdk/mdx": version,
+      "@scribe-sdk/react": version,
+      "@scribe-sdk/styles": version
     });
     expect(JSON.stringify(manifests)).not.toContain("workspace:");
   });
@@ -76,6 +82,7 @@ describe("Changesets release policy", () => {
         expect(changelog).toContain("Restore strict React 19 typechecking for Vite MDX configurations");
       }
       expect(changelog).toContain(`## 0.1.0-alpha.5`);
+      expect(changelog).toContain(`## 0.1.0-alpha.6`);
       if (directory === "styles") {
         expect(changelog).toContain("Keep compile-time Shiki foreground and background colors paired in Tailwind mode");
       }

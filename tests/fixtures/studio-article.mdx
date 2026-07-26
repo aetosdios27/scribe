@@ -8,6 +8,24 @@ image: /missing-studio-banner.webp
 
 The local source file remains authoritative while Studio previews this article.
 
+Consecutive paragraphs retain the host website's established rhythm.
+
+## Negotiating the connection
+
+Peers begin with a compact handshake before exchanging framed messages.
+
+### What the reader needs
+
+- A protocol identifier
+- A matching info hash
+
+1. Open the connection.
+2. Validate the handshake.
+
+> A peer should reject malformed input before it reaches application state.
+
+Inline `PeerState` values remain visually distinct from block code.
+
 | State | Meaning |
 | --- | --- |
 | `choked` | Upload requests are paused. |
@@ -17,3 +35,12 @@ pub enum PeerState {
     Choked,
 }
 ```
+
+| id | message | meaning |
+| --- | --- | --- |
+| 0 | `choke` | I am not serving you. |
+| 1 | `not interested` | You currently have no pieces I want. |
+
+| id | message | payload | offset | length | direction | state | notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 7 | `piece` | block | 0 | 16384 | inbound | complete | A deliberately wide protocol row. |

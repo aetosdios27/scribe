@@ -4,40 +4,35 @@ export interface StudioClientImports {
   readonly reactDomRoot: string;
   readonly reactJsxRuntime: string;
   readonly reactJsxDevRuntime: string;
-  readonly baseButton: string;
-  readonly baseToggle: string;
-  readonly baseToggleGroup: string;
-  readonly baseTooltip: string;
-  readonly cva: string;
-  readonly clsx: string;
+  readonly kumo: string;
+  readonly kumoStyle: string;
   readonly lenis: string;
   readonly lucide: string;
   readonly sonner: string;
-  readonly tailwindMerge: string;
   readonly mdxEditor: string;
   readonly mdxEditorStyle: string;
+  readonly monaco: string;
+  readonly monacoMarkdown: string;
+  readonly monacoWorker: string;
 }
 
 export function studioClientModule(_paths: StudioClientImports): string {
   return String.raw`import * as React from "react";
 import { createRoot } from "react-dom/client";
-import { Button as BaseButton } from "@base-ui/react/button";
-import { Toggle } from "@base-ui/react/toggle";
-import { ToggleGroup } from "@base-ui/react/toggle-group";
-import { Tooltip } from "@base-ui/react/tooltip";
-import { cva } from "class-variance-authority";
-import { clsx } from "clsx";
+	import { Button, Select, Tooltip, TooltipProvider } from "@cloudflare/kumo";
 import Lenis from "lenis";
+import * as monaco from "monaco-editor";
+import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
+import "monaco-editor/languages/definitions/markdown/register.js";
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bold, Check, ChevronDown, Circle,
-  ClipboardCopy, Code2, Copy, Edit3, ExternalLink, FileCode2, FileText,
+  Code2, Copy, Edit3, ExternalLink, FileCode2, FileText,
   Image, Link, List, ListOrdered, LoaderCircle, LockKeyhole, Maximize2,
-  Italic, Monitor, Moon, MoreHorizontal, Plus, Redo2, RotateCcw, Save,
-  Settings, Smartphone, Sun, Table2, Tablet, TerminalSquare, Trash2,
+  Italic, Moon, MoreHorizontal, Plus, Redo2, RotateCcw, Save,
+  Settings, Sun, Table2, Trash2,
   TriangleAlert, Undo2, X
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { twMerge } from "tailwind-merge";
 import {
   MDXEditor, BlockTypeSelect, BoldItalicUnderlineToggles, CodeToggle,
   CreateLink, InsertCodeBlock, InsertImage, InsertTable, ListsToggle,
@@ -54,42 +49,89 @@ import "@fontsource/ibm-plex-serif/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/600.css";
-import "@mdxeditor/editor/style.css";
+	import "@cloudflare/kumo/styles/standalone";
+	import "@mdxeditor/editor/style.css";
 import "/@scribe-studio/styles.css";
 
 const { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } = React;
 
-function cn(...values) { return twMerge(clsx(values)); }
+globalThis.MonacoEnvironment = {
+  getWorker() {
+    return new EditorWorker();
+  }
+};
 
-const buttonVariants = cva("ui-button", {
-  variants: {
-    variant: { default: "ui-button--default", ghost: "ui-button--ghost", outline: "ui-button--outline" },
-    size: { default: "ui-button--default-size", sm: "ui-button--sm", icon: "ui-button--icon" }
-  },
-  defaultVariants: { variant: "outline", size: "default" }
+monaco.editor.defineTheme("scribe-studio", {
+  base: "vs-dark",
+  inherit: true,
+  rules: [
+    { token: "", foreground: "D4D4D8" },
+    { token: "keyword", foreground: "60A5FA", fontStyle: "bold" },
+    { token: "keyword.md", foreground: "60A5FA", fontStyle: "bold" },
+    { token: "keyword.table.header", foreground: "A5B4FC", fontStyle: "bold" },
+    { token: "comment", foreground: "8B8B94", fontStyle: "italic" },
+    { token: "comment.content", foreground: "8B8B94", fontStyle: "italic" },
+    { token: "string", foreground: "A8B2C1" },
+    { token: "string.link", foreground: "60A5FA" },
+    { token: "string.target", foreground: "93C5FD" },
+    { token: "variable", foreground: "E4E4E7" },
+    { token: "variable.source", foreground: "D4D4D8" },
+    { token: "strong", foreground: "F4F4F5", fontStyle: "bold" },
+    { token: "emphasis", foreground: "D4D4D8", fontStyle: "italic" },
+    { token: "tag", foreground: "7DD3FC" },
+    { token: "attribute.name.html", foreground: "A5B4FC" },
+    { token: "string.html", foreground: "A8B2C1" }
+  ],
+  colors: {
+    "editor.background": "#111113",
+    "editor.foreground": "#D4D4D8",
+    "editorCursor.foreground": "#2563EB",
+    "editor.selectionBackground": "#2563EB52",
+    "editor.inactiveSelectionBackground": "#2563EB29",
+    "editor.selectionHighlightBackground": "#2563EB1F",
+    "editor.lineHighlightBackground": "#FFFFFF06",
+    "editor.lineHighlightBorder": "#00000000",
+    "editorLineNumber.foreground": "#62626B",
+    "editorLineNumber.activeForeground": "#2563EB",
+    "editorGutter.background": "#111113",
+    "editorIndentGuide.background1": "#28282B",
+    "editorIndentGuide.activeBackground1": "#3F3F46",
+    "editorWhitespace.foreground": "#3F3F46",
+    "editor.findMatchBackground": "#2563EB66",
+    "editor.findMatchHighlightBackground": "#2563EB2B",
+    "editorWidget.background": "#1C1C1F",
+    "editorWidget.border": "#29292D",
+    "scrollbar.shadow": "#00000000",
+    "scrollbarSlider.background": "#52525B66",
+    "scrollbarSlider.hoverBackground": "#71717A80",
+    "scrollbarSlider.activeBackground": "#2563EB80",
+    "focusBorder": "#2563EB"
+  }
 });
 
-function Button({ className, variant, size, ...props }) {
-  return <BaseButton className={cn(buttonVariants({ variant, size }), className)} {...props} />;
+	function Hint({ label, children }) {
+	  return <Tooltip content={label} delay={350} render={children} />;
 }
 
-function Hint({ label, children }) {
-  return <Tooltip.Root>
-    <Tooltip.Trigger render={children} />
-    <Tooltip.Portal><Tooltip.Positioner sideOffset={8}><Tooltip.Popup className="ui-tooltip">{label}</Tooltip.Popup></Tooltip.Positioner></Tooltip.Portal>
-  </Tooltip.Root>;
-}
+const viewportOptions = [
+  { value: "fit", label: "Fit pane" },
+  { value: "desktop", label: "Desktop" },
+  { value: "tablet", label: "Tablet" },
+  { value: "mobile", label: "Mobile" }
+];
 
-function IconToggle({ label, value, current, icon: Icon }) {
-  return <Hint label={label}><Toggle value={value} aria-label={label} className="ui-toggle" data-active={current === value || undefined}><Icon aria-hidden="true" /></Toggle></Hint>;
-}
-
-function IconToggleGroup({ label, value, options, onChange }) {
-  const selected = Math.max(0, options.findIndex((option) => option.value === value));
-  return <ToggleGroup aria-label={label} className="ui-toggle-group" value={[value]} onValueChange={(next) => { if (next[0]) onChange(next[0]); }} style={{ "--toggle-index": selected, "--toggle-count": options.length }}>
-    {options.map((option) => <IconToggle key={option.value} {...option} current={value} />)}
-  </ToggleGroup>;
-}
+	function ViewportSelect({ value, onChange }) {
+	  return <Select
+	    aria-label="Preview viewport"
+	    className="viewport-select"
+	    size="sm"
+	    value={value}
+	    renderValue={(selected) => viewportOptions.find((option) => option.value === selected)?.label ?? selected}
+	    onValueChange={(next) => { if (typeof next === "string") onChange(next); }}
+	  >
+	    {viewportOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}
+	  </Select>;
+	}
 
 function formatDiagnostics(items) {
   return items.map((item) => {
@@ -217,13 +259,6 @@ async function clearBrowserRecovery(key) {
   });
 }
 
-function Status({ state, richError, writer, connected }) {
-  const hasErrors = richError || state.diagnostics.some((item) => item.severity === "error");
-  const kind = !connected ? "error" : writer === false ? "conflict" : state.conflict ? "conflict" : hasErrors ? "error" : state.dirty ? "dirty" : "ready";
-  const label = !connected ? "Reconnecting" : writer === false ? "Read-only tab" : state.conflict ? "External change" : richError ? "Rich edit rejected" : hasErrors ? "Compilation blocked" : state.dirty ? "Unsaved draft" : "Ready";
-  return <div className="studio-status" data-status={kind} role="status"><span className="studio-status__dot" aria-hidden="true" /><span id="status-text">{label}</span></div>;
-}
-
 function PanelHeading({ icon: Icon, title, state, tabs }) {
   return <div className="panel-heading">
     <div><Icon aria-hidden="true" /><span>{title}</span></div>
@@ -231,57 +266,226 @@ function PanelHeading({ icon: Icon, title, state, tabs }) {
   </div>;
 }
 
-function MarkdownPanel({ state, source, setSource, textareaRef, writer }) {
-  const diagnostics = formatDiagnostics(state.diagnostics);
-  return <section className="studio-panel source-panel" aria-label="Markdown editor">
-    <PanelHeading icon={FileText} title="Markdown" state={state.conflict ? "Conflict" : state.dirty ? "Unsaved" : "Saved"} />
-    <textarea ref={textareaRef} id="source" className="source-textarea" value={source} onChange={(event) => setSource(event.target.value)} readOnly={writer === false} spellCheck="false" aria-label={writer === false ? "Article source (read-only in this tab)" : "Article source"} data-lenis-prevent />
+function frontmatterEditorDecorations(model) {
+  if (model.getLineCount() < 2 || model.getLineContent(1).trim() !== "---") return [];
+  let closingLine = 0;
+  for (let line = 2; line <= model.getLineCount(); line += 1) {
+    if (model.getLineContent(line).trim() === "---") {
+      closingLine = line;
+      break;
+    }
+  }
+  if (!closingLine) return [];
+  const decorations = [1, closingLine].map((line) => ({
+    range: new monaco.Range(line, 1, line, model.getLineMaxColumn(line)),
+    options: { inlineClassName: "source-frontmatter-delimiter" }
+  }));
+  for (let line = 2; line < closingLine; line += 1) {
+    const content = model.getLineContent(line);
+    const match = /^(\s*)([A-Za-z_][\w-]*)(\s*:)(.*)$/.exec(content);
+    if (!match) continue;
+    const keyStart = match[1].length + 1;
+    const keyEnd = keyStart + match[2].length;
+    const delimiterEnd = keyEnd + match[3].length;
+    decorations.push({
+      range: new monaco.Range(line, keyStart, line, keyEnd),
+      options: { inlineClassName: "source-frontmatter-key" }
+    });
+    decorations.push({
+      range: new monaco.Range(line, keyEnd, line, delimiterEnd),
+      options: { inlineClassName: "source-frontmatter-punctuation" }
+    });
+    if (match[4]) {
+      decorations.push({
+        range: new monaco.Range(line, delimiterEnd, line, model.getLineMaxColumn(line)),
+        options: { inlineClassName: "source-frontmatter-value" }
+      });
+    }
+  }
+  return decorations;
+}
+
+function MonacoMarkdownEditor({ value, onChange, onSustainedEdit, editorRef, readOnly }) {
+  const hostRef = useRef(null);
+  const modelRef = useRef(null);
+  const monacoRef = useRef(null);
+  const changeRef = useRef(onChange);
+  const revealRef = useRef(onSustainedEdit);
+  const revealTimer = useRef();
+  const applyingExternalValue = useRef(false);
+
+  useEffect(() => {
+    changeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    revealRef.current = onSustainedEdit;
+  }, [onSustainedEdit]);
+
+  useEffect(() => {
+    if (!hostRef.current) return;
+    const uri = monaco.Uri.parse("inmemory://scribe/" + studioClientId + "/article.mdx");
+    const model = monaco.editor.createModel(value, "markdown", uri);
+    const editor = monaco.editor.create(hostRef.current, {
+      model,
+      theme: "scribe-studio",
+      ariaLabel: readOnly ? "Article source (read-only in this tab)" : "Article source",
+      readOnly,
+      domReadOnly: readOnly,
+      automaticLayout: true,
+      fontFamily: '"IBM Plex Mono", "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace',
+      fontSize: 14,
+      lineHeight: 24,
+      letterSpacing: 0.1,
+      fontWeight: "400",
+      fontLigatures: false,
+      lineNumbers: "on",
+      lineNumbersMinChars: 3,
+      lineDecorationsWidth: 22,
+      glyphMargin: true,
+      folding: false,
+      minimap: { enabled: false },
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      renderLineHighlight: "all",
+      renderLineHighlightOnlyWhenFocus: true,
+      renderWhitespace: "selection",
+      roundedSelection: false,
+      cursorBlinking: "smooth",
+      cursorSmoothCaretAnimation: "on",
+      cursorWidth: 2,
+      scrollBeyondLastLine: false,
+      smoothScrolling: true,
+      wordWrap: "on",
+      wrappingIndent: "same",
+      wrappingStrategy: "advanced",
+      tabSize: 2,
+      insertSpaces: true,
+      stickyScroll: { enabled: false },
+      guides: { indentation: false, bracketPairs: false },
+      bracketPairColorization: { enabled: false },
+      unicodeHighlight: {
+        nonBasicASCII: false,
+        ambiguousCharacters: false,
+        invisibleCharacters: true
+      },
+      padding: { top: 20, bottom: 72 },
+      scrollbar: {
+        verticalScrollbarSize: 9,
+        horizontalScrollbarSize: 9,
+        useShadows: false
+      }
+    });
+    const frontmatterDecorations = editor.createDecorationsCollection(frontmatterEditorDecorations(model));
+    const subscription = model.onDidChangeContent(() => {
+      frontmatterDecorations.set(frontmatterEditorDecorations(model));
+      if (!applyingExternalValue.current) {
+        changeRef.current(model.getValue());
+        clearTimeout(revealTimer.current);
+        revealTimer.current = setTimeout(() => {
+          revealRef.current?.(editor.getPosition()?.lineNumber ?? 1);
+        }, 520);
+      }
+    });
+    modelRef.current = model;
+    monacoRef.current = editor;
+    editorRef.current = {
+      focus() {
+        editor.focus();
+      },
+      setSelectionRange(start, end) {
+        const startPosition = model.getPositionAt(start);
+        const endPosition = model.getPositionAt(end);
+        const range = new monaco.Range(
+          startPosition.lineNumber,
+          startPosition.column,
+          endPosition.lineNumber,
+          endPosition.column
+        );
+        editor.setSelection(range);
+        editor.revealRangeInCenterIfOutsideViewport(range);
+      }
+    };
+    return () => {
+      clearTimeout(revealTimer.current);
+      subscription.dispose();
+      frontmatterDecorations.clear();
+      editorRef.current = null;
+      monacoRef.current = null;
+      modelRef.current = null;
+      editor.dispose();
+      model.dispose();
+    };
+  }, []);
+
+  useEffect(() => {
+    const editor = monacoRef.current;
+    if (!editor) return;
+    editor.updateOptions({
+      ariaLabel: readOnly ? "Article source (read-only in this tab)" : "Article source",
+      readOnly,
+      domReadOnly: readOnly
+    });
+  }, [readOnly]);
+
+  useEffect(() => {
+    const model = modelRef.current;
+    if (!model || model.getValue() === value) return;
+    applyingExternalValue.current = true;
+    monacoRef.current?.pushUndoStop();
+    model.pushEditOperations(
+      [],
+      [{ range: model.getFullModelRange(), text: value }],
+      () => null
+    );
+    monacoRef.current?.pushUndoStop();
+    applyingExternalValue.current = false;
+  }, [value]);
+
+  return <div ref={hostRef} className="source-monaco" data-lenis-prevent />;
+}
+
+	function MarkdownPanel({ state, source, setSource, revealSourceLine, editorRef, writer }) {
+	  const diagnostics = formatDiagnostics(state.diagnostics);
+	  return <section className="studio-panel source-panel" aria-label="Markdown editor">
+	    <div className="source-editor">
+	      <div className="source-code">
+	        <MonacoMarkdownEditor value={source} onChange={setSource} onSustainedEdit={revealSourceLine} editorRef={editorRef} readOnly={writer === false} />
+	      </div>
+	    </div>
     {diagnostics && <pre id="diagnostics" className="diagnostics" aria-live="polite">{diagnostics}</pre>}
   </section>;
 }
 
-const previewPresets = {
-  desktop: { label: "Laptop", width: 1280, height: 800 },
-  tablet: { label: "Tablet", width: 820, height: 1180 },
-  mobile: { label: "Mobile", width: 414, height: 896 }
-};
+	const previewPresets = {
+	  fit: { label: "Fit pane", width: null },
+	  desktop: { label: "Desktop", width: 1280 },
+	  tablet: { label: "Tablet", width: 820 },
+	  mobile: { label: "Mobile", width: 414 }
+	};
 
-function PreviewPanel({ theme, viewport, previewVersion, compact = false }) {
-  const src = "/preview?theme=" + theme;
-  const preset = previewPresets[viewport];
-  const stageRef = useRef(null);
-  const [scale, setScale] = useState(1);
-
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const update = () => {
-      const available = Math.max(1, stage.clientWidth - 36);
-      setScale(Math.min(1, available / preset.width));
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(stage);
-    return () => observer.disconnect();
-  }, [preset.width]);
-
-  const percentage = Math.round(scale * 100);
-  const dimensions = {
-    "--preview-width": preset.width + "px",
-    "--preview-height": preset.height + "px",
-    "--preview-scale": scale,
-    "--preview-scaled-width": preset.width * scale + "px",
-    "--preview-scaled-height": preset.height * scale + "px"
-  };
-  return <section className={cn("studio-panel preview-panel", compact && "preview-panel--compact")} aria-label="Production preview">
-    {!compact && <PanelHeading icon={Maximize2} title="Preview" state="Production renderer" />}
-    <div ref={stageRef} className="preview-stage" data-viewport={viewport}>
-      <div className="preview-device" style={dimensions}>
-        <span className="preview-device__label">{preset.label} · {preset.width} × {preset.height} · {percentage}%</span>
-        <div className="preview-device__frame"><iframe id="preview" title="Scribe article preview" src={src} /></div>
-      </div>
-    </div>
-  </section>;
+	function PreviewPanel({ theme, viewport, previewVersion, revealRequest, compact = false }) {
+	  const iframeRef = useRef(null);
+	  const preset = previewPresets[viewport];
+	  const dimensions = { "--preview-width": preset.width === null ? "100%" : preset.width + "px" };
+	  const syncTheme = useCallback(() => {
+	    iframeRef.current?.contentWindow?.postMessage({ type: "scribe:theme", theme }, location.origin);
+	  }, [theme]);
+	  useEffect(syncTheme, [syncTheme]);
+	  useEffect(() => {
+	    if (!revealRequest) return;
+	    iframeRef.current?.contentWindow?.postMessage({
+	      type: "scribe:reveal-source",
+	      line: revealRequest.line
+	    }, location.origin);
+	  }, [previewVersion, revealRequest]);
+	  return <section className={"studio-panel preview-panel" + (compact ? " preview-panel--compact" : "")} aria-label="Production preview">
+	    <div className="preview-stage" data-viewport={viewport}>
+	      <div className="preview-device" style={dimensions} data-preview-version={previewVersion}>
+	        <iframe ref={iframeRef} id="preview" title="Scribe article preview" src="/preview" onLoad={syncTheme} />
+	      </div>
+	    </div>
+	  </section>;
 }
 
 const RichContext = createContext({ islands: [], editInMarkdown: () => {} });
@@ -384,7 +588,8 @@ function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, 
           revision: body.revision,
           projectionMarkdown: body.projectionMarkdown,
           islands: body.islands,
-          baseSource: body.source
+          baseSource: body.source,
+          baseDiskVersion: body.diskVersion
         });
         return true;
       }
@@ -467,20 +672,87 @@ function SecondaryPane({ tab, setTab, source, state, theme, viewport }) {
   </section>;
 }
 
-function Workspace({ authorMode, state, source, setSource, textareaRef, theme, viewport, richSession, setRichSession, richError, setRichError, setAuthorMode, setRichPending, preserveRichCandidate, registerRichFlush, revealProtected, writer }) {
-  if (authorMode === "markdown") {
-    return <div className="studio-workspace studio-workspace--markdown">
-      <MarkdownPanel state={state} source={source} setSource={setSource} textareaRef={textareaRef} writer={writer} />
-      <PreviewPanel theme={theme} viewport={viewport} previewVersion={state.previewVersion} />
-    </div>;
-  }
-  return <div className="studio-workspace studio-workspace--rich">
-    <RichEditor session={richSession} state={state} registerFlush={registerRichFlush} onPendingChange={setRichPending} onRecoveryCandidate={preserveRichCandidate} onEditInMarkdown={revealProtected} onRejected={(message) => { setRichError(message); toast.error(message); }} onAccepted={(body, nextSession, applyState = true) => {
-      setRichError("");
-      setRichSession(nextSession);
-      if (applyState) setAuthorMode(body);
-    }} />
-    <SecondaryPane tab={richSession.tab} setTab={(tab) => setRichSession((current) => ({ ...current, tab }))} source={source} state={state} theme={theme} viewport={viewport} />
+function splitBoundsForWidth(width) {
+  const minimumSplit = Math.min(42, 320 / width * 100);
+  return { minimumSplit, maximumSplit: 100 - minimumSplit };
+}
+
+function Workspace({ state, source, setSource, revealSourceLine, revealRequest, editorRef, theme, viewport, writer }) {
+  const workspaceRef = useRef(null);
+  const dragging = useRef(false);
+  const dragOffset = useRef(0);
+  const [split, setSplit] = useState(50);
+  const [minimumSplit, setMinimumSplit] = useState(25);
+
+  const fitSelectedViewport = useCallback(() => {
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width < 1) return;
+    const { minimumSplit: minimum, maximumSplit } = splitBoundsForWidth(bounds.width);
+    setMinimumSplit(minimum);
+    if (viewport === "fit") {
+      setSplit(50);
+      return;
+    }
+    const target = (bounds.width - previewPresets[viewport].width - 1) / bounds.width * 100;
+    setSplit(Math.min(maximumSplit, Math.max(minimum, target)));
+  }, [viewport]);
+
+  useEffect(() => {
+    fitSelectedViewport();
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const observer = new ResizeObserver(fitSelectedViewport);
+    observer.observe(workspace);
+    return () => observer.disconnect();
+  }, [fitSelectedViewport]);
+
+  const updateSplit = useCallback((clientX) => {
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width < 1) return;
+    const { minimumSplit: minimum, maximumSplit } = splitBoundsForWidth(bounds.width);
+    setMinimumSplit(minimum);
+    setSplit(Math.min(maximumSplit, Math.max(minimum, (clientX - bounds.left) / bounds.width * 100)));
+  }, []);
+
+  const finishDrag = useCallback((event) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    document.body.classList.remove("is-resizing-studio");
+  }, []);
+
+  return <div ref={workspaceRef} className="studio-workspace studio-workspace--markdown" style={{ "--studio-split": split + "%" }}>
+    <MarkdownPanel state={state} source={source} setSource={setSource} revealSourceLine={revealSourceLine} editorRef={editorRef} writer={writer} />
+    <div
+      className="studio-splitter"
+      role="separator"
+      aria-label="Resize editor and preview"
+      aria-orientation="vertical"
+      aria-valuemin={Math.round(minimumSplit)}
+      aria-valuemax={Math.round(100 - minimumSplit)}
+      aria-valuenow={Math.round(split)}
+      tabIndex="0"
+      onPointerDown={(event) => {
+        dragging.current = true;
+        const divider = event.currentTarget.getBoundingClientRect();
+        dragOffset.current = event.clientX - (divider.left + divider.width / 2);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        document.body.classList.add("is-resizing-studio");
+      }}
+	      onPointerMove={(event) => { if (dragging.current) updateSplit(event.clientX - dragOffset.current); }}
+	      onPointerUp={finishDrag}
+	      onPointerCancel={finishDrag}
+	      onDoubleClick={() => setSplit(50)}
+	      onKeyDown={(event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        setSplit((current) => Math.min(
+          100 - minimumSplit,
+          Math.max(minimumSplit, current + (event.key === "ArrowLeft" ? -2 : 2))
+        ));
+      }}
+    />
+    <PreviewPanel theme={theme} viewport={viewport} previewVersion={state.previewVersion} revealRequest={revealRequest} />
   </div>;
 }
 
@@ -490,15 +762,17 @@ function StudioApp() {
   const [authorMode, setAuthorModeState] = useState("markdown");
   const [richSession, setRichSession] = useState(null);
   const [richError, setRichError] = useState("");
-  const [viewport, setViewport] = useState("desktop");
+  const [viewport, setViewport] = useState("fit");
   const [theme, setTheme] = useState("dark");
-  const [copyStatus, setCopyStatus] = useState("");
+  const [savePhase, setSavePhase] = useState("idle");
   const [richPending, setRichPending] = useState(false);
   const [writer, setWriter] = useState(null);
   const [connected, setConnected] = useState(true);
+  const [previewReveal, setPreviewReveal] = useState(null);
+  const previewRevealSequence = useRef(0);
   const diskVersion = useRef("");
   const draftBaseDiskVersion = useRef("");
-  const textareaRef = useRef(null);
+  const sourceEditorRef = useRef(null);
   const updateTimer = useRef();
   const richFlushRef = useRef(null);
   const pendingSelection = useRef(null);
@@ -525,22 +799,52 @@ function StudioApp() {
   const updateSource = useCallback((next) => {
     sourceRef.current = next;
     setSource(next);
+    setSavePhase("idle");
+  }, []);
+
+  const revealSourceLine = useCallback((line) => {
+    previewRevealSequence.current += 1;
+    setPreviewReveal({ line, sequence: previewRevealSequence.current });
   }, []);
 
   const applyRichState = useCallback((body) => apply(body, true), [apply]);
 
+  const putDraft = useCallback(async (nextSource, options = {}) => {
+    const { response, body } = await request("/__scribe/api/draft", {
+      method: "PUT",
+      body: JSON.stringify({
+        source: nextSource,
+        externalConflict: options.externalConflict ?? browserRecoveryConflict.current,
+        baseDiskVersion: draftBaseDiskVersion.current
+      })
+    });
+    if (!response.ok || typeof body.source !== "string") {
+      toast.error(body.error || "Studio could not preserve this draft.");
+      return false;
+    }
+    browserRecoveryConflict.current = false;
+    apply(body, options.replaceSource ?? false);
+    return body;
+  }, [apply]);
+
   useEffect(() => {
     let active = true;
     let events;
+    let openRetry;
+    let openErrorShown = false;
     const openDocument = async () => {
       const { response, body } = await request("/__scribe/api/document");
       if (!response.ok || typeof body.source !== "string") {
         if (active) {
           setConnected(false);
-          toast.error(body.error || "Studio could not load the local document.");
+          if (!openErrorShown) {
+            openErrorShown = true;
+            toast.error(body.error || "Studio could not load the local document.");
+          }
         }
         return false;
       }
+      openErrorShown = false;
       apply(body, true);
       try {
         const recovered = await readBrowserRecovery(body.recoveryKey);
@@ -605,15 +909,7 @@ function StudioApp() {
       if (body.diskVersion !== diskVersion.current) {
         const localPending = sourceRef.current !== serverSourceRef.current;
         if (localPending) {
-          const preserved = await request("/__scribe/api/draft", {
-            method: "PUT",
-            body: JSON.stringify({
-              source: sourceRef.current,
-              externalConflict: true,
-              baseDiskVersion: draftBaseDiskVersion.current
-            })
-          });
-          if (typeof preserved.body.source === "string") apply(preserved.body, false);
+          await putDraft(sourceRef.current, { externalConflict: true });
           return;
         }
         apply(body, !body.dirty);
@@ -621,18 +917,26 @@ function StudioApp() {
         apply(body, !body.dirty);
       }
     };
-    void openDocument().then((opened) => {
-      if (!active || !opened) return;
-      events = new EventSource("/__scribe/api/events");
-      events.onopen = () => setConnected(true);
-      events.onerror = () => setConnected(false);
-      events.onmessage = () => void refresh();
-    });
+    const scheduleOpenDocument = () => {
+      void openDocument().then((opened) => {
+        if (!active) return;
+        if (!opened) {
+          openRetry = setTimeout(scheduleOpenDocument, 500);
+          return;
+        }
+        events = new EventSource("/__scribe/api/events");
+        events.onopen = () => setConnected(true);
+        events.onerror = () => setConnected(false);
+        events.onmessage = () => void refresh();
+      });
+    };
+    scheduleOpenDocument();
     return () => {
       active = false;
+      clearTimeout(openRetry);
       events?.close();
     };
-  }, [apply]);
+  }, [apply, putDraft]);
 
   useEffect(() => {
     if (!state?.recoveryKey || !browserRecoveryReady.current) return;
@@ -688,29 +992,17 @@ function StudioApp() {
   useEffect(() => {
     if (authorMode !== "markdown" || !state || source === state.source) return;
     clearTimeout(updateTimer.current);
-    updateTimer.current = setTimeout(async () => {
-      const { response, body } = await request("/__scribe/api/draft", {
-        method: "PUT",
-        body: JSON.stringify({
-          source,
-          externalConflict: browserRecoveryConflict.current,
-          baseDiskVersion: draftBaseDiskVersion.current
-        })
-      });
-      if (response.ok) browserRecoveryConflict.current = false;
-      if (typeof body.source === "string") apply(body);
-      if (!response.ok) toast.error(body.error || "Studio could not preserve this draft.");
-    }, 280);
+    updateTimer.current = setTimeout(() => void putDraft(source), 280);
     return () => clearTimeout(updateTimer.current);
-  }, [source, state, apply, authorMode]);
+  }, [source, state, authorMode, putDraft]);
 
   useEffect(() => {
     if (authorMode !== "markdown" || !pendingSelection.current) return;
     const range = pendingSelection.current;
     pendingSelection.current = null;
     requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(range.start, range.end);
+      sourceEditorRef.current?.focus();
+      sourceEditorRef.current?.setSelectionRange(range.start, range.end);
     });
   }, [authorMode]);
 
@@ -723,22 +1015,8 @@ function StudioApp() {
   const flushMarkdown = useCallback(async () => {
     clearTimeout(updateTimer.current);
     if (!state || source === state.source) return state;
-    const { response, body } = await request("/__scribe/api/draft", {
-      method: "PUT",
-      body: JSON.stringify({
-        source,
-        externalConflict: browserRecoveryConflict.current,
-        baseDiskVersion: draftBaseDiskVersion.current
-      })
-    });
-    if (response.ok) browserRecoveryConflict.current = false;
-    if (!response.ok || typeof body.source !== "string") {
-      toast.error(body.error || "Studio could not preserve this draft.");
-      return state;
-    }
-    apply(body, true);
-    return body;
-  }, [state, source, apply]);
+    return putDraft(source, { replaceSource: true });
+  }, [state, source, putDraft]);
 
   const enterRich = useCallback(async () => {
     if (writer === false) {
@@ -808,17 +1086,29 @@ function StudioApp() {
       toast.error("This tab is read-only while another Studio tab owns the draft.");
       return;
     }
+    setSavePhase("saving");
     if (authorMode === "rich" && richFlushRef.current) {
       const accepted = await richFlushRef.current();
-      if (!accepted) return;
-    } else await flushMarkdown();
+      if (!accepted) {
+        setSavePhase("error");
+        return;
+      }
+    } else {
+      const flushed = await flushMarkdown();
+      if (!flushed) {
+        setSavePhase("error");
+        return;
+      }
+    }
     const saved = await request("/__scribe/api/save", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedDiskVersion: diskVersion.current }) });
     if (saved.response.ok) {
       apply(saved.body, true);
+      setSavePhase("idle");
       void clearBrowserRecovery(saved.body.recoveryKey).catch(() => undefined);
       toast.success("Saved to " + saved.body.sourcePath);
     } else {
       if (typeof saved.body.source === "string") apply(saved.body, true);
+      setSavePhase("error");
       toast.error(saved.body.error || "Could not save the article");
     }
   }, [state, authorMode, flushMarkdown, apply, writer]);
@@ -845,11 +1135,38 @@ function StudioApp() {
 
   const lines = source.split("\n").length;
   const words = source.trim() ? source.trim().split(/\s+/).length : 0;
-  const copyDiagnostics = async () => {
-    const diagnostics = formatDiagnostics(state.diagnostics) || richError;
-    if (!diagnostics) return;
-    try { await navigator.clipboard.writeText(diagnostics); setCopyStatus("Diagnostics copied"); toast.success("Diagnostics copied"); }
-    catch { setCopyStatus("Could not copy diagnostics"); toast.error("Clipboard access is unavailable"); }
+  const saveStatus = writer === false
+    ? "readonly"
+    : state.conflict
+      ? "conflict"
+    : savePhase === "saving"
+      ? "saving"
+      : savePhase === "error"
+        ? "error"
+        : hasUnwrittenChanges
+          ? "save"
+          : "saved";
+  const saveLabel = { conflict: "Resolve conflict", readonly: "Read-only", saving: "Saving…", error: "Error", save: "Save", saved: "Saved" }[saveStatus];
+  const SaveIcon = saveStatus === "saving"
+    ? LoaderCircle
+    : saveStatus === "saved"
+      ? Check
+      : saveStatus === "readonly"
+        ? LockKeyhole
+        : saveStatus === "conflict" || saveStatus === "error"
+          ? TriangleAlert
+          : Save;
+  const saveHint = saveStatus === "conflict"
+    ? "The source changed on disk. Review the conflict before saving."
+    : saveStatus === "readonly"
+      ? "Another Studio tab currently owns this draft."
+      : "Save changes to " + state.sourcePath;
+  const ThemeIcon = theme === "dark" ? Sun : Moon;
+  const themeLabel = theme === "dark" ? "Switch preview to light mode" : "Switch preview to dark mode";
+  const connectionLabel = !connected ? "Reconnecting" : writer === false ? "Read-only" : state.conflict ? "Conflict" : "Connected";
+  const connectionStatus = !connected ? "error" : writer === false ? "readonly" : state.conflict ? "conflict" : "connected";
+  const revealConflict = () => {
+    document.querySelector("#studio-conflict-card button")?.focus();
   };
   const recoverDiscard = async () => {
     const { response, body } = await request("/__scribe/api/recover-discard", { method: "POST", body: "{}" });
@@ -873,33 +1190,39 @@ function StudioApp() {
       : undefined);
   };
 
-  return <Tooltip.Provider delay={350}><main className="studio-shell">
+	  return <TooltipProvider><main className="studio-shell" data-mode="dark">
     <header className="studio-toolbar">
-      <div className="studio-brand"><span className="studio-mark" aria-hidden="true"><TerminalSquare /></span><div><strong>Scribe Studio</strong><span>Markdown source · visual helper · production renderer</span></div></div>
-      <Status state={state} richError={richError} writer={writer} connected={connected} />
-      <div className="studio-actions">
-        {(state.diagnostics.length > 0 || richError) && <Hint label="Copy diagnostics"><Button id="copy-diagnostics" type="button" size="icon" variant="ghost" aria-label="Copy diagnostics" onClick={copyDiagnostics}><ClipboardCopy aria-hidden="true" /></Button></Hint>}
-        <Button id="save" type="button" variant="default" onClick={save} disabled={writer === false}><Save data-icon="inline-start" aria-hidden="true" />Save <kbd>⌘S</kbd></Button>
+      <div className="studio-toolbar__left">
+        <ViewportSelect value={viewport} onChange={setViewport} />
+        <Hint label={saveHint}>
+	          <Button id="save" type="button" className="save-control" size="sm" variant="secondary" data-save-state={saveStatus} aria-controls={saveStatus === "conflict" ? "studio-conflict-card" : undefined} onClick={saveStatus === "conflict" ? revealConflict : save} disabled={writer === false || savePhase === "saving"}>
+            <SaveIcon data-icon="inline-start" aria-hidden="true" />{saveLabel}
+          </Button>
+        </Hint>
       </div>
+      <Hint label={themeLabel}>
+	        <Button type="button" className="theme-control" shape="square" size="sm" variant="ghost" aria-label={themeLabel} onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}><ThemeIcon aria-hidden="true" /></Button>
+      </Hint>
     </header>
 
-    <div className="studio-controls">
-      <IconToggleGroup label="Authoring mode" value={authorMode} onChange={switchAuthorMode} options={[{ value: "markdown", label: "Markdown", icon: FileText }, { value: "rich", label: "Rich Text", icon: FileCode2 }]} />
-      <span className="control-divider" aria-hidden="true" />
-      <IconToggleGroup label="Preview viewport" value={viewport} onChange={setViewport} options={[{ value: "desktop", label: "Desktop", icon: Monitor }, { value: "tablet", label: "Tablet", icon: Tablet }, { value: "mobile", label: "Mobile", icon: Smartphone }]} />
-      <IconToggleGroup label="Preview appearance" value={theme} onChange={setTheme} options={[{ value: "light", label: "Light", icon: Sun }, { value: "dark", label: "Dark", icon: Moon }]} />
-      <Hint label={state.modeReason}><span className="mode-badge"><Check aria-hidden="true" />{state.mode} detected</span></Hint>
-      <span className="save-contract" data-dirty={hasUnwrittenChanges || undefined}><Save aria-hidden="true" /><span>{hasUnwrittenChanges ? "Draft only — Save writes to" : "Explicit save writes to"}</span><code>{state.sourcePath}</code></span>
-      <span className="document-meta">{lines} lines <i /> {words} words</span>
-    </div>
+    <Workspace state={state} source={source} setSource={updateSource} revealSourceLine={revealSourceLine} revealRequest={previewReveal} editorRef={sourceEditorRef} theme={theme} viewport={viewport} writer={writer} />
 
-    <Workspace authorMode={authorMode} state={state} source={source} setSource={updateSource} textareaRef={textareaRef} theme={theme} viewport={viewport} richSession={richSession} setRichSession={setRichSession} richError={richError} setRichError={setRichError} setAuthorMode={applyRichState} setRichPending={setRichPendingState} preserveRichCandidate={preserveRichCandidate} registerRichFlush={(flush) => { richFlushRef.current = flush; }} revealProtected={revealProtected} writer={writer} />
+    <footer className="studio-statusbar">
+      <span className="studio-statusbar__path" title={state.sourcePath}>{state.sourcePath}</span>
+      <span className="studio-statusbar__meta">
+        <span>{lines.toLocaleString()} lines</span><i aria-hidden="true">·</i>
+        <span>{words.toLocaleString()} words</span><i aria-hidden="true">·</i>
+        <span>{location.host}</span><i aria-hidden="true">·</i>
+        <span>{previewPresets[viewport].width === null ? "Fit" : previewPresets[viewport].width + "px"}</span><i aria-hidden="true">·</i>
+        <span className="connection-status" data-status={connectionStatus}><b aria-hidden="true" />{connectionLabel}</span>
+      </span>
+    </footer>
 
     {richError && <div className="rich-error" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Rich Text edit rejected</strong><span>{richError}</span><small>The Markdown draft was not changed.</small></div><Button type="button" size="sm" onClick={() => switchAuthorMode("markdown")}><FileText data-icon="inline-start" aria-hidden="true" />Edit in Markdown</Button></div>}
-    {state.conflict && <div className="conflict-card" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Source changed outside Studio</strong><span>Your unsaved draft and the disk version are both preserved.</span></div><Button type="button" size="sm" onClick={discard}><RotateCcw data-icon="inline-start" aria-hidden="true" />Reload from disk</Button></div>}
-    <span className="sr-only" aria-live="polite">Rich Text edits are serialized to Markdown. {copyStatus}</span>
-    <Toaster theme="dark" position="bottom-right" richColors closeButton />
-  </main></Tooltip.Provider>;
+    {state.conflict && <div id="studio-conflict-card" className="conflict-card" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Source changed outside Studio</strong><span>Your unsaved draft and the disk version are both preserved.</span></div><Button type="button" size="sm" onClick={discard}><RotateCcw data-icon="inline-start" aria-hidden="true" />Reload from disk</Button></div>}
+    <span className="sr-only" aria-live="polite">{saveLabel}. {connectionLabel}.</span>
+    <Toaster className="studio-toaster" theme="dark" position="bottom-right" offset={{ right: 12, bottom: 42 }} closeButton />
+	  </main></TooltipProvider>;
 }
 
 createRoot(document.querySelector("#scribe-studio")).render(<StudioApp />);
@@ -909,119 +1232,129 @@ createRoot(document.querySelector("#scribe-studio")).render(<StudioApp />);
 export function studioStyles(): string {
   return String.raw`:root {
   color-scheme: dark;
-  --studio-canvas: #000000;
-  --studio-shell: #050505;
-  --studio-panel: #0A0A0A;
-  --studio-panel-raised: #111111;
-  --studio-control: #171717;
-  --studio-border: #282828;
-  --studio-text: #F2F2ED;
-  --studio-muted: #92928B;
-  --studio-acid: #CDFF57;
-  --studio-acid-strong: #BFFF36;
-  --studio-danger: #ff796b;
-  --studio-warning: #f5c96a;
-  --studio-success: #95d798;
-  --studio-radius: 0.625rem;
+  --studio-canvas: #0d0d0f;
+  --studio-shell: #161618;
+  --studio-panel: #111113;
+  --studio-panel-raised: #18181b;
+  --studio-control: #1c1c1f;
+  --studio-control-hover: #232327;
+  --studio-border: #29292d;
+  --studio-border-strong: #3a3a40;
+  --studio-text: #f2f2f3;
+  --studio-muted: #8e8e96;
+  --studio-accent: #2563eb;
+  --studio-accent-strong: #2563eb;
+  --studio-danger: #ef6a68;
+  --studio-warning: #d6a84b;
+  --studio-radius: 0.375rem;
   --studio-font: "IBM Plex Sans", "Geist Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --studio-mono: "IBM Plex Mono", "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
-  --accent-9: var(--studio-acid);
-  --accent-10: var(--studio-acid-strong);
-  --accent-11: var(--studio-acid);
-  --accent-12: #efffc9;
-  --baseBase: var(--studio-panel);
+  --font-sans: var(--studio-font);
+  --font-mono: var(--studio-mono);
+  --color-kumo-canvas: var(--studio-canvas);
+  --color-kumo-elevated: var(--studio-panel-raised);
+  --color-kumo-recessed: var(--studio-canvas);
+  --color-kumo-base: var(--studio-panel);
+  --color-kumo-tint: var(--studio-control-hover);
+  --color-kumo-overlay: var(--studio-panel-raised);
+  --color-kumo-control: var(--studio-control);
+  --color-kumo-interact: var(--studio-border-strong);
+  --color-kumo-fill: var(--studio-border);
+  --color-kumo-fill-hover: var(--studio-control-hover);
+  --color-kumo-brand: var(--studio-accent);
+  --color-kumo-brand-hover: var(--studio-accent);
+  --color-kumo-line: var(--studio-border);
+  --color-kumo-hairline: var(--studio-border);
+  --color-kumo-focus: var(--studio-accent);
+  --text-color-kumo-default: var(--studio-text);
+  --text-color-kumo-strong: #fff;
+  --text-color-kumo-subtle: var(--studio-muted);
+  --text-color-kumo-brand: var(--studio-accent);
+  --text-color-kumo-link: var(--studio-accent);
+  --kumo-button-emphasis-bg: var(--studio-accent);
+  --kumo-button-emphasis-ring: color-mix(in srgb,var(--studio-accent) 70%,#fff);
 }
 * { box-sizing: border-box; }
-html, body, #scribe-studio { min-block-size: 100%; }
+html, body, #scribe-studio { block-size: 100%; min-block-size: 100%; }
 html { background: var(--studio-canvas); }
-body { margin: 0; overflow: hidden; background: var(--studio-canvas); color: var(--studio-text); font: 13px/1.45 var(--studio-font); }
+body { margin: 0; overflow: hidden; background: var(--studio-canvas); color: var(--studio-text); font: 13px/1.4 var(--studio-font); }
 button, textarea, select, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
+* { scrollbar-color:#3f3f46 transparent; scrollbar-width:thin; }
+*::-webkit-scrollbar { inline-size:.625rem; block-size:.625rem; }
+*::-webkit-scrollbar-thumb { border:3px solid transparent; border-radius:999px; background:#3f3f46; background-clip:padding-box; }
+*::-webkit-scrollbar-thumb:hover { background:#52525b; background-clip:padding-box; }
 svg { inline-size: 1rem; block-size: 1rem; stroke-width: 1.8; }
 .sr-only { position: absolute; inline-size: 1px; block-size: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-.studio-shell { block-size: 100vh; min-block-size: 34rem; display: grid; grid-template-rows: 4.5rem 3.5rem minmax(0,1fr); background: var(--studio-shell); }
-.studio-loading { min-block-size: 100vh; display: grid; place-content: center; justify-items: center; gap: .75rem; color: var(--studio-muted); background: var(--studio-shell); }
+.studio-shell { block-size:100vh; min-inline-size:40rem; display:grid; grid-template-rows:2.875rem minmax(0,1fr) 1.75rem; overflow:hidden; background:var(--studio-shell); }
+.studio-loading { min-block-size:100vh; display:grid; place-content:center; justify-items:center; gap:.5rem; color:var(--studio-muted); background:var(--studio-shell); }
 .studio-loading svg { animation: studio-spin .9s linear infinite; }
-.studio-toolbar { min-inline-size: 0; display: grid; grid-template-columns:minmax(14rem,1fr) auto minmax(14rem,1fr); align-items:center; gap:1rem; padding-inline:1.25rem; border-block-end:1px solid var(--studio-border); background:var(--studio-panel); }
-.studio-brand { display:flex; align-items:center; gap:.75rem; min-inline-size:0; }
-.studio-brand > div { min-inline-size:0; }
-.studio-brand strong, .studio-brand span { display:block; }
-.studio-brand strong { font-size:.875rem; letter-spacing:-.015em; }
-.studio-brand > div > span { margin-block-start:.1rem; color:var(--studio-muted); font-size:.6875rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.studio-mark { display:grid; place-items:center; flex:none; inline-size:2.25rem; block-size:2.25rem; border-radius:.42rem; color:#0a0a0a; background:var(--studio-acid); box-shadow:0 0 0 1px #e4ff9b2b inset,0 .4rem 1.4rem #cdff5714; }
-.studio-mark svg { inline-size:1.15rem; block-size:1.15rem; }
-.studio-status { display:inline-flex; align-items:center; gap:.5rem; color:var(--studio-muted); font-size:.75rem; }
-.studio-status__dot { inline-size:.42rem; block-size:.42rem; border-radius:999px; background:var(--studio-muted); box-shadow:0 0 .75rem currentColor; }
-.studio-status[data-status=ready] .studio-status__dot { color:var(--studio-success); background:currentColor; }
-.studio-status[data-status=dirty] .studio-status__dot { color:var(--studio-warning); background:currentColor; }
-.studio-status[data-status=error] .studio-status__dot,.studio-status[data-status=conflict] .studio-status__dot { color:var(--studio-danger); background:currentColor; }
-.studio-actions { display:flex; justify-content:flex-end; align-items:center; gap:.5rem; }
-.ui-button { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; min-block-size:2.25rem; padding-inline:.8rem; border:1px solid transparent; border-radius:.5rem; color:var(--studio-text); background:transparent; font-weight:560; cursor:pointer; transition:color 140ms ease,background 140ms ease,border-color 140ms ease,transform 140ms ease; }
-.ui-button:hover { background:var(--studio-control); border-color:var(--studio-border); }
-.ui-button:active { transform:translateY(1px); }
-.ui-button:focus-visible,.ui-toggle:focus-visible,.secondary-tabs button:focus-visible { outline:2px solid var(--studio-acid); outline-offset:2px; }
-.ui-button:disabled { cursor:not-allowed; opacity:.45; }
-.ui-button--default { color:#050505; background:var(--studio-acid); border-color:var(--studio-acid); }
-.ui-button--default:hover { color:#050505; background:var(--studio-acid-strong); border-color:var(--studio-acid-strong); }
-.ui-button--outline { border-color:var(--studio-border); background:var(--studio-control); }
-.ui-button--ghost { color:var(--studio-muted); }
-.ui-button--ghost:hover { color:var(--studio-text); }
-.ui-button--sm { min-block-size:2rem; padding-inline:.65rem; font-size:.75rem; }
-.ui-button--icon { inline-size:2.25rem; padding:0; }
-.ui-button kbd { margin-inline-start:.2rem; font:600 .62rem/1 var(--studio-mono); opacity:.55; }
-.studio-controls { min-inline-size:0; display:flex; align-items:center; gap:.75rem; padding-inline:1.25rem; border-block-end:1px solid var(--studio-border); background:var(--studio-panel-raised); }
-.control-divider { inline-size:1px; block-size:1.4rem; background:var(--studio-border); }
-.ui-toggle-group { --toggle-size:2.125rem; position:relative; display:grid; grid-template-columns:repeat(var(--toggle-count),var(--toggle-size)); padding:.18rem; border:1px solid var(--studio-border); border-radius:.6rem; background:var(--studio-control); isolation:isolate; }
-.ui-toggle-group::before { content:""; position:absolute; z-index:-1; inset-block:.18rem; inset-inline-start:.18rem; inline-size:var(--toggle-size); border-radius:.42rem; background:var(--studio-acid); transform:translateX(calc(var(--toggle-index) * var(--toggle-size))); transition:transform 180ms cubic-bezier(.2,.8,.2,1); box-shadow:0 .3rem 1rem #0004; }
-.ui-toggle { display:grid; place-items:center; inline-size:var(--toggle-size); block-size:var(--toggle-size); padding:0; border:0; border-radius:.42rem; color:var(--studio-muted); background:transparent; cursor:pointer; transition:color 140ms ease; }
-.ui-toggle[data-active] { color:#050505; }
-.mode-badge { display:inline-flex; align-items:center; gap:.36rem; padding:.34rem .55rem; border:1px solid var(--studio-border); border-radius:999px; color:var(--studio-muted); background:#0c0c0c; font:600 .625rem/1 var(--studio-mono); text-transform:uppercase; letter-spacing:.055em; cursor:help; }
-.mode-badge svg { inline-size:.7rem; block-size:.7rem; color:var(--studio-acid); stroke-width:2.5; }
-.save-contract { min-inline-size:0; display:inline-flex; align-items:center; gap:.38rem; color:var(--studio-muted); font-size:.66rem; white-space:nowrap; }
-.save-contract > svg { flex:none; inline-size:.75rem; block-size:.75rem; }
-.save-contract code { max-inline-size:16rem; overflow:hidden; color:#c8c8c1; font:500 .64rem/1 var(--studio-mono); text-overflow:ellipsis; }
-.save-contract[data-dirty] { color:var(--studio-warning); }
-.save-contract[data-dirty] code { color:#ffe7aa; }
-.document-meta { margin-inline-start:auto; display:inline-flex; align-items:center; gap:.5rem; color:var(--studio-muted); font:.66rem/1 var(--studio-mono); }
-.document-meta i { inline-size:2px; block-size:2px; border-radius:50%; background:currentColor; }
-.studio-workspace { min-block-size:0; display:grid; grid-template-columns:minmax(20rem,46%) minmax(24rem,54%); overflow:hidden; background:var(--studio-canvas); }
-.studio-panel { position:relative; block-size:100%; min-inline-size:0; min-block-size:0; display:grid; grid-template-rows:2.25rem minmax(0,1fr); overflow:hidden; border-inline-end:1px solid var(--studio-border); background:var(--studio-panel); }
-.studio-panel:last-child { border-inline-end:0; }
+.studio-toolbar { min-inline-size:0; display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding-inline:.625rem; border-block-end:1px solid var(--studio-border); background:var(--studio-shell); }
+.studio-toolbar__left { display:flex; align-items:center; gap:.25rem; min-inline-size:0; }
+.viewport-select { min-inline-size:7.25rem; color:var(--studio-text)!important; background:var(--studio-control)!important; font:500 .75rem/1 var(--studio-font)!important; box-shadow:inset 0 0 0 1px var(--studio-border)!important; transition:background-color 140ms ease,box-shadow 140ms ease!important; }
+.viewport-select:hover,.viewport-select[data-popup-open] { background:var(--studio-control-hover)!important; box-shadow:inset 0 0 0 1px var(--studio-border-strong)!important; }
+.viewport-select:focus-visible { box-shadow:inset 0 0 0 1px var(--studio-accent),0 0 0 2px color-mix(in srgb,var(--studio-accent) 28%,transparent)!important; }
+.save-control { min-inline-size:4.875rem; color:var(--studio-text)!important; background:var(--studio-control)!important; box-shadow:inset 0 0 0 1px var(--studio-border)!important; transition:color 140ms ease,background-color 140ms ease,box-shadow 140ms ease!important; }
+.save-control:hover { color:#fff!important; background:var(--studio-control-hover)!important; box-shadow:inset 0 0 0 1px var(--studio-border-strong)!important; }
+.save-control[data-save-state=save],.save-control[data-save-state=saving] { color:#fff!important; background:var(--studio-accent)!important; box-shadow:inset 0 0 0 1px var(--studio-accent)!important; }
+.save-control[data-save-state=saving] svg { animation:studio-spin .7s linear infinite; }
+.save-control[data-save-state=saved] { color:var(--studio-accent)!important; }
+.save-control[data-save-state=readonly] { color:var(--studio-muted)!important; }
+.save-control[data-save-state=conflict] { min-inline-size:7.75rem; color:#f2c66d!important; background:color-mix(in srgb,var(--studio-warning) 10%,var(--studio-control))!important; box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--studio-warning) 52%,var(--studio-border))!important; }
+.save-control[data-save-state=error] { color:var(--studio-danger)!important; box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--studio-danger) 46%,transparent)!important; }
+.theme-control { color:var(--studio-muted)!important; }
+.theme-control:hover { color:var(--studio-text)!important; background:var(--studio-control)!important; }
+.save-control:focus-visible,.theme-control:focus-visible,.secondary-tabs button:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
+.studio-workspace { --studio-split:50%; min-block-size:0; display:grid; grid-template-columns:minmax(20rem,var(--studio-split)) 1px minmax(20rem,1fr); overflow:hidden; background:var(--studio-canvas); transition:grid-template-columns 320ms cubic-bezier(.22,1,.36,1); }
+.studio-splitter { position:relative; z-index:5; min-block-size:0; cursor:col-resize; outline:0; background:var(--studio-border); touch-action:none; }
+.studio-splitter::after { content:""; position:absolute; inset-block:0; inset-inline:-.375rem; }
+.studio-splitter:hover,.studio-splitter:focus-visible { background:var(--studio-accent-strong); }
+.is-resizing-studio,.is-resizing-studio * { cursor:col-resize!important; user-select:none!important; }
+.is-resizing-studio .studio-workspace { transition:none; }
+.studio-panel { position:relative; block-size:100%; min-inline-size:0; min-block-size:0; display:grid; grid-template-rows:minmax(0,1fr); overflow:hidden; background:var(--studio-panel); }
 .panel-heading { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding-inline:.85rem; border-block-end:1px solid var(--studio-border); color:var(--studio-muted); font:600 .625rem/1 var(--studio-mono); text-transform:uppercase; letter-spacing:.085em; }
 .panel-heading > div { display:inline-flex; align-items:center; gap:.45rem; }
 .panel-heading svg { inline-size:.78rem; block-size:.78rem; }
-.panel-state { color:#6f6f69; font-size:.58rem; }
-.source-textarea { inline-size:100%; block-size:100%; min-block-size:0; resize:none; padding:1.25rem 1.4rem 4rem; border:0; outline:0; color:#dddcd6; caret-color:var(--studio-acid); background:var(--studio-panel); font:.84rem/1.72 var(--studio-mono); tab-size:2; }
-.source-panel:focus-within { box-shadow:inset 2px 0 var(--studio-acid); }
-.diagnostics { position:absolute; z-index:3; inset-inline:.85rem; inset-block-end:.85rem; max-block-size:26%; overflow:auto; margin:0; padding:.7rem .8rem; border:1px solid #59322d; border-radius:.45rem; color:#ffaaa0; background:#1a0e0ddb; box-shadow:0 .8rem 2.4rem #0009; font:.68rem/1.55 var(--studio-mono); white-space:pre-wrap; backdrop-filter:blur(14px); }
-.preview-stage { min-inline-size:0; min-block-size:0; display:grid; place-items:start center; overflow:auto; padding:1.1rem; background-color:#111; background-image:linear-gradient(45deg,#151515 25%,transparent 25%),linear-gradient(-45deg,#151515 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#151515 75%),linear-gradient(-45deg,transparent 75%,#151515 75%); background-size:18px 18px; background-position:0 0,0 9px,9px -9px,-9px 0; }
-.preview-device { display:grid; gap:.45rem; inline-size:var(--preview-scaled-width); min-inline-size:0; }
-.preview-device__label { color:#a7a79f; font:600 .6rem/1 var(--studio-mono); letter-spacing:.055em; text-align:center; text-transform:uppercase; }
-.preview-device__frame { position:relative; inline-size:var(--preview-scaled-width); block-size:var(--preview-scaled-height); }
-#preview { position:absolute; inset:0 auto auto 0; display:block; inline-size:var(--preview-width); block-size:var(--preview-height); border:1px solid #2e2e2e; border-radius:.42rem; background:#fff; box-shadow:0 1.2rem 4rem #000b; transform:scale(var(--preview-scale)); transform-origin:top left; }
+.panel-state { color:var(--studio-muted); font-size:.58rem; }
+.source-editor,.source-code,.source-monaco { position:relative; inline-size:100%; block-size:100%; min-inline-size:0; min-block-size:0; overflow:hidden; background:var(--studio-panel); }
+.source-monaco .monaco-editor,.source-monaco .overflow-guard { inline-size:100%!important; block-size:100%!important; }
+.source-monaco .monaco-editor,.source-monaco .monaco-editor-background { background:var(--studio-panel)!important; }
+.source-monaco .monaco-editor.focused { outline:0; }
+.source-monaco .monaco-editor .margin { background:var(--studio-panel)!important; }
+.source-monaco .line-numbers { font-variant-numeric:tabular-nums; text-align:center!important; transition:color 120ms ease; }
+.source-monaco .line-numbers.active-line-number { color:var(--studio-accent)!important; font-weight:600; }
+.source-monaco .source-frontmatter-delimiter { color:#2563eb!important; font-weight:600; }
+.source-monaco .source-frontmatter-key { color:#60a5fa!important; font-weight:500; }
+.source-monaco .source-frontmatter-punctuation { color:#71717a!important; }
+.source-monaco .source-frontmatter-value { color:#d4d4d8!important; }
+.source-monaco .monaco-scrollable-element > .scrollbar > .slider { border-radius:999px; }
+.diagnostics { position:absolute; z-index:3; inset-inline:.75rem; inset-block-end:.75rem; max-block-size:26%; overflow:auto; margin:0; padding:.625rem .75rem; border:1px solid #633a3d; border-radius:var(--studio-radius); color:#ffb4b0; background:#211416; font:.68rem/1.55 var(--studio-mono); white-space:pre-wrap; }
+.preview-stage { min-inline-size:0; min-block-size:0; display:grid; place-items:stretch center; overflow:hidden; padding:0; background:var(--studio-panel); }
+.preview-device { inline-size:min(100%,var(--preview-width)); block-size:100%; min-inline-size:0; overflow:hidden; border:0; border-radius:0; background:#fff; transition:inline-size 320ms cubic-bezier(.22,1,.36,1); }
+#preview { display:block; inline-size:100%; block-size:100%; border:0; background:#fff; }
 .preview-panel--compact { border:0; }
 .preview-panel--compact .preview-stage { block-size:100%; }
 .secondary-tabs { display:inline-flex !important; align-items:center; gap:.2rem !important; padding:.15rem; border:1px solid var(--studio-border); border-radius:.4rem; background:var(--studio-control); }
 .secondary-tabs button { display:inline-flex; align-items:center; gap:.32rem; min-block-size:1.55rem; padding-inline:.48rem; border:0; border-radius:.28rem; color:var(--studio-muted); background:transparent; font:600 .58rem/1 var(--studio-font); text-transform:none; letter-spacing:0; cursor:pointer; }
-.secondary-tabs button[data-active] { color:#050505; background:var(--studio-acid); }
-.markdown-mirror { min-block-size:0; overflow:auto; margin:0; padding:1.25rem 1.4rem 4rem; color:#c8c8c1; background:#080808; font:.78rem/1.68 var(--studio-mono); white-space:pre-wrap; overflow-wrap:anywhere; }
+.secondary-tabs button[data-active] { color:#fff; background:var(--studio-accent); }
+.markdown-mirror { min-block-size:0; overflow:auto; margin:0; padding:1.25rem 1.4rem 4rem; color:#cfd4dc; background:var(--studio-panel); font:.78rem/1.68 var(--studio-mono); white-space:pre-wrap; overflow-wrap:anywhere; }
 .rich-editor-scroll { min-block-size:0; overflow:auto; background:var(--studio-panel); }
-.scribe-rich-editor { min-block-size:100%; color:var(--studio-text); background:var(--studio-panel); --basePageBg:var(--studio-panel); --baseBase:var(--studio-panel); --baseBgSubtle:var(--studio-panel-raised); --baseBg:var(--studio-control); --baseBgHover:#202020; --baseLine:var(--studio-border); --baseBorder:var(--studio-border); --baseSolid:#4b4b46; --baseText:var(--studio-muted); --baseTextContrast:var(--studio-text); --accentBase:var(--studio-panel); --accentBgSubtle:#14190d; --accentBg:#1b2410; --accentBgHover:#263416; --accentLine:#5b752d; --accentBorder:#78983c; --accentSolid:var(--studio-acid); --accentText:var(--studio-acid); --accentTextContrast:#efffc9; }
+.scribe-rich-editor { min-block-size:100%; color:var(--studio-text); background:var(--studio-panel); --basePageBg:var(--studio-panel); --baseBase:var(--studio-panel); --baseBgSubtle:var(--studio-panel-raised); --baseBg:var(--studio-control); --baseBgHover:var(--studio-control-hover); --baseLine:var(--studio-border); --baseBorder:var(--studio-border); --baseSolid:#52525b; --baseText:var(--studio-muted); --baseTextContrast:var(--studio-text); --accentBase:var(--studio-panel); --accentBgSubtle:color-mix(in srgb,var(--studio-accent) 8%,var(--studio-panel)); --accentBg:color-mix(in srgb,var(--studio-accent) 16%,var(--studio-panel)); --accentBgHover:color-mix(in srgb,var(--studio-accent) 24%,var(--studio-panel)); --accentLine:color-mix(in srgb,var(--studio-accent) 42%,var(--studio-border)); --accentBorder:color-mix(in srgb,var(--studio-accent) 62%,var(--studio-border)); --accentSolid:var(--studio-accent); --accentText:color-mix(in srgb,var(--studio-accent) 72%,#fff); --accentTextContrast:#fff; }
 .scribe-rich-editor .mdxeditor { min-block-size:100%; background:transparent; }
-.scribe-rich-editor [class*="_toolbarRoot"] { position:sticky; z-index:4; inset-block-start:0; min-block-size:2.7rem; padding:.38rem .55rem; border:0; border-block-end:1px solid var(--studio-border); border-radius:0; background:#0d0d0df2; backdrop-filter:blur(16px); }
+.scribe-rich-editor [class*="_toolbarRoot"] { position:sticky; z-index:4; inset-block-start:0; min-block-size:2.7rem; padding:.38rem .55rem; border:0; border-block-end:1px solid var(--studio-border); border-radius:0; background:var(--studio-panel-raised); }
 .rich-toolbar-contents { display:flex; align-items:center; gap:.12rem; min-inline-size:max-content; }
 .scribe-rich-editor [class*="_toolbar"] button,.scribe-rich-editor [class*="_toolbar"] [role=button] { color:var(--studio-muted); border-radius:.35rem; }
-.scribe-rich-editor [class*="_toolbar"] button:hover,.scribe-rich-editor [class*="_toolbar"] button[data-state=on] { color:#050505; background:var(--studio-acid); }
-.scribe-rich-editor [class*="_contentEditable"] { min-block-size:calc(100vh - 13rem); padding:clamp(1.3rem,3vw,2.5rem) clamp(1.2rem,4vw,3.5rem) 6rem; outline:0; caret-color:var(--studio-acid); }
+.scribe-rich-editor [class*="_toolbar"] button:hover,.scribe-rich-editor [class*="_toolbar"] button[data-state=on] { color:#fff; background:var(--studio-accent); }
+.scribe-rich-editor [class*="_contentEditable"] { min-block-size:calc(100vh - 6rem); padding:clamp(1.3rem,3vw,2.5rem) clamp(1.2rem,4vw,3.5rem) 6rem; outline:0; caret-color:var(--studio-accent); }
 .rich-content { max-inline-size:74ch; margin-inline:auto; color:var(--studio-text); font:1rem/1.74 "IBM Plex Serif","Source Serif 4",Iowan Old Style,Charter,Georgia,serif; }
 .rich-content h1,.rich-content h2,.rich-content h3,.rich-content h4 { margin-block:1.8em .65em; color:var(--studio-text); font-family:var(--studio-font); line-height:1.12; letter-spacing:-.025em; }
 .rich-content h1 { margin-block-start:.25em; font-size:2.35rem; }
 .rich-content h2 { font-size:1.7rem; }
 .rich-content h3 { font-size:1.3rem; }
 .rich-content p { margin-block:0 1.1em; }
-.rich-content a { color:var(--studio-acid); text-decoration-thickness:.08em; text-underline-offset:.16em; }
-.rich-content code { padding:.12em .3em; border:1px solid var(--studio-border); border-radius:.28rem; color:#ddffc0; background:var(--studio-control); font:.86em/1.4 var(--studio-mono); }
-.rich-content blockquote { margin:1.5rem 0; padding:.1rem 0 .1rem 1rem; border-inline-start:2px solid var(--studio-acid); color:#c4c4bd; }
+.rich-content a { color:var(--studio-accent); text-decoration-thickness:.08em; text-underline-offset:.16em; }
+.rich-content code { padding:.12em .3em; border:1px solid var(--studio-border); border-radius:.2rem; color:color-mix(in srgb,var(--studio-accent) 58%,#fff); background:var(--studio-control); font:.86em/1.4 var(--studio-mono); }
+.rich-content blockquote { margin:1.5rem 0; padding:.1rem 0 .1rem 1rem; border-inline-start:2px solid var(--studio-accent); color:#c4cad4; }
 .rich-content table { inline-size:100%; margin-block:1.8rem; border:1px solid #3a3a37; border-collapse:separate; border-spacing:0; border-radius:.5rem; overflow:hidden; font-family:var(--studio-font); font-size:.88rem; }
 .rich-content table[class*="_tableEditor"]:has(> colgroup > col:nth-child(6)) { min-inline-size:42rem; }
 .rich-content table[class*="_tableEditor"] > colgroup > col:first-child,.rich-content table[class*="_tableEditor"] > colgroup > col:last-child { inline-size:2rem; }
@@ -1032,34 +1365,48 @@ svg { inline-size: 1rem; block-size: 1rem; stroke-width: 1.8; }
 .rich-content table[class*="_tableEditor"] > tbody > tr > th:not([data-tool-cell]):not([class*="_toolCell"]) { color:var(--studio-text); background:#20201f; font-size:.72rem; text-transform:uppercase; letter-spacing:.055em; }
 .rich-content table[class*="_tableEditor"] > tbody > tr > td:not([data-tool-cell]):not([class*="_toolCell"]) { color:#d0d0ca; background:#121212; }
 .rich-content img { display:block; max-inline-size:100%; block-size:auto; margin:1.5rem auto; border:1px solid var(--studio-border); border-radius:.45rem; }
-.protected-island { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.8rem; margin-block:1rem; padding:.8rem; border:1px dashed #56632e; border-radius:.52rem; color:var(--studio-muted); background:#10130b; font-family:var(--studio-font); }
-.protected-island__icon { display:grid; place-items:center; inline-size:2rem; block-size:2rem; border-radius:.38rem; color:#111; background:var(--studio-acid); }
+.protected-island { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.8rem; margin-block:1rem; padding:.8rem; border:1px dashed color-mix(in srgb,var(--studio-accent) 64%,var(--studio-border)); border-radius:var(--studio-radius); color:var(--studio-muted); background:color-mix(in srgb,var(--studio-accent) 7%,var(--studio-panel)); font-family:var(--studio-font); }
+.protected-island__icon { display:grid; place-items:center; inline-size:2rem; block-size:2rem; border-radius:var(--studio-radius); color:#fff; background:var(--studio-accent); }
 .protected-island__copy strong,.protected-island__copy span { display:block; }
 .protected-island__copy strong { color:var(--studio-text); font-size:.75rem; }
 .protected-island__copy span { margin-block-start:.12rem; font: .66rem/1.4 var(--studio-mono); }
-.rich-error,.conflict-card { position:fixed; z-index:20; inset-inline-end:1rem; inset-block-end:1rem; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.8rem; max-inline-size:38rem; padding:.8rem; border:1px solid #68443b; border-radius:.65rem; color:var(--studio-text); background:#1a1210ee; box-shadow:0 1rem 4rem #000b; backdrop-filter:blur(18px); }
-.rich-error > svg,.conflict-card > svg { color:var(--studio-danger); }
+.rich-error,.conflict-card { position:fixed; z-index:20; inset-inline-end:.75rem; inset-block-end:2.5rem; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.8rem; max-inline-size:38rem; padding:.75rem; border:1px solid; border-radius:var(--studio-radius); color:var(--studio-text); }
+.rich-error { border-color:#68443b; background:#211416; }
+.conflict-card { border-color:color-mix(in srgb,var(--studio-warning) 52%,var(--studio-border)); background:color-mix(in srgb,var(--studio-warning) 8%,var(--studio-panel-raised)); }
+.rich-error > svg { color:var(--studio-danger); }
+.conflict-card > svg { color:var(--studio-warning); }
 .rich-error strong,.rich-error span,.rich-error small,.conflict-card strong,.conflict-card span { display:block; }
 .rich-error span,.conflict-card span { margin-block-start:.15rem; color:var(--studio-muted); font-size:.72rem; }
 .rich-error small { margin-block-start:.25rem; color:#ffaaa0; font-size:.64rem; }
-.ui-tooltip { z-index:50; max-inline-size:18rem; padding:.38rem .55rem; border:1px solid var(--studio-border); border-radius:.4rem; color:var(--studio-text); background:#1a1a1af2; box-shadow:0 .65rem 2rem #0009; font-size:.68rem; transform-origin:var(--transform-origin); }
-.ui-tooltip[data-starting-style],.ui-tooltip[data-ending-style] { opacity:0; transform:scale(.96); }
+.studio-statusbar { min-inline-size:0; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding-inline:.625rem; border-block-start:1px solid var(--studio-border); color:#71717a; background:var(--studio-shell); font:.6875rem/1 var(--studio-mono); }
+.studio-statusbar__path { min-inline-size:0; overflow:hidden; color:#a1a1aa; text-overflow:ellipsis; white-space:nowrap; }
+.studio-statusbar__meta { flex:none; display:flex; align-items:center; gap:.375rem; white-space:nowrap; }
+.studio-statusbar__meta i { color:#52525b; font-style:normal; }
+.connection-status { display:inline-flex; align-items:center; gap:.3rem; }
+.connection-status b { inline-size:.375rem; block-size:.375rem; border-radius:50%; background:var(--studio-muted); }
+.connection-status[data-status=connected] { color:var(--studio-accent); }
+.connection-status[data-status=connected] b { background:var(--studio-accent-strong); }
+.connection-status[data-status=readonly] { color:var(--studio-muted); }
+.connection-status[data-status=readonly] b { background:#71717a; }
+.connection-status[data-status=conflict] { color:#d6a84b; }
+.connection-status[data-status=conflict] b { background:var(--studio-warning); }
+.connection-status[data-status=error] { color:var(--studio-danger); }
+.connection-status[data-status=error] b { background:var(--studio-danger); }
+.studio-toaster { font-family:var(--studio-font)!important; }
+.studio-toaster [data-sonner-toast][data-styled=true] { border-color:var(--studio-border-strong); border-radius:var(--studio-radius); color:var(--studio-text); background:var(--studio-panel-raised); box-shadow:0 .5rem 1.5rem rgb(0 0 0/.28); }
+.studio-toaster [data-sonner-toast] [data-icon] { color:var(--studio-accent); }
 @keyframes studio-spin { to { transform:rotate(360deg); } }
-@media (max-width:900px) {
-  .studio-shell { min-block-size:44rem; grid-template-rows:auto auto minmax(0,1fr); }
-  .studio-toolbar { grid-template-columns:1fr auto; padding:.75rem; }
-  .studio-status { grid-column:1/-1; grid-row:2; }
-  .studio-brand > div > span,.document-meta,.control-divider,.save-contract span { display:none; }
-  .save-contract code { max-inline-size:9rem; }
-  .studio-controls { gap:.45rem; padding:.55rem .75rem; overflow-x:auto; }
-  .mode-badge { margin-inline-start:auto; }
-  .studio-workspace { grid-template-columns:1fr; grid-template-rows:minmax(20rem,1fr) minmax(20rem,1fr); overflow:auto; }
-  .studio-panel { min-block-size:20rem; border-inline-end:0; border-block-end:1px solid var(--studio-border); }
+@media (max-width:720px) {
+  .studio-shell { min-inline-size:0; }
+  .studio-workspace { grid-template-columns:1fr; grid-template-rows:minmax(15rem,1fr) minmax(15rem,1fr); }
+  .studio-splitter { display:none; }
+  .source-panel { border-block-end:1px solid var(--studio-border); }
+  .studio-statusbar__meta > :nth-child(5),.studio-statusbar__meta > :nth-child(6),.studio-statusbar__meta > :nth-child(7),.studio-statusbar__meta > :nth-child(8) { display:none; }
   .rich-content h1 { font-size:1.9rem; }
   .protected-island { grid-template-columns:auto 1fr; }
-  .protected-island .ui-button { grid-column:1/-1; }
+  .protected-island button { grid-column:1/-1; }
   .rich-error,.conflict-card { grid-template-columns:auto 1fr; }
-  .rich-error .ui-button,.conflict-card .ui-button { grid-column:1/-1; }
+  .rich-error button,.conflict-card button { grid-column:1/-1; }
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition-duration:.001ms!important; animation-duration:.001ms!important; animation-iteration-count:1!important; } }
 `;

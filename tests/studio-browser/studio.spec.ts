@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import type { Locator, Page } from "@playwright/test";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -12,20 +11,10 @@ async function replaceFixture(source: string) {
   await rename(temporaryPath, fixturePath);
 }
 
-async function captureTable(page: Page, table: Locator, path: string) {
-  await table.evaluate((element) => element.scrollIntoView({ block: "center", inline: "start" }));
-  const tableBox = await table.boundingBox();
-  const scrollerBox = await page.locator(".rich-editor-scroll").boundingBox();
-  if (!tableBox || !scrollerBox) throw new Error("Could not capture the Rich Text table.");
-  await page.screenshot({
-    path,
-    clip: {
-      x: Math.max(tableBox.x, scrollerBox.x),
-      y: tableBox.y,
-      width: Math.min(tableBox.width, scrollerBox.width),
-      height: tableBox.height
-    }
-  });
+function fixtureLineContaining(text: string): number {
+  const line = originalFixture.split("\n").findIndex((value) => value.includes(text));
+  if (line < 0) throw new Error(`Studio fixture does not contain ${JSON.stringify(text)}.`);
+  return line + 1;
 }
 
 test.beforeAll(async () => {
@@ -33,220 +22,181 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  if (originalFixture) await replaceFixture(originalFixture);
+  if (originalFixture && await readFile(fixturePath, "utf8") !== originalFixture) {
+    await replaceFixture(originalFixture);
+  }
 });
 
-test("keeps Markdown canonical while constrained Rich Text edits update the mirror and production preview", async ({ page }, testInfo) => {
+test("keeps the Studio shell restrained while editing, previewing, resizing, and saving", async ({ page }, testInfo) => {
   const issues: string[] = [];
-  let expectedConflictResponse = false;
   page.on("console", (message) => {
-    if (message.type() !== "error") return;
-    if (expectedConflictResponse && message.text().includes("409 (Conflict)")) {
-      expectedConflictResponse = false;
-      return;
-    }
-    issues.push(message.text());
+    if (message.type() === "error") issues.push(message.text());
   });
   page.on("pageerror", (error) => issues.push(error.message));
 
   await page.goto("/");
   await page.evaluate(() => document.fonts.ready);
-  expect(await page.evaluate(() => ({
-    sans: document.fonts.check('13px "IBM Plex Sans"'),
-    mono: document.fonts.check('13px "IBM Plex Mono"')
-  }))).toEqual({ sans: true, mono: true });
-  const source = page.getByRole("textbox", { name: "Article source" });
-  const preview = page.frameLocator("iframe[title='Scribe article preview']");
-  await expect(source).toHaveValue(/Peer state transitions/u);
-  await expect(page.getByText("default detected")).toBeVisible();
-  await expect(page.getByLabel("Style")).toHaveCount(0);
-  await expect(page.locator(".save-contract")).toContainText("Explicit save writes to");
-  await expect(page.locator(".save-contract code")).toHaveText("tests/fixtures/studio-article.mdx");
-  await expect(preview.locator(".scribe-banner__title")).toHaveText("Peer wire field notes");
-  await expect(page.locator("iframe#preview")).toHaveCSS("width", "1280px");
-  await expect(page.locator(".preview-device__label")).toContainText("Laptop · 1280 × 800");
-  await expect(preview.getByText("Banner image not found")).toBeVisible();
-  await expect(preview.locator("h1#peer-state-transitions")).toBeVisible();
-  await expect(page.getByRole("toolbar", { name: "Markdown formatting" })).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath("studio-markdown.png"), fullPage: true });
 
-  const diskSource = await source.inputValue();
-  await source.fill("# Browser recovery draft\n");
-  const serverBeforeDebounce = await page.evaluate(async () => (await fetch("/__scribe/api/document")).json());
-  expect(serverBeforeDebounce.source).toBe(diskSource);
-  await expect.poll(() => page.evaluate(async (recoveryKey) => {
-    const database = await new Promise<IDBDatabase>((resolveDatabase, reject) => {
-      const opening = indexedDB.open("scribe-studio-recovery", 1);
-      opening.onsuccess = () => resolveDatabase(opening.result);
-      opening.onerror = () => reject(opening.error);
-    });
-    try {
-      return await new Promise<string | undefined>((resolveDraft, reject) => {
-        const request = database.transaction("drafts", "readonly").objectStore("drafts").get(recoveryKey);
-        request.onsuccess = () => resolveDraft(request.result?.source);
-        request.onerror = () => reject(request.error);
-      });
-    } finally {
-      database.close();
-    }
-  }, serverBeforeDebounce.recoveryKey)).toBe("# Browser recovery draft\n");
-  await page.reload();
-  await expect(source).toHaveValue("# Browser recovery draft\n");
-  await expect(page.locator("#status-text")).not.toHaveText("Read-only tab");
+  const source = page.locator(".source-monaco");
+  const preview = page.frameLocator("iframe[title='Scribe article preview']");
+  const toolbar = page.locator(".studio-toolbar");
+  const statusbar = page.locator(".studio-statusbar");
+  const splitter = page.getByRole("separator", { name: "Resize editor and preview" });
+  const viewportControl = toolbar.getByLabel("Preview viewport");
+
+  await expect(source).toBeVisible();
+  await expect(viewportControl).toContainText("Fit pane");
+  const savedControl = toolbar.getByRole("button", { name: /^Saved$/u });
+  await expect(savedControl).toBeVisible({ timeout: 10_000 });
+  await expect(savedControl).toHaveAttribute("data-save-state", "saved");
+  await expect(savedControl).toHaveCSS("background-color", "rgb(28, 28, 31)");
+  await expect(toolbar.getByRole("button", { name: "Switch preview to light mode" })).toBeVisible();
+  await expect(toolbar.getByRole("button")).toHaveCount(2);
+  await expect(page.getByText("Scribe Studio", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/detected/u)).toHaveCount(0);
+  await expect(page.getByText("Production renderer", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Markdown", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Preview", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".source-monaco .line-numbers").filter({ hasText: /^10$/u })).toBeVisible();
+  const gutterSpacing = await page.locator(".source-monaco .line-numbers").first().evaluate((element) => {
+    const margin = element.closest(".margin")?.getBoundingClientRect();
+    const content = element.closest(".monaco-editor")?.querySelector(".view-lines")?.getBoundingClientRect();
+    const text = element.firstChild;
+    if (!margin || !content || !text) throw new Error("Monaco gutter geometry is unavailable.");
+    const glyph = document.createRange();
+    glyph.selectNodeContents(text);
+    const rect = glyph.getBoundingClientRect();
+    return {
+      left: rect.left - margin.left,
+      right: content.left - rect.right
+    };
+  });
+  expect(Math.abs(gutterSpacing.left - gutterSpacing.right)).toBeLessThanOrEqual(2);
+  await expect(page.locator(".source-highlight, .source-textarea")).toHaveCount(0);
+  await expect(page.locator(".source-monaco .monaco-scrollable-element").first()).toBeVisible();
+  await expect(statusbar.locator(".studio-statusbar__path")).toHaveText("tests/fixtures/studio-article.mdx");
+  await expect(statusbar).toContainText(/\d+ lines/u);
+  await expect(statusbar).toContainText(/\d+ words/u);
+  await expect(statusbar).toContainText(/(?:localhost|127\.0\.0\.1):\d+/u);
+  await expect(statusbar).toContainText("Fit");
+  await expect(statusbar).toContainText("Connected");
+  await expect(preview.locator(".scribe-banner__title")).toHaveText("Peer wire field notes");
+  await expect(page.locator(".preview-stage")).toHaveCSS("padding", "0px");
+  await expect(page.locator(".preview-device")).toHaveCSS("border-top-width", "0px");
+  await viewportControl.click();
+  await page.getByRole("option", { name: "Mobile" }).click();
+  const compactTable = preview.locator(".scribe-table-scroll").nth(1);
+  const wideTable = preview.locator('.scribe-table-scroll[data-scribe-table-layout="wide"]');
+  await expect(compactTable.locator("th")).toHaveCount(3);
+  expect(await compactTable.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  expect(await wideTable.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+  expect(await preview.locator("html").evaluate(
+    (node) => node.scrollWidth <= node.clientWidth
+  )).toBe(true);
+  await viewportControl.click();
+  await page.getByRole("option", { name: "Fit pane" }).click();
+  await page.screenshot({ path: testInfo.outputPath("studio-shell-initial.png"), fullPage: true });
+
+  await preview.locator(".scribe-banner__title").evaluate((element) => {
+    (globalThis as typeof globalThis & { __scribeStableBannerTitle?: Element }).__scribeStableBannerTitle = element;
+  });
+  await source.click();
+  await page.keyboard.press("Control+g");
+  await page.keyboard.insertText(String(fixtureLineContaining("The local source file remains authoritative")));
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("End");
+  await page.keyboard.insertText(" — without remounting");
+  await expect(preview.locator("p").filter({ hasText: "without remounting" })).toBeVisible();
+  await expect(page.locator(".source-monaco .unicode-highlight")).toHaveCount(0);
+  expect(await preview.locator("body").evaluate(() => (
+    globalThis as typeof globalThis & { __scribeStableBannerTitle?: Element }
+  ).__scribeStableBannerTitle === document.querySelector(".scribe-banner__title"))).toBe(true);
+
+  await preview.locator("body").evaluate(() => scrollTo(0, 0));
+  await source.click();
+  await page.keyboard.press("Control+g");
+  await page.keyboard.insertText(String(fixtureLineContaining("Choked,")));
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("End");
+  await page.keyboard.insertText(" // synced");
+  const synchronizedCode = preview.locator("[data-scribe-source-line]").filter({ hasText: "Choked, // synced" });
+  await expect(synchronizedCode).toContainText("synced");
+  await expect.poll(() => preview.locator("body").evaluate(() => scrollY)).toBeGreaterThan(0);
+
+  const initialLeftWidth = await page.locator(".source-panel").evaluate((element) => element.getBoundingClientRect().width);
+  const splitterBox = await splitter.boundingBox();
+  if (!splitterBox) throw new Error("The Studio splitter was not rendered.");
+  const initialSplit = await splitter.getAttribute("aria-valuenow");
+  await page.mouse.move(splitterBox.x + splitterBox.width / 2 + 5, splitterBox.y + 80);
+  await page.mouse.down();
+  await expect(splitter).toHaveAttribute("aria-valuenow", initialSplit ?? "50");
+  await page.mouse.up();
+  await page.mouse.move(splitterBox.x + splitterBox.width / 2, splitterBox.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(splitterBox.x + 90, splitterBox.y + 80, { steps: 6 });
+  await page.mouse.up();
+  const resizedLeftWidth = await page.locator(".source-panel").evaluate((element) => element.getBoundingClientRect().width);
+  expect(resizedLeftWidth).toBeGreaterThan(initialLeftWidth + 50);
+  await splitter.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(splitter).toHaveAttribute("aria-valuenow", /\d+/u);
+  await splitter.dblclick();
+  await expect(splitter).toHaveAttribute("aria-valuenow", "50");
+  await expect.poll(async () => Math.abs(
+    await page.locator(".source-panel").evaluate((element) => element.getBoundingClientRect().width)
+    - initialLeftWidth
+  )).toBeLessThanOrEqual(2);
+
+  const editedSource = "# Shell redesign proof\n\nThe preview updates through the production renderer.\n";
+  await source.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.insertText(editedSource);
+  await expect(toolbar.getByRole("button", { name: /^Save$/u })).toBeVisible();
+  await expect(preview.locator("h1#shell-redesign-proof")).toBeVisible();
+
+  await viewportControl.click();
+  const tabletOption = page.getByRole("option", { name: "Tablet" });
+  await expect(tabletOption).toBeVisible();
+  await tabletOption.click();
+  await expect(viewportControl).toContainText("Tablet");
+  await expect(statusbar).toContainText("820px");
+  await expect(page.locator(".preview-device")).toHaveCSS("width", "820px");
+  await expect(splitter).not.toHaveAttribute("aria-valuenow", "50");
+
+  await viewportControl.click();
+  const mobileOption = page.getByRole("option", { name: "Mobile" });
+  await expect(mobileOption).toBeVisible();
+  await expect(mobileOption).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: testInfo.outputPath("studio-viewport-menu.png"), fullPage: true });
+  await mobileOption.click();
+  await expect(viewportControl).toContainText("Mobile");
+  await expect(statusbar).toContainText("414px");
+  await expect(page.locator(".preview-device")).toHaveCSS("width", "414px");
+  await expect(page.locator(".preview-device")).toHaveCSS("transition-duration", "0.32s");
 
   await preview.locator("body").evaluate(() => {
-    (window as typeof window & { __scribeHmrProof?: string }).__scribeHmrProof = "preserved";
+    (window as typeof window & { __scribeThemeContinuity?: string }).__scribeThemeContinuity = "preserved";
   });
-  await source.fill("# Live studio draft\n\nThe preview uses the production Scribe renderer.\n\n<Callout variant=\"note\">Protected note.</Callout>\n");
-  await expect(page.locator("#status-text")).toHaveText("Unsaved draft");
-  await expect(page.locator(".save-contract")).toContainText("Draft only — Save writes to");
-  expect(await page.evaluate(() => {
-    const event = new Event("beforeunload", { cancelable: true });
-    dispatchEvent(event);
-    return event.defaultPrevented;
-  })).toBe(true);
-  await expect(preview.locator("h1#live-studio-draft")).toBeVisible();
-  expect(await preview.locator("body").evaluate(() => (window as typeof window & { __scribeHmrProof?: string }).__scribeHmrProof)).toBe("preserved");
+  await toolbar.getByRole("button", { name: "Switch preview to light mode" }).click();
+  await expect(toolbar.getByRole("button", { name: "Switch preview to dark mode" })).toBeVisible();
+  await expect(preview.locator(".scribe[data-theme='light']")).toBeVisible();
+  expect(await preview.locator("body").evaluate(() => (
+    window as typeof window & { __scribeThemeContinuity?: string }
+  ).__scribeThemeContinuity)).toBe("preserved");
 
-  await source.fill("<Callout>unfinished");
-  await expect(page.locator("#status-text")).toHaveText("Compilation blocked");
-  await expect(page.locator("#diagnostics")).toContainText("Expected a closing tag");
-  await expect(page.getByRole("button", { name: "Copy diagnostics" })).toBeVisible();
-  await expect(preview.locator("h1#live-studio-draft")).toBeVisible();
+  await toolbar.getByRole("button", { name: /^Save$/u }).click();
+  const settledSavedControl = toolbar.getByRole("button", { name: /^Saved$/u });
+  await expect(settledSavedControl).toBeVisible();
+  await expect.poll(async () => (await readFile(fixturePath, "utf8")).includes("Shell redesign proof")).toBe(true);
+  const persistedSource = await readFile(fixturePath, "utf8");
+  await expect(statusbar).toContainText(`${persistedSource.split("\n").length} lines`);
+  await page.mouse.move(640, 360);
+  await expect(settledSavedControl).toHaveCSS("background-color", "rgb(28, 28, 31)");
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 6_000 });
 
-  await source.fill("# Recovered draft\n");
-  await expect(preview.locator("h1#recovered-draft")).toBeVisible();
-  await expect(page.locator("#status-text")).toHaveText("Unsaved draft");
-
-  const richSource = [
-    "# Recovered draft",
-    "",
-    "Editable paragraph.",
-    "",
-    "| Value |",
-    "| --- |",
-    "| one-column content |",
-    "",
-    "| Left | Center | Right |",
-    "| :--- | :---: | ---: |",
-    "| alpha | beta | gamma |",
-    "",
-    "| State | Direction | Payload | Retry | Notes |",
-    "| --- | --- | --- | --- | --- |",
-    "| choked | inbound | piece request | exponential | long-lived peer state |",
-    "",
-    '<Callout variant="note">Protected note.</Callout>',
-    ""
-  ].join("\n");
-  await source.fill(richSource);
-  await expect.poll(async () => page.evaluate(async () => (await fetch("/__scribe/api/document")).json().then((value) => value.source))).toBe(richSource);
-  const beforeNoopSwitch = await page.evaluate(async () => (await fetch("/__scribe/api/document")).json());
-  await page.getByRole("button", { name: "Rich Text" }).click();
-  await expect(page.getByRole("toolbar", { name: "Rich Text formatting" })).toBeVisible();
-  await page.getByRole("button", { name: "Markdown", exact: true }).click();
-  await expect(page.getByRole("toolbar", { name: "Rich Text formatting" })).toHaveCount(0);
-  const afterNoopSwitch = await page.evaluate(async () => (await fetch("/__scribe/api/document")).json());
-  expect(afterNoopSwitch.source).toBe(beforeNoopSwitch.source);
-  expect(afterNoopSwitch.revision).toBe(beforeNoopSwitch.revision);
-
-  await page.getByRole("button", { name: "Rich Text" }).click();
-  await expect(page.getByRole("toolbar", { name: "Rich Text formatting" })).toBeVisible();
-  await page.evaluate(() => document.fonts.ready);
-  await expect(page.locator(".rich-content")).toHaveCSS("font-family", /IBM Plex Serif/u);
-  expect(await page.evaluate(() => document.fonts.check('16px "IBM Plex Serif"'))).toBe(true);
-  await expect(page.getByText("Protected source", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Edit protected source in Markdown" })).toBeVisible();
-  await expect(page.getByTestId("markdown-mirror")).toContainText("Editable paragraph.");
-  await page.setViewportSize({ width: 1100, height: 760 });
-  const editorTables = page.locator('.rich-content table[class*="_tableEditor"]');
-  await expect(editorTables).toHaveCount(3);
-  const tableMetrics = await editorTables.evaluateAll((tables) => tables.map((table) => {
-    const scroller = table.closest(".rich-editor-scroll");
-    const cols = [...table.querySelectorAll(":scope > colgroup > col")];
-    const dataCells = [...table.querySelectorAll(":scope > tbody > tr:first-child > :is(th,td):not([data-tool-cell]):not([class*='_toolCell'])")];
-    const columnControl = table.querySelector(":scope > thead > tr > [data-tool-cell]:not(:last-child)");
-    const rowControl = table.querySelector(":scope > tbody > tr:first-child > [class*='_toolCell']");
-    const addColumnControl = table.querySelector(":scope > tbody > tr:first-child > [data-tool-cell]:last-child");
-    const dataCell = dataCells[0];
-    if (!(scroller instanceof HTMLElement) || !(table instanceof HTMLElement) || !(columnControl instanceof HTMLElement) || !(rowControl instanceof HTMLElement) || !(addColumnControl instanceof HTMLElement) || !(dataCell instanceof HTMLElement)) {
-      throw new Error("Missing expected MDXEditor table structure.");
-    }
-    const tableWidth = table.getBoundingClientRect().width;
-    const dataWidth = dataCells.reduce((total, cell) => total + cell.getBoundingClientRect().width, 0);
-    const style = getComputedStyle(dataCell);
-    return {
-      dataColumns: cols.length - 2,
-      tableWidth,
-      scrollerWidth: scroller.getBoundingClientRect().width,
-      dataShare: dataWidth / tableWidth,
-      columnControlWidth: columnControl.getBoundingClientRect().width,
-      rowControlWidth: rowControl.getBoundingClientRect().width,
-      addColumnControlWidth: addColumnControl.getBoundingClientRect().width,
-      paddingInline: Number.parseFloat(style.paddingInlineStart),
-      borderStyle: style.borderInlineEndStyle,
-      borderWidth: Number.parseFloat(style.borderInlineEndWidth)
-    };
-  }));
-  expect(tableMetrics.map(({ dataColumns }) => dataColumns)).toEqual([1, 3, 5]);
-  for (const metric of tableMetrics.slice(0, 2)) {
-    expect(metric.tableWidth).toBeLessThanOrEqual(metric.scrollerWidth + 1);
-    expect(metric.dataShare).toBeGreaterThanOrEqual(0.75);
-    expect(metric.columnControlWidth).toBeGreaterThan(40);
-  }
-  const wideTable = tableMetrics.at(2);
-  if (!wideTable) throw new Error("Missing wide Rich Text table metrics.");
-  expect(wideTable.tableWidth).toBeGreaterThan(wideTable.scrollerWidth);
-  for (const metric of tableMetrics) {
-    expect(metric.rowControlWidth).toBeLessThanOrEqual(40);
-    expect(metric.addColumnControlWidth).toBeLessThanOrEqual(40);
-    expect(metric.paddingInline).toBeGreaterThanOrEqual(10);
-    expect(metric.borderStyle).toBe("solid");
-    expect(metric.borderWidth).toBeGreaterThanOrEqual(1);
-  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await captureTable(page, editorTables.nth(0), testInfo.outputPath("studio-table-one.png"));
-  await captureTable(page, editorTables.nth(1), testInfo.outputPath("studio-table-three.png"));
-  await captureTable(page, editorTables.nth(2), testInfo.outputPath("studio-table-wide.png"));
-  await page.screenshot({ path: testInfo.outputPath("studio-rich-text.png"), fullPage: true });
-
-  const richParagraph = page.locator(".rich-content p").filter({ hasText: "Editable paragraph." });
-  await richParagraph.click({ clickCount: 3 });
-  await page.keyboard.type("Visually edited paragraph.");
-  await expect(page.getByTestId("markdown-mirror")).toContainText("Visually edited paragraph.");
-  await expect(page.getByTestId("markdown-mirror")).toContainText(/\| :--+ \| :--+: \| --+: \|/u);
-  await expect(page.locator("#status-text")).toHaveText("Unsaved draft");
-
-  await page.getByRole("tab", { name: "Preview tab" }).click();
-  await expect(preview.getByText("Visually edited paragraph.")).toBeVisible();
-  await page.getByRole("tab", { name: "Markdown tab" }).click();
-  await page.getByRole("button", { name: "Edit protected source in Markdown" }).click();
-  await expect(page.getByRole("textbox", { name: "Article source" })).toHaveValue(/Protected note/u);
-  await expect(page.getByRole("toolbar", { name: "Rich Text formatting" })).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Mobile" }).click();
-  await expect(page.locator("iframe#preview")).toHaveCSS("width", "414px");
-  await expect(page.locator(".preview-device__label")).toContainText("Mobile · 414 × 896");
-  await page.getByRole("button", { name: "Dark" }).click();
-  await expect(preview.locator(".scribe[data-theme='dark']")).toBeVisible();
-
-  const externalSource = "# External editor version\n\nThis change came from the IDE.\n";
-  await writeFile(fixturePath, externalSource, "utf8");
-  await expect(page.getByRole("alert").filter({ hasText: "Source changed outside Studio" })).toBeVisible();
-  await expect(source).not.toHaveValue(externalSource);
-
-  expectedConflictResponse = true;
-  await page.getByRole("button", { name: /^Save/u }).click();
-  expect(await readFile(fixturePath, "utf8")).toBe(externalSource);
-  await expect(page.locator("[data-sonner-toast]")).toContainText("changed outside Studio");
-  expect(expectedConflictResponse).toBe(false);
-
-  await page.getByRole("button", { name: "Reload from disk" }).click();
-  await expect(source).toHaveValue(externalSource);
-  await expect(page.getByRole("alert").filter({ hasText: "Source changed outside Studio" })).toHaveCount(0);
-  await expect(page.locator("#status-text")).toHaveText("Ready");
-
-  await replaceFixture(originalFixture);
-  await expect(source).toHaveValue(/Peer state transitions/u);
+  expect(await page.locator("body").innerText()).not.toContain("\\u");
+  await page.screenshot({ path: testInfo.outputPath("studio-shell.png"), fullPage: true });
 
   expect(issues).toEqual([]);
 });

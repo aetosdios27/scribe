@@ -35,6 +35,18 @@ npm install @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alp
 npm install --save-dev @scribe-sdk/cli@alpha
 ```
 
+### First integration checklist
+
+1. Commit the host project before changing its integration.
+2. Install the four Scribe packages using the commands above.
+3. Run `bunx scribe init --dry-run` or `npx scribe init --dry-run`.
+4. Review the proposed changes, then run `bunx scribe init` or `npx scribe init`.
+5. Migrate one real article.
+6. Run `bunx scribe validate ./path/to/article.mdx` or the equivalent `npx` command.
+7. Run the host project's production build.
+8. Open the article with `bunx scribe studio ./path/to/article.mdx` or the equivalent `npx` command.
+9. Report anything confusing through [GitHub Issues](https://github.com/aetosdios27/scribe/issues).
+
 Project-local CLI installation is recommended so every contributor uses the same prerelease. A user-level CLI is also supported through `bun add --global @scribe-sdk/cli@alpha` or `npm install --global @scribe-sdk/cli@alpha`; the project still owns its runtime Scribe dependencies.
 
 Package installation is inert: it does not edit source files, run project detection, or make network calls beyond normal package-manager behavior. Inspect a proposed integration explicitly:

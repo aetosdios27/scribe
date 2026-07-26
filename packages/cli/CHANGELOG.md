@@ -1,5 +1,20 @@
 # @scribe-sdk/cli
 
+## 0.1.0-alpha.6
+
+### Patch Changes
+
+- 58f544e: Refine Scribe Studio with distinct Markdown and constrained Rich Text modes, a live read-only Markdown mirror, protected source-preserving MDX blocks, detected style mode, accessible controls, local IBM Plex typography, smooth preview scrolling, explicit-save safeguards, clearer diagnostics, and missing-asset feedback. Treat YAML frontmatter as article metadata, synthesize a Banner when appropriate, preserve the host's Tailwind Typography boundary in preview, and improve default table and mobile code-frame presentation.
+- b8ac591: Promote `scribe` as the primary command while retaining `scb` as a silent prerelease compatibility alias. Add focused subcommand help, typo suggestions, project-relative diagnostics, structured initialization and validation output, and deterministic ANSI-free behavior for captured output and `NO_COLOR` environments.
+- 8ca9ede: Protect Scribe Studio drafts with durable local recovery, serialized single-writer mutations, conflict-aware atomic saves, symlink-safe source handling, isolated compiler work, and live preview updates that do not reload the preview document.
+- fb84ee5: Keep constrained Rich Text mode source-safe by avoiding serialization when users switch modes without editing, preserving protected MDX islands byte-for-byte, and naming the exact JSX, frontmatter, import, export, expression, comment, directive, or code metadata construct when an unsafe edit is rejected.
+- c8d3dec: Prevent Scribe Studio from overwriting source changed by an external editor by revalidating the file immediately before save. Preserve unsaved drafts when the source is deleted or renamed, reload explicitly from current disk content, and retain the article's LF or CRLF line endings.
+- 4d25b2f: Keep Scribe Studio's Rich Text table controls compact without stealing space from article content. One- to three-column tables now fit the editor pane, while wider tables scroll within it and preserve GFM column alignment.
+- Updated dependencies [58f544e]
+  - @scribe-sdk/styles@0.1.0-alpha.6
+  - @scribe-sdk/mdx@0.1.0-alpha.6
+  - @scribe-sdk/react@0.1.0-alpha.6
+
 ## 0.1.0-alpha.5
 
 ### Patch Changes

@@ -138,7 +138,11 @@ interface TableTarget {
 function normalizeTables(tree: Root): void {
   const targets: TableTarget[] = [];
   visit(tree, (node, index, parent) => {
-    if (index === undefined || !parent || !isTableNode(node) || isTableWrapper(parent)) return;
+    if (index === undefined || !parent || !isTableNode(node)) return;
+    if (isTableWrapper(parent)) {
+      if (isWideTable(node)) markWideTableWrapper(parent);
+      return;
+    }
     targets.push({
       node,
       parent: parent as unknown as ParentNode,
@@ -154,12 +158,80 @@ function normalizeTables(tree: Root): void {
         className: ["scribe-table-scroll"],
         role: "region",
         ariaLabel: "Scrollable article table",
-        tabIndex: 0
+        tabIndex: 0,
+        ...(isWideTable(node) ? { dataScribeTableLayout: "wide" } : {})
       },
       children: [node as Element["children"][number]]
     };
     parent.children[index] = wrapper;
   }
+}
+
+function isWideTable(table: unknown): boolean {
+  return maximumTableColumnCount(table) >= 4;
+}
+
+function maximumTableColumnCount(node: unknown): number {
+  if (!node || typeof node !== "object") return 0;
+  const candidate = node as { children?: unknown[] };
+  if (!Array.isArray(candidate.children)) return 0;
+  if (isNamedNode(node, "tr")) {
+    return candidate.children
+      .filter((child) => isNamedNode(child, "th") || isNamedNode(child, "td"))
+      .reduce<number>((columns, child) => columns + tableCellSpan(child), 0);
+  }
+  return candidate.children.reduce<number>(
+    (maximum, child) => Math.max(maximum, maximumTableColumnCount(child)),
+    0
+  );
+}
+
+function tableCellSpan(node: unknown): number {
+  if (!node || typeof node !== "object") return 1;
+  const candidate = node as {
+    properties?: Record<string, unknown>;
+    attributes?: Array<{ name?: string; value?: unknown }>;
+  };
+  const property = candidate.properties?.["colSpan"] ?? candidate.properties?.["colspan"];
+  const attribute = candidate.attributes?.find(({ name }) => name?.toLowerCase() === "colspan")?.value;
+  const rawSpan = property ?? attribute;
+  const span = Number(
+    rawSpan && typeof rawSpan === "object" && "value" in rawSpan
+      ? (rawSpan as { value: unknown }).value
+      : rawSpan
+  );
+  return Number.isFinite(span) && span > 0 ? Math.floor(span) : 1;
+}
+
+function isNamedNode(node: unknown, name: string): boolean {
+  if (!node || typeof node !== "object") return false;
+  const candidate = node as { type?: string; tagName?: string; name?: string | null };
+  return (
+    (candidate.type === "element" && candidate.tagName === name) ||
+    ((candidate.type === "mdxJsxFlowElement" || candidate.type === "mdxJsxTextElement") &&
+      candidate.name === name)
+  );
+}
+
+function markWideTableWrapper(node: unknown): void {
+  if (!node || typeof node !== "object") return;
+  const candidate = node as {
+    type?: string;
+    properties?: Record<string, unknown>;
+    attributes?: Array<{ type: string; name: string; value: string }>;
+  };
+  if (candidate.type === "element") {
+    candidate.properties ??= {};
+    candidate.properties.dataScribeTableLayout = "wide";
+    return;
+  }
+  if (!candidate.attributes) return;
+  if (candidate.attributes.some((attribute) => attribute.name === "data-scribe-table-layout")) return;
+  candidate.attributes.push({
+    type: "mdxJsxAttribute",
+    name: "data-scribe-table-layout",
+    value: "wide"
+  });
 }
 
 function isTableWrapper(node: unknown): boolean {

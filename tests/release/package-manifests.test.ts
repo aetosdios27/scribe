@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
-const version = "0.1.0-alpha.5";
 const packageNames = ["react", "styles", "mdx", "cli"] as const;
 const packageFiles = {
   react: ["dist", "README.md", "SKILL.md", "LICENSE"],
@@ -26,6 +25,7 @@ describe("publishable package manifests", () => {
 
   it.each(packageNames)("hardens @scribe-sdk/%s for npm publication", async (directory) => {
     const manifest = await readJson(join(root, "packages", directory, "package.json"));
+    const version = await currentPublicVersion();
 
     expect(manifest).toMatchObject({
       name: `@scribe-sdk/${directory}`,
@@ -102,16 +102,19 @@ describe("publishable package manifests", () => {
 
   it("publishes the CLI as a binary rather than a library API", async () => {
     const manifest = await readJson(join(root, "packages/cli/package.json"));
+    const version = await currentPublicVersion();
     expect(manifest.bin).toEqual({ scribe: "./dist/index.mjs", scb: "./dist/index.mjs" });
     expect(manifest.exports).toEqual({});
     expect(manifest.dependencies).toEqual({
       "@base-ui/react": "1.6.0",
+      "@cloudflare/kumo": "2.8.0",
       "@fontsource/ibm-plex-mono": "5.2.7",
       "@fontsource/ibm-plex-sans": "5.2.8",
       "@fontsource/ibm-plex-serif": "5.2.7",
       "@mdx-js/mdx": "3.1.1",
       "@mdx-js/rollup": "3.1.1",
       "@mdxeditor/editor": "4.0.4",
+      "@phosphor-icons/react": "2.1.10",
       "@scribe-sdk/mdx": version,
       "@scribe-sdk/react": version,
       "@scribe-sdk/styles": version,
@@ -120,6 +123,7 @@ describe("publishable package manifests", () => {
       clsx: "2.1.1",
       lenis: "1.3.25",
       "lucide-react": "1.25.0",
+      "monaco-editor": "0.56.0",
       sonner: "2.0.7",
       "tailwind-merge": "3.6.0",
       vite: "8.1.3"
@@ -131,4 +135,9 @@ describe("publishable package manifests", () => {
 
 async function readJson(path: string): Promise<Record<string, any>> {
   return JSON.parse(await readFile(path, "utf8")) as Record<string, any>;
+}
+
+async function currentPublicVersion(): Promise<string> {
+  const manifest = await readJson(join(root, "packages", "react", "package.json"));
+  return manifest.version as string;
 }
