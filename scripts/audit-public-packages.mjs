@@ -143,7 +143,9 @@ function run(directory, command, args) {
   });
 
   if (result.error) throw result.error;
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} exited with code ${result.status ?? 1}.`);
+  }
 }
 
 if (

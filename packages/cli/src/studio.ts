@@ -310,6 +310,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
         "@mdxeditor/editor",
         "lenis",
         "lucide-react",
+        "monaco-editor",
         "sonner"
       ]
     },
@@ -640,14 +641,9 @@ function createStudioPlugin(context: {
               const baseDiskVersion = typeof body.baseDiskVersion === "string"
                 ? body.baseDiskVersion
                 : context.state.recoveryBaseVersion;
-              const previousBaseDiskVersion = context.state.recoveryBaseVersion;
-              context.state.recoveryBaseVersion = baseDiskVersion;
-              try {
+              await withRecoveryBaseVersion(context.state, baseDiskVersion, async () => {
                 await applyDraft(context, server, normalizeLineEndings(body.source as string, context.state.lineEnding));
-              } catch (error) {
-                context.state.recoveryBaseVersion = previousBaseDiskVersion;
-                throw error;
-              }
+              });
               if (body.externalConflict === true || baseDiskVersion !== context.state.diskVersion) {
                 context.state.conflict = true;
                 context.state.recoveryConflict = true;
@@ -698,19 +694,14 @@ function createStudioPlugin(context: {
                 }
               );
               if (!result.ok) return { accepted: false as const, value: { result, projection } };
-              const previousBaseDiskVersion = context.state.recoveryBaseVersion;
-              context.state.recoveryBaseVersion = baseDiskVersion;
-              try {
+              await withRecoveryBaseVersion(context.state, baseDiskVersion, async () => {
                 await applyDraft(
                   context,
                   server,
                   normalizeLineEndings(result.markdown, context.state.lineEnding),
                   acceptedDiagnostics
                 );
-              } catch (error) {
-                context.state.recoveryBaseVersion = previousBaseDiskVersion;
-                throw error;
-              }
+              });
               if (baseDiskVersion !== context.state.diskVersion) {
                 context.state.conflict = true;
                 context.state.recoveryConflict = true;
@@ -895,14 +886,9 @@ function createStudioPlugin(context: {
               if (archived === undefined || archived.sourcePath !== context.sourcePath) {
                 return { accepted: false as const, value: { status: 404, error: "No discarded Studio draft is available to recover." } };
               }
-              const previousBase = context.state.recoveryBaseVersion;
-              context.state.recoveryBaseVersion = archived.baseDiskVersion;
-              try {
+              await withRecoveryBaseVersion(context.state, archived.baseDiskVersion, async () => {
                 await applyDraft(context, server, archived.draftSource);
-              } catch (error) {
-                context.state.recoveryBaseVersion = previousBase;
-                throw error;
-              }
+              });
               context.state.recovered = true;
               context.state.recoveryConflict = archived.baseDiskVersion !== context.state.diskVersion;
               context.state.conflict ||= context.state.recoveryConflict;
@@ -1082,6 +1068,7 @@ function renameGeneratedMdxBody(value: unknown): void {
   if (value === null || typeof value !== "object") return;
   const node = value as Record<string, unknown>;
   if (node.type === "Identifier" && node.name === "_createMdxContent") {
+    // React Refresh recognizes the generated MDX body as a boundary only when its identifier is capitalized.
     node.name = "MdxContentBody";
   }
   for (const child of Object.values(node)) renameGeneratedMdxBody(child);
@@ -1144,6 +1131,17 @@ if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
   new Lenis({ autoRaf: true, smoothWheel: true, gestureOrientation: "vertical", anchors: true });
 }
 const previewRoot = createRoot(document.querySelector("#preview"));
+const PreviewThemeContext = React.createContext("dark");
+function StudioWrapper({ children, ...props }) {
+  const theme = React.useContext(PreviewThemeContext);
+  const articleChildren = studioHostArticleClassName
+    ? React.createElement("div", { className: studioHostArticleClassName, "data-scribe-studio-host-article": "" }, children)
+    : children;
+  return React.createElement(Publication, { ...props, "data-theme": theme }, articleChildren);
+}
+const previewComponents = createScribeComponents({
+  components: { wrapper: StudioWrapper, Banner: StudioBanner, img: StudioImage }
+});
 function PreviewApp() {
   const [theme, setTheme] = React.useState("dark");
   React.useLayoutEffect(() => {
@@ -1182,16 +1180,11 @@ function PreviewApp() {
     addEventListener("message", receiveReveal);
     return () => removeEventListener("message", receiveReveal);
   }, []);
-  const components = React.useMemo(() => {
-    function Wrapper({ children, ...props }) {
-      const articleChildren = studioHostArticleClassName
-        ? React.createElement("div", { className: studioHostArticleClassName, "data-scribe-studio-host-article": "" }, children)
-        : children;
-      return React.createElement(Publication, { ...props, "data-theme": theme }, articleChildren);
-    }
-    return createScribeComponents({ components: { wrapper: Wrapper, Banner: StudioBanner, img: StudioImage } });
-  }, [theme]);
-  return React.createElement(Article, { components });
+  return React.createElement(
+    PreviewThemeContext.Provider,
+    { value: theme },
+    React.createElement(Article, { components: previewComponents })
+  );
 }
 previewRoot.render(React.createElement(PreviewApp));
 `;
@@ -1325,6 +1318,21 @@ async function applyDraft(
   await reloadArticleSafely(server, context.articleId, context.state);
 }
 
+async function withRecoveryBaseVersion<T>(
+  state: StudioState,
+  baseDiskVersion: string,
+  action: () => Promise<T>
+): Promise<T> {
+  const previousBaseDiskVersion = state.recoveryBaseVersion;
+  state.recoveryBaseVersion = baseDiskVersion;
+  try {
+    return await action();
+  } catch (error) {
+    state.recoveryBaseVersion = previousBaseDiskVersion;
+    throw error;
+  }
+}
+
 async function diagnosticsFor(compiler: StudioCompiler, path: string, source: string): Promise<StudioDiagnostic[]> {
   return compiler.compile(path, source);
 }
@@ -1449,7 +1457,7 @@ async function listenOnLoopback(server: HttpServer, port: number): Promise<void>
   });
 }
 
-async function closeStudioServers(vite: ViteDevServer, http: HttpServer, compiler: StudioCompiler): Promise<void> {
+export async function closeStudioServers(vite: ViteDevServer, http: HttpServer, compiler: StudioCompiler): Promise<void> {
   http.closeIdleConnections();
   http.closeAllConnections();
   const httpClosed = !http.listening
@@ -1459,8 +1467,14 @@ async function closeStudioServers(vite: ViteDevServer, http: HttpServer, compile
       });
   void httpClosed.catch(() => undefined);
   try {
-    await shutdownStep(compiler.close(), "compiler worker");
-    await shutdownStep(vite.close(), "Vite server");
+    const shutdowns = await Promise.allSettled([
+      shutdownStep(compiler.close(), "compiler worker"),
+      shutdownStep(vite.close(), "Vite server")
+    ]);
+    const failure = shutdowns.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected"
+    );
+    if (failure !== undefined) throw failure.reason;
   } finally {
     await shutdownStep(httpClosed, "Studio HTTP server");
   }

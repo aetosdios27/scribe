@@ -72,10 +72,10 @@ export async function durableWriteStudioFile(options: DurableStudioWrite): Promi
   const temporaryPath = `${options.resolvedPath}.scribe-${process.pid}-${randomBytes(8).toString("hex")}.tmp`;
   let temporaryExists = false;
   try {
-    const temporary = await open(temporaryPath, "wx", options.mode & 0o7777);
+    const temporary = await open(temporaryPath, "wx", options.mode & 0o777);
     temporaryExists = true;
     try {
-      await temporary.chmod(options.mode & 0o7777);
+      await temporary.chmod(options.mode & 0o777);
       await temporary.writeFile(bytes);
       await temporary.sync();
     } finally {
@@ -104,7 +104,7 @@ export async function durableWriteStudioFile(options: DurableStudioWrite): Promi
 
     const committed = await readFile(options.resolvedPath);
     if (!committed.equals(bytes)) {
-      throw new Error("Studio could not verify the bytes written to the source file.");
+      throw new Error("Studio replaced the source file, but byte verification failed.");
     }
     return readStudioFile(options.requestedPath);
   } finally {

@@ -1,13 +1,22 @@
-import { chmod, lstat, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { expect, it } from "vitest";
+import { afterAll, afterEach, expect, it } from "vitest";
 
 import { durableWriteStudioFile, readStudioFile, StudioFileConflictError } from "./studio-files.js";
 
+const fixtureRoots = new Set<string>();
+async function cleanFixtureRoots(): Promise<void> {
+  await Promise.all([...fixtureRoots].map((root) => rm(root, { force: true, recursive: true })));
+  fixtureRoots.clear();
+}
+afterEach(cleanFixtureRoots);
+afterAll(cleanFixtureRoots);
+
 async function sourceFile(source = "# Original\n"): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "scribe durable "));
+  fixtureRoots.add(root);
   const path = join(root, "article.mdx");
   await writeFile(path, source);
   return path;
@@ -15,7 +24,7 @@ async function sourceFile(source = "# Original\n"): Promise<string> {
 
 it("durably replaces the resolved target without replacing a source symlink", async () => {
   const target = await sourceFile();
-  await chmod(target, 0o664);
+  await chmod(target, 0o1664);
   const link = join(target, "..", "linked.mdx");
   await symlink(target, link);
   const snapshot = await readStudioFile(link);
@@ -35,7 +44,7 @@ it("durably replaces the resolved target without replacing a source symlink", as
   expect((await lstat(link)).isSymbolicLink()).toBe(true);
   expect(await readFile(target, "utf8")).toBe("# Saved\n");
   expect(committed.source).toBe("# Saved\n");
-  expect((await lstat(target)).mode & 0o777).toBe(0o664);
+  expect((await lstat(target)).mode & 0o7777).toBe(0o664);
 });
 
 it("detects an edit in the final commit window and removes its temporary file", async () => {
@@ -91,5 +100,6 @@ it("refuses bare carriage returns instead of silently normalizing them", async (
 
 it("rejects non-regular sources before attempting to read them", async () => {
   const root = await mkdtemp(join(tmpdir(), "scribe source directory "));
+  fixtureRoots.add(root);
   await expect(readStudioFile(root)).rejects.toThrow("Studio source is not a regular file");
 });

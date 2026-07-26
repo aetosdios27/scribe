@@ -116,6 +116,10 @@ export class StudioCompiler {
     if (Date.now() < this.#circuitOpenUntil) {
       throw new Error("Studio compiler is temporarily unavailable after repeated worker failures. Try again shortly.");
     }
+    if (this.#circuitOpenUntil > 0) {
+      this.#consecutiveFailures = 0;
+      this.#circuitOpenUntil = 0;
+    }
     this.#worker = this.#createWorker();
     return this.#worker;
   }
@@ -140,7 +144,7 @@ parentPort.on("message", async ({ id, path, source }) => {
     parentPort.postMessage({
       id,
       diagnostics: file.messages.map((message) => ({
-        severity: "warning",
+        severity: message.fatal === true ? "error" : "warning",
         code: message.ruleId ?? "SCB0001",
         message: message.reason,
         ...(message.line === undefined ? {} : { line: message.line }),
@@ -148,7 +152,7 @@ parentPort.on("message", async ({ id, path, source }) => {
       }))
     });
   } catch (error) {
-    const diagnostic = error;
+    const diagnostic = error !== null && typeof error === "object" ? error : {};
     parentPort.postMessage({
       id,
       diagnostics: [{

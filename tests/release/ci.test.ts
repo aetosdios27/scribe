@@ -74,6 +74,8 @@ describe("public CI contract", () => {
     expect(auditScript).toContain("AbortSignal.timeout(commandTimeoutMilliseconds)");
     expect(auditScript).toContain("timeout: commandTimeoutMilliseconds");
     expect(auditScript).toContain("Monaco 0.56.0 pins DOMPurify 3.4.8");
+    expect(auditScript).not.toContain("process.exit(result.status");
+    expect(auditScript).toContain("throw new Error(`${command} ${args.join(\" \")} exited with code");
   });
 
   it("decodes registry advisory responses even when a proxy leaves gzip bytes encoded", () => {

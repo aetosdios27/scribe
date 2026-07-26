@@ -12,6 +12,7 @@ import {
   runStudio,
   startStudio,
   studioPreviewArticleClassName,
+  closeStudioServers,
   type StudioHandle
 } from "./studio.js";
 
@@ -114,6 +115,9 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
   const previewClient = await (await fetch(`${handle.origin}/@scribe-studio/preview.tsx`)).text();
   expect(previewClient).toContain('document.documentElement.classList.toggle("dark", theme === "dark")');
   expect(previewClient).toContain("data-scribe-studio-host-article");
+  expect(previewClient).toContain("const PreviewThemeContext = React.createContext");
+  expect(previewClient).toContain("const previewComponents = createScribeComponents");
+  expect(previewClient).not.toContain("React.useMemo");
 
   const previewDocument = await (await fetch(`${handle.origin}/preview`)).text();
   expect(previewDocument).toContain("[data-scribe-studio-host-article] :where(table");
@@ -130,6 +134,7 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
 it("surfaces recovery read failures before opening the Studio", async () => {
   const file = await fixture();
   const recoveryRoot = await mkdtemp(join(tmpdir(), "scribe recovery failure "));
+  fixtureRoots.add(recoveryRoot);
   await mkdir(join(recoveryRoot, "recovery", `${studioRecoveryKey(file.path)}.json`), { recursive: true });
 
   await expect(startStudio({
@@ -140,6 +145,25 @@ it("surfaces recovery read failures before opening the Studio", async () => {
     open: false,
     recoveryRoot
   })).rejects.toThrow("Studio could not read its local recovery state");
+});
+
+it("attempts Vite shutdown even when compiler shutdown fails", async () => {
+  const viteClose = vi.fn(async () => undefined);
+  const compilerClose = vi.fn(async () => {
+    throw new Error("compiler close failed");
+  });
+  const http = {
+    listening: false,
+    closeIdleConnections: vi.fn(),
+    closeAllConnections: vi.fn()
+  };
+
+  await expect(closeStudioServers(
+    { close: viteClose } as never,
+    http as never,
+    { close: compilerClose } as never
+  )).rejects.toThrow("compiler close failed");
+  expect(viteClose).toHaveBeenCalledOnce();
 });
 
 it("requires an explicit Studio mode when project detection is ambiguous", async () => {
