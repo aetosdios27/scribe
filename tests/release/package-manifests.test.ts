@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
-const version = "0.1.0-alpha.5";
 const packageNames = ["react", "styles", "mdx", "cli"] as const;
 const packageFiles = {
   react: ["dist", "README.md", "SKILL.md", "LICENSE"],
@@ -26,6 +25,7 @@ describe("publishable package manifests", () => {
 
   it.each(packageNames)("hardens @scribe-sdk/%s for npm publication", async (directory) => {
     const manifest = await readJson(join(root, "packages", directory, "package.json"));
+    const version = await currentPublicVersion();
 
     expect(manifest).toMatchObject({
       name: `@scribe-sdk/${directory}`,
@@ -102,6 +102,7 @@ describe("publishable package manifests", () => {
 
   it("publishes the CLI as a binary rather than a library API", async () => {
     const manifest = await readJson(join(root, "packages/cli/package.json"));
+    const version = await currentPublicVersion();
     expect(manifest.bin).toEqual({ scribe: "./dist/index.mjs", scb: "./dist/index.mjs" });
     expect(manifest.exports).toEqual({});
     expect(manifest.dependencies).toEqual({
@@ -134,4 +135,9 @@ describe("publishable package manifests", () => {
 
 async function readJson(path: string): Promise<Record<string, any>> {
   return JSON.parse(await readFile(path, "utf8")) as Record<string, any>;
+}
+
+async function currentPublicVersion(): Promise<string> {
+  const manifest = await readJson(join(root, "packages", "react", "package.json"));
+  return manifest.version as string;
 }
