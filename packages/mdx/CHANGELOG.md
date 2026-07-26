@@ -1,5 +1,11 @@
 # @scribe-sdk/mdx
 
+## 0.1.0-alpha.6
+
+### Patch Changes
+
+- 58f544e: Refine Scribe Studio with distinct Markdown and constrained Rich Text modes, a live read-only Markdown mirror, protected source-preserving MDX blocks, detected style mode, accessible controls, local IBM Plex typography, smooth preview scrolling, explicit-save safeguards, clearer diagnostics, and missing-asset feedback. Treat YAML frontmatter as article metadata, synthesize a Banner when appropriate, preserve the host's Tailwind Typography boundary in preview, and improve default table and mobile code-frame presentation.
+
 ## 0.1.0-alpha.5
 
 ## 0.1.0-alpha.4
