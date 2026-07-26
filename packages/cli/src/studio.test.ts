@@ -459,6 +459,82 @@ it("journals a browser draft against its original disk version when an external 
   expect(await readFile(file.path, "utf8")).toBe("# External\n");
 });
 
+it("restores the recovery base version when a Markdown draft journal fails", async () => {
+  const file = await fixture("journal-failure.mdx", "# Original\n");
+  const recoveryRoot = await mkdtemp(join(tmpdir(), "scribe recovery rollback "));
+  fixtureRoots.add(recoveryRoot);
+  const handle = await startStudio({
+    root: file.root,
+    path: file.path,
+    mode: "default",
+    port: 0,
+    open: false,
+    recoveryRoot
+  });
+  handles.push(handle);
+  const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as {
+    diskVersion: string;
+  };
+  const recoveryDirectory = join(recoveryRoot, "recovery");
+  await writeFile(recoveryDirectory, "block recovery directory creation");
+
+  const failed = await mutate(handle, "/__scribe/api/draft", {
+    source: "# Failed journal\n",
+    baseDiskVersion: "poisoned-version"
+  });
+  expect(failed.status).toBe(400);
+
+  await unlink(recoveryDirectory);
+  const retried = await mutate(handle, "/__scribe/api/draft", { source: "# Recovered journal\n" });
+  expect(retried.status).toBe(200);
+  const record = JSON.parse(
+    await readFile(join(recoveryDirectory, `${studioRecoveryKey(file.path)}.json`), "utf8")
+  ) as { baseDiskVersion: string };
+  expect(record.baseDiskVersion).toBe(initial.diskVersion);
+});
+
+it("restores the recovery base version when a Rich Text draft journal fails", async () => {
+  const file = await fixture("rich-journal-failure.mdx", "# Original\n\nA paragraph.\n");
+  const recoveryRoot = await mkdtemp(join(tmpdir(), "scribe rich recovery rollback "));
+  fixtureRoots.add(recoveryRoot);
+  const handle = await startStudio({
+    root: file.root,
+    path: file.path,
+    mode: "default",
+    port: 0,
+    open: false,
+    recoveryRoot
+  });
+  handles.push(handle);
+  const initial = await (await fetch(`${handle.origin}/__scribe/api/document`)).json() as {
+    diskVersion: string;
+  };
+  const projected = await (await fetch(`${handle.origin}/__scribe/api/rich-projection`)).json() as {
+    projectionMarkdown: string;
+  };
+  const candidate = projected.projectionMarkdown.replace("A paragraph.", "Edited paragraph.");
+  const recoveryDirectory = join(recoveryRoot, "recovery");
+  await writeFile(recoveryDirectory, "block recovery directory creation");
+
+  const failed = await mutate(handle, "/__scribe/api/rich-draft", {
+    source: candidate,
+    baseSource: "# Original\n\nA paragraph.\n",
+    baseDiskVersion: "poisoned-version"
+  });
+  expect(failed.status).toBe(422);
+
+  await unlink(recoveryDirectory);
+  const retried = await mutate(handle, "/__scribe/api/rich-draft", {
+    source: candidate,
+    baseSource: "# Original\n\nA paragraph.\n"
+  });
+  expect(retried.status).toBe(200);
+  const record = JSON.parse(
+    await readFile(join(recoveryDirectory, `${studioRecoveryKey(file.path)}.json`), "utf8")
+  ) as { baseDiskVersion: string };
+  expect(record.baseDiskVersion).toBe(initial.diskVersion);
+});
+
 it("preserves a pending Rich Text candidate when the source changes externally", async () => {
   const file = await fixture("rich-conflict.mdx", "# Original\n\nA paragraph.\n");
   const handle = await startStudio({ root: file.root, path: file.path, mode: "default", port: 0, open: false });

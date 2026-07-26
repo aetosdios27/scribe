@@ -51,3 +51,18 @@ it("marks only genuinely wide Markdown and literal JSX tables for horizontal ove
   expect(output.match(/"data-scribe-table-layout": "wide"/g)).toHaveLength(2);
   expect(output.match(/className: "scribe-table-scroll"/g)).toHaveLength(3);
 });
+
+it("counts HTML and JSX cell spans when classifying wide tables", async () => {
+  const file = await compileScribeMdx(`
+<table>
+  <tbody><tr><td colSpan={3}>identity</td><td>meaning</td></tr></tbody>
+</table>
+
+<table>
+  <tbody><tr><td colspan="3">identity</td><td>meaning</td></tr></tbody>
+</table>
+`);
+  const output = String(file);
+
+  expect(output.match(/"data-scribe-table-layout": "wide"/g)).toHaveLength(2);
+});

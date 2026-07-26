@@ -407,6 +407,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     }).then(({ revision }) => {
       state.revision = revision;
       events.publish(revision);
+    }).catch((error: unknown) => {
+      state.conflict = true;
+      state.diagnostics = [watcherDiagnostic(error)];
+      events.publish(state.revision);
     });
   });
   server.watcher.on("error", (error) => {
@@ -418,6 +422,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     }).then(({ revision }) => {
       state.revision = revision;
       events.publish(revision);
+    }).catch((failure: unknown) => {
+      state.conflict = true;
+      state.diagnostics = [watcherDiagnostic(failure)];
+      events.publish(state.revision);
     });
   });
 
@@ -632,8 +640,14 @@ function createStudioPlugin(context: {
               const baseDiskVersion = typeof body.baseDiskVersion === "string"
                 ? body.baseDiskVersion
                 : context.state.recoveryBaseVersion;
+              const previousBaseDiskVersion = context.state.recoveryBaseVersion;
               context.state.recoveryBaseVersion = baseDiskVersion;
-              await applyDraft(context, server, normalizeLineEndings(body.source as string, context.state.lineEnding));
+              try {
+                await applyDraft(context, server, normalizeLineEndings(body.source as string, context.state.lineEnding));
+              } catch (error) {
+                context.state.recoveryBaseVersion = previousBaseDiskVersion;
+                throw error;
+              }
               if (body.externalConflict === true || baseDiskVersion !== context.state.diskVersion) {
                 context.state.conflict = true;
                 context.state.recoveryConflict = true;
@@ -684,13 +698,19 @@ function createStudioPlugin(context: {
                 }
               );
               if (!result.ok) return { accepted: false as const, value: { result, projection } };
+              const previousBaseDiskVersion = context.state.recoveryBaseVersion;
               context.state.recoveryBaseVersion = baseDiskVersion;
-              await applyDraft(
-                context,
-                server,
-                normalizeLineEndings(result.markdown, context.state.lineEnding),
-                acceptedDiagnostics
-              );
+              try {
+                await applyDraft(
+                  context,
+                  server,
+                  normalizeLineEndings(result.markdown, context.state.lineEnding),
+                  acceptedDiagnostics
+                );
+              } catch (error) {
+                context.state.recoveryBaseVersion = previousBaseDiskVersion;
+                throw error;
+              }
               if (baseDiskVersion !== context.state.diskVersion) {
                 context.state.conflict = true;
                 context.state.recoveryConflict = true;
@@ -806,6 +826,7 @@ function createStudioPlugin(context: {
           } catch (error) {
             if (error instanceof StudioFileConflictError) {
               context.state.conflict = true;
+              context.events.publish(context.state.revision);
               return json(response, 409, { error: error.message, ...publicState(context.state) });
             }
             return json(response, 500, { error: error instanceof Error ? error.message : String(error) });
@@ -949,8 +970,8 @@ function studioRuntimePaths(): StudioRuntimePaths {
     mdxEditor: studioImportPath("@mdxeditor/editor"),
     mdxEditorStyle: studioImportPath("@mdxeditor/editor/style.css"),
     monaco: studioImportPath("monaco-editor"),
-    monacoMarkdown: studioImportPath("monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js"),
-    monacoWorker: studioRequire.resolve("monaco-editor/esm/vs/editor/editor.worker.js"),
+    monacoMarkdown: studioImportPath("monaco-editor/languages/definitions/markdown/register.js"),
+    monacoWorker: studioRequire.resolve("monaco-editor/editor/editor.worker.js"),
     plexSans400: studioImportPath("@fontsource/ibm-plex-sans/400.css"),
     plexSans500: studioImportPath("@fontsource/ibm-plex-sans/500.css"),
     plexSans600: studioImportPath("@fontsource/ibm-plex-sans/600.css"),
@@ -982,11 +1003,11 @@ function studioAliases(runtime: StudioRuntimePaths) {
     { find: "@mdxeditor/editor/style.css", replacement: runtime.mdxEditorStyle },
     { find: "@mdxeditor/editor", replacement: runtime.mdxEditor },
     {
-      find: /^monaco-editor\/esm\/vs\/editor\/editor\.worker\.js(?:\?worker)?$/u,
+      find: /^monaco-editor\/editor\/editor\.worker\.js(?:\?worker)?$/u,
       replacement: `${runtime.monacoWorker}?worker`
     },
     {
-      find: /^monaco-editor\/esm\/vs\/basic-languages\/markdown\/markdown\.contribution\.js$/u,
+      find: /^monaco-editor\/languages\/definitions\/markdown\/register\.js$/u,
       replacement: runtime.monacoMarkdown
     },
     { find: /^monaco-editor$/u, replacement: runtime.monaco },
@@ -1436,6 +1457,7 @@ async function closeStudioServers(vite: ViteDevServer, http: HttpServer, compile
     : new Promise<void>((resolveClose, rejectClose) => {
         http.close((error) => error === undefined ? resolveClose() : rejectClose(error));
       });
+  void httpClosed.catch(() => undefined);
   try {
     await shutdownStep(compiler.close(), "compiler worker");
     await shutdownStep(vite.close(), "Vite server");
@@ -1445,6 +1467,7 @@ async function closeStudioServers(vite: ViteDevServer, http: HttpServer, compile
 }
 
 async function shutdownStep(operation: Promise<unknown>, label: string): Promise<void> {
+  void operation.catch(() => undefined);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([

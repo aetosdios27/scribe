@@ -22,8 +22,8 @@ import { createRoot } from "react-dom/client";
 	import { Button, Select, Tooltip, TooltipProvider } from "@cloudflare/kumo";
 import Lenis from "lenis";
 import * as monaco from "monaco-editor";
-import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker.js?worker";
-import "monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js";
+import EditorWorker from "monaco-editor/editor/editor.worker.js?worker";
+import "monaco-editor/languages/definitions/markdown/register.js";
 import {
   AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bold, Check, ChevronDown, Circle,
   Code2, Copy, Edit3, ExternalLink, FileCode2, FileText,
@@ -432,7 +432,13 @@ function MonacoMarkdownEditor({ value, onChange, onSustainedEdit, editorRef, rea
     const model = modelRef.current;
     if (!model || model.getValue() === value) return;
     applyingExternalValue.current = true;
-    model.setValue(value);
+    monacoRef.current?.pushUndoStop();
+    model.pushEditOperations(
+      [],
+      [{ range: model.getFullModelRange(), text: value }],
+      () => null
+    );
+    monacoRef.current?.pushUndoStop();
     applyingExternalValue.current = false;
   }, [value]);
 
@@ -582,7 +588,8 @@ function RichEditor({ session, state, onAccepted, onRejected, onEditInMarkdown, 
           revision: body.revision,
           projectionMarkdown: body.projectionMarkdown,
           islands: body.islands,
-          baseSource: body.source
+          baseSource: body.source,
+          baseDiskVersion: body.diskVersion
         });
         return true;
       }
@@ -665,22 +672,29 @@ function SecondaryPane({ tab, setTab, source, state, theme, viewport }) {
   </section>;
 }
 
+function splitBoundsForWidth(width) {
+  const minimumSplit = Math.min(42, 320 / width * 100);
+  return { minimumSplit, maximumSplit: 100 - minimumSplit };
+}
+
 function Workspace({ state, source, setSource, revealSourceLine, revealRequest, editorRef, theme, viewport, writer }) {
   const workspaceRef = useRef(null);
   const dragging = useRef(false);
   const dragOffset = useRef(0);
   const [split, setSplit] = useState(50);
+  const [minimumSplit, setMinimumSplit] = useState(25);
 
   const fitSelectedViewport = useCallback(() => {
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width < 1) return;
+    const { minimumSplit: minimum, maximumSplit } = splitBoundsForWidth(bounds.width);
+    setMinimumSplit(minimum);
     if (viewport === "fit") {
       setSplit(50);
       return;
     }
-    const bounds = workspaceRef.current?.getBoundingClientRect();
-    if (!bounds || bounds.width < 1) return;
-    const minimumPane = Math.min(42, 320 / bounds.width * 100);
     const target = (bounds.width - previewPresets[viewport].width - 1) / bounds.width * 100;
-    setSplit(Math.min(100 - minimumPane, Math.max(minimumPane, target)));
+    setSplit(Math.min(maximumSplit, Math.max(minimum, target)));
   }, [viewport]);
 
   useEffect(() => {
@@ -695,8 +709,9 @@ function Workspace({ state, source, setSource, revealSourceLine, revealRequest, 
   const updateSplit = useCallback((clientX) => {
     const bounds = workspaceRef.current?.getBoundingClientRect();
     if (!bounds || bounds.width < 1) return;
-    const minimum = Math.min(42, 320 / bounds.width * 100);
-    setSplit(Math.min(100 - minimum, Math.max(minimum, (clientX - bounds.left) / bounds.width * 100)));
+    const { minimumSplit: minimum, maximumSplit } = splitBoundsForWidth(bounds.width);
+    setMinimumSplit(minimum);
+    setSplit(Math.min(maximumSplit, Math.max(minimum, (clientX - bounds.left) / bounds.width * 100)));
   }, []);
 
   const finishDrag = useCallback((event) => {
@@ -713,8 +728,8 @@ function Workspace({ state, source, setSource, revealSourceLine, revealRequest, 
       role="separator"
       aria-label="Resize editor and preview"
       aria-orientation="vertical"
-      aria-valuemin="25"
-      aria-valuemax="75"
+      aria-valuemin={Math.round(minimumSplit)}
+      aria-valuemax={Math.round(100 - minimumSplit)}
       aria-valuenow={Math.round(split)}
       tabIndex="0"
       onPointerDown={(event) => {
@@ -731,7 +746,10 @@ function Workspace({ state, source, setSource, revealSourceLine, revealRequest, 
 	      onKeyDown={(event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
-        setSplit((current) => Math.min(75, Math.max(25, current + (event.key === "ArrowLeft" ? -2 : 2))));
+        setSplit((current) => Math.min(
+          100 - minimumSplit,
+          Math.max(minimumSplit, current + (event.key === "ArrowLeft" ? -2 : 2))
+        ));
       }}
     />
     <PreviewPanel theme={theme} viewport={viewport} previewVersion={state.previewVersion} revealRequest={revealRequest} />
@@ -791,18 +809,42 @@ function StudioApp() {
 
   const applyRichState = useCallback((body) => apply(body, true), [apply]);
 
+  const putDraft = useCallback(async (nextSource, options = {}) => {
+    const { response, body } = await request("/__scribe/api/draft", {
+      method: "PUT",
+      body: JSON.stringify({
+        source: nextSource,
+        externalConflict: options.externalConflict ?? browserRecoveryConflict.current,
+        baseDiskVersion: draftBaseDiskVersion.current
+      })
+    });
+    if (!response.ok || typeof body.source !== "string") {
+      toast.error(body.error || "Studio could not preserve this draft.");
+      return false;
+    }
+    browserRecoveryConflict.current = false;
+    apply(body, options.replaceSource ?? false);
+    return body;
+  }, [apply]);
+
   useEffect(() => {
     let active = true;
     let events;
+    let openRetry;
+    let openErrorShown = false;
     const openDocument = async () => {
       const { response, body } = await request("/__scribe/api/document");
       if (!response.ok || typeof body.source !== "string") {
         if (active) {
           setConnected(false);
-          toast.error(body.error || "Studio could not load the local document.");
+          if (!openErrorShown) {
+            openErrorShown = true;
+            toast.error(body.error || "Studio could not load the local document.");
+          }
         }
         return false;
       }
+      openErrorShown = false;
       apply(body, true);
       try {
         const recovered = await readBrowserRecovery(body.recoveryKey);
@@ -867,15 +909,7 @@ function StudioApp() {
       if (body.diskVersion !== diskVersion.current) {
         const localPending = sourceRef.current !== serverSourceRef.current;
         if (localPending) {
-          const preserved = await request("/__scribe/api/draft", {
-            method: "PUT",
-            body: JSON.stringify({
-              source: sourceRef.current,
-              externalConflict: true,
-              baseDiskVersion: draftBaseDiskVersion.current
-            })
-          });
-          if (typeof preserved.body.source === "string") apply(preserved.body, false);
+          await putDraft(sourceRef.current, { externalConflict: true });
           return;
         }
         apply(body, !body.dirty);
@@ -883,18 +917,26 @@ function StudioApp() {
         apply(body, !body.dirty);
       }
     };
-    void openDocument().then((opened) => {
-      if (!active || !opened) return;
-      events = new EventSource("/__scribe/api/events");
-      events.onopen = () => setConnected(true);
-      events.onerror = () => setConnected(false);
-      events.onmessage = () => void refresh();
-    });
+    const scheduleOpenDocument = () => {
+      void openDocument().then((opened) => {
+        if (!active) return;
+        if (!opened) {
+          openRetry = setTimeout(scheduleOpenDocument, 500);
+          return;
+        }
+        events = new EventSource("/__scribe/api/events");
+        events.onopen = () => setConnected(true);
+        events.onerror = () => setConnected(false);
+        events.onmessage = () => void refresh();
+      });
+    };
+    scheduleOpenDocument();
     return () => {
       active = false;
+      clearTimeout(openRetry);
       events?.close();
     };
-  }, [apply]);
+  }, [apply, putDraft]);
 
   useEffect(() => {
     if (!state?.recoveryKey || !browserRecoveryReady.current) return;
@@ -950,21 +992,9 @@ function StudioApp() {
   useEffect(() => {
     if (authorMode !== "markdown" || !state || source === state.source) return;
     clearTimeout(updateTimer.current);
-    updateTimer.current = setTimeout(async () => {
-      const { response, body } = await request("/__scribe/api/draft", {
-        method: "PUT",
-        body: JSON.stringify({
-          source,
-          externalConflict: browserRecoveryConflict.current,
-          baseDiskVersion: draftBaseDiskVersion.current
-        })
-      });
-      if (response.ok) browserRecoveryConflict.current = false;
-      if (typeof body.source === "string") apply(body);
-      if (!response.ok) toast.error(body.error || "Studio could not preserve this draft.");
-    }, 280);
+    updateTimer.current = setTimeout(() => void putDraft(source), 280);
     return () => clearTimeout(updateTimer.current);
-  }, [source, state, apply, authorMode]);
+  }, [source, state, authorMode, putDraft]);
 
   useEffect(() => {
     if (authorMode !== "markdown" || !pendingSelection.current) return;
@@ -985,22 +1015,8 @@ function StudioApp() {
   const flushMarkdown = useCallback(async () => {
     clearTimeout(updateTimer.current);
     if (!state || source === state.source) return state;
-    const { response, body } = await request("/__scribe/api/draft", {
-      method: "PUT",
-      body: JSON.stringify({
-        source,
-        externalConflict: browserRecoveryConflict.current,
-        baseDiskVersion: draftBaseDiskVersion.current
-      })
-    });
-    if (response.ok) browserRecoveryConflict.current = false;
-    if (!response.ok || typeof body.source !== "string") {
-      toast.error(body.error || "Studio could not preserve this draft.");
-      return state;
-    }
-    apply(body, true);
-    return body;
-  }, [state, source, apply]);
+    return putDraft(source, { replaceSource: true });
+  }, [state, source, putDraft]);
 
   const enterRich = useCallback(async () => {
     if (writer === false) {
@@ -1077,7 +1093,13 @@ function StudioApp() {
         setSavePhase("error");
         return;
       }
-    } else await flushMarkdown();
+    } else {
+      const flushed = await flushMarkdown();
+      if (!flushed) {
+        setSavePhase("error");
+        return;
+      }
+    }
     const saved = await request("/__scribe/api/save", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedDiskVersion: diskVersion.current }) });
     if (saved.response.ok) {
       apply(saved.body, true);

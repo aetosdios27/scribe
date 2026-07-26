@@ -11,6 +11,12 @@ async function replaceFixture(source: string) {
   await rename(temporaryPath, fixturePath);
 }
 
+function fixtureLineContaining(text: string): number {
+  const line = originalFixture.split("\n").findIndex((value) => value.includes(text));
+  if (line < 0) throw new Error(`Studio fixture does not contain ${JSON.stringify(text)}.`);
+  return line + 1;
+}
+
 test.beforeAll(async () => {
   originalFixture = await readFile(fixturePath, "utf8");
 });
@@ -96,7 +102,7 @@ test("keeps the Studio shell restrained while editing, previewing, resizing, and
   });
   await source.click();
   await page.keyboard.press("Control+g");
-  await page.keyboard.insertText("9");
+  await page.keyboard.insertText(String(fixtureLineContaining("The local source file remains authoritative")));
   await page.keyboard.press("Enter");
   await page.keyboard.press("End");
   await page.keyboard.insertText(" — without remounting");
@@ -109,11 +115,11 @@ test("keeps the Studio shell restrained while editing, previewing, resizing, and
   await preview.locator("body").evaluate(() => scrollTo(0, 0));
   await source.click();
   await page.keyboard.press("Control+g");
-  await page.keyboard.insertText("35");
+  await page.keyboard.insertText(String(fixtureLineContaining("Choked,")));
   await page.keyboard.press("Enter");
   await page.keyboard.press("End");
   await page.keyboard.insertText(" // synced");
-  const synchronizedCode = preview.locator('[data-scribe-source-line="33"]');
+  const synchronizedCode = preview.locator("[data-scribe-source-line]").filter({ hasText: "Choked, // synced" });
   await expect(synchronizedCode).toContainText("synced");
   await expect.poll(() => preview.locator("body").evaluate(() => scrollY)).toBeGreaterThan(0);
 
@@ -160,7 +166,7 @@ test("keeps the Studio shell restrained while editing, previewing, resizing, and
   await viewportControl.click();
   const mobileOption = page.getByRole("option", { name: "Mobile" });
   await expect(mobileOption).toBeVisible();
-  await page.waitForTimeout(160);
+  await expect(mobileOption).toHaveCSS("opacity", "1");
   await page.screenshot({ path: testInfo.outputPath("studio-viewport-menu.png"), fullPage: true });
   await mobileOption.click();
   await expect(viewportControl).toContainText("Mobile");

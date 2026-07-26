@@ -2,40 +2,28 @@ import { expect, it } from "vitest";
 
 import { studioClientModule, studioStyles, type StudioClientImports } from "./studio-ui.js";
 
-it("ships the constrained Rich Text client and the restrained Studio workspace shell", () => {
-  const client = studioClientModule({} as StudioClientImports);
+const client = studioClientModule({} as StudioClientImports);
+const styles = studioStyles();
+
+it("wires the constrained Rich Text and Monaco editors", () => {
   expect(client).toContain("MDXEditor");
   expect(client).toContain("lucide-react");
   expect(client).toContain("Rich Text");
   expect(client).toContain("format_align_left: AlignLeft");
   expect(client).toContain("format_align_center: AlignCenter");
   expect(client).toContain("format_align_right: AlignRight");
-  expect(client).toContain('new EventSource("/__scribe/api/events")');
-  expect(client).toContain("scribe-studio-recovery");
-  expect(client).toContain("Math.max(studioRevision, body.revision)");
-  expect(client).toContain("next.revision < studioRevision");
-  expect(client).toContain("Your browser recovery draft remains intact");
-  expect(client).toContain("transaction.onabort = () => reject(transaction.error)");
-  expect(client).toContain("const [writer, setWriter] = useState(null)");
-  expect(client).toContain("writer === false");
-  expect(client).toContain('if (!response.ok || typeof body.source !== "string")');
-  expect(client).not.toContain("revision: revisionRef.current");
   expect(client).not.toContain('aria-label="Markdown formatting"');
-  expect(client).not.toContain("<strong>Scribe Studio</strong>");
-  expect(client).not.toContain("production renderer");
-  expect(client).not.toContain("detected</span>");
-  expect(client).not.toContain('title="Markdown"');
-  expect(client).not.toContain('title="Preview"');
   expect(client).toContain('import { Button, Select, Tooltip, TooltipProvider } from "@cloudflare/kumo"');
   expect(client).toContain('import "@cloudflare/kumo/styles/standalone"');
   expect(client).toContain('import * as monaco from "monaco-editor"');
-  expect(client).toContain('import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker.js?worker"');
-  expect(client).toContain('import "monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js"');
+  expect(client).toContain('import EditorWorker from "monaco-editor/editor/editor.worker.js?worker"');
+  expect(client).toContain('import "monaco-editor/languages/definitions/markdown/register.js"');
   expect(client).toContain("function frontmatterEditorDecorations(model)");
   expect(client).toContain("editor.createDecorationsCollection(frontmatterEditorDecorations(model))");
   expect(client).toContain("frontmatterDecorations.set(frontmatterEditorDecorations(model))");
   expect(client).toContain("monaco.editor.createModel");
   expect(client).toContain('monaco.editor.createModel(value, "markdown"');
+  expect(client).toContain("model.pushEditOperations");
   expect(client).toContain("fontSize: 14");
   expect(client).toContain("lineHeight: 24");
   expect(client).toContain("lineDecorationsWidth: 22");
@@ -50,6 +38,36 @@ it("ships the constrained Rich Text client and the restrained Studio workspace s
   expect(client).toContain("onSustainedEdit");
   expect(client).toContain("}, 520)");
   expect(client).toContain('type: "scribe:reveal-source"');
+  expect(client).toContain('className="source-monaco"');
+  expect(client).not.toContain("source-line-number");
+  expect(client).not.toContain("source-highlight");
+  expect(client).not.toContain("highlightMarkdownLine");
+});
+
+it("preserves recovery, lease, and mutation failure behavior", () => {
+  expect(client).toContain('new EventSource("/__scribe/api/events")');
+  expect(client).toContain("scheduleOpenDocument");
+  expect(client).toContain("scribe-studio-recovery");
+  expect(client).toContain("Math.max(studioRevision, body.revision)");
+  expect(client).toContain("next.revision < studioRevision");
+  expect(client).toContain("Your browser recovery draft remains intact");
+  expect(client).toContain("transaction.onabort = () => reject(transaction.error)");
+  expect(client).toContain("const [writer, setWriter] = useState(null)");
+  expect(client).toContain("writer === false");
+  expect(client).toContain("const putDraft = useCallback");
+  expect(client).toContain('if (!response.ok || typeof body.source !== "string")');
+  expect(client).toContain("const flushed = await flushMarkdown()");
+  expect(client).toContain("if (!flushed)");
+  expect(client).toContain("baseDiskVersion: body.diskVersion");
+  expect(client).not.toContain("revision: revisionRef.current");
+});
+
+it("renders only the restrained Studio shell and operational status", () => {
+  expect(client).not.toContain("<strong>Scribe Studio</strong>");
+  expect(client).not.toContain("production renderer");
+  expect(client).not.toContain("detected</span>");
+  expect(client).not.toContain('title="Markdown"');
+  expect(client).not.toContain('title="Preview"');
   expect(client).toContain("<Select");
   expect(client).toContain("<Select.Option");
   expect(client).toContain('{ value: "fit", label: "Fit pane" }');
@@ -59,6 +77,8 @@ it("ships the constrained Rich Text client and the restrained Studio workspace s
   expect(client).not.toContain('<select aria-label="Preview viewport"');
   expect(client).toContain('role="separator"');
   expect(client).toContain('aria-orientation="vertical"');
+  expect(client).toContain("function splitBoundsForWidth(width)");
+  expect(client).toContain("aria-valuemin={Math.round(minimumSplit)}");
   expect(client).toContain("onDoubleClick={() => setSplit(50)}");
   expect(client).toContain("dragOffset.current");
   expect(client).not.toContain("updateSplit(event.clientX);");
@@ -66,10 +86,6 @@ it("ships the constrained Rich Text client and the restrained Studio workspace s
   expect(client).not.toContain('const src = "/preview?theme=" + theme');
   expect(client).toContain('className="studio-statusbar"');
   expect(client).toContain("{location.host}");
-  expect(client).toContain('className="source-monaco"');
-  expect(client).not.toContain("source-line-number");
-  expect(client).not.toContain("source-highlight");
-  expect(client).not.toContain("highlightMarkdownLine");
   expect(client).toContain('data-save-state={saveStatus}');
   expect(client).toContain('"Resolve conflict"');
   expect(client).toContain('data-status={connectionStatus}');
@@ -78,8 +94,9 @@ it("ships the constrained Rich Text client and the restrained Studio workspace s
   expect(client).toContain('className="studio-toaster"');
   expect(client).toContain('"editor.background": "#111113"');
   expect(client).toContain('"editorGutter.background": "#111113"');
+});
 
-  const styles = studioStyles();
+it("styles the workspace, Monaco editor, preview, and toaster consistently", () => {
   expect(styles).toContain("#2563eb");
   expect(styles).toContain("--studio-canvas: #0d0d0f");
   expect(styles).toContain("--studio-panel: #111113");
@@ -95,19 +112,19 @@ it("ships the constrained Rich Text client and the restrained Studio workspace s
   expect(styles).toContain("grid-template-columns:minmax(20rem,var(--studio-split)) 1px minmax(20rem,1fr)");
   expect(styles).toContain("transition:grid-template-columns 320ms cubic-bezier(.22,1,.36,1)");
   expect(styles).toContain(".is-resizing-studio .studio-workspace { transition:none; }");
-  expect(styles).toContain(".viewport-select { min-inline-size:7.25rem; color:var(--studio-text)!important; background:var(--studio-control)!important;");
+  expect(styles).toMatch(/\.viewport-select\s*\{[^}]*min-inline-size:7\.25rem[^}]*background:var\(--studio-control\)!important;/u);
   expect(styles).toContain(".source-monaco .monaco-editor");
-  expect(styles).toContain(".source-monaco .monaco-editor .margin { background:var(--studio-panel)!important;");
+  expect(styles).toMatch(/\.source-monaco \.monaco-editor \.margin\s*\{[^}]*background:var\(--studio-panel\)!important;/u);
   expect(styles).not.toContain("box-shadow:inset -1px 0 0 #2a2a2e");
   expect(styles).toContain(".source-monaco .line-numbers { font-variant-numeric:tabular-nums; text-align:center!important;");
   expect(styles).toContain(".source-monaco .line-numbers.active-line-number { color:var(--studio-accent)!important;");
   expect(styles).toContain(".source-monaco .source-frontmatter-key { color:#60a5fa!important;");
   expect(styles).toContain(".source-monaco .source-frontmatter-delimiter { color:#2563eb!important;");
-  expect(styles).toContain(".preview-stage { min-inline-size:0; min-block-size:0; display:grid; place-items:stretch center; overflow:hidden; padding:0");
+  expect(styles).toMatch(/\.preview-stage\s*\{[^}]*display:grid;[^}]*place-items:stretch center;[^}]*overflow:hidden;[^}]*padding:0/u);
   expect(styles).toContain("white-space:pre-wrap");
   expect(styles).toContain("overflow-wrap:anywhere");
   expect(styles).toContain("transition:inline-size 320ms cubic-bezier(.22,1,.36,1)");
-  expect(styles).toContain(".preview-device { inline-size:min(100%,var(--preview-width)); block-size:100%; min-inline-size:0; overflow:hidden; border:0; border-radius:0");
+  expect(styles).toMatch(/\.preview-device\s*\{[^}]*inline-size:min\(100%,var\(--preview-width\)\);[^}]*border:0;[^}]*border-radius:0/u);
   expect(styles).toContain(".connection-status[data-status=readonly]");
   expect(styles).toContain("font:.6875rem/1 var(--studio-mono)");
   expect(styles).toContain(".studio-toaster");

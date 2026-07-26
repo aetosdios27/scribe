@@ -43,6 +43,18 @@ it("restarts after a worker failure without leaving requests pending", async () 
   await expect(compiler.compile(articlePath, "# Second\n")).rejects.toThrow();
 });
 
+it("opens a cooldown circuit after repeated worker failures", async () => {
+  const compiler = new StudioCompiler("file:///definitely-missing-scribe-mdx.mjs");
+  compilers.push(compiler);
+
+  await expect(compiler.compile(articlePath, "# First\n")).rejects.toThrow();
+  await expect(compiler.compile(articlePath, "# Second\n")).rejects.toThrow();
+  await expect(compiler.compile(articlePath, "# Third\n")).rejects.toThrow();
+  await expect(compiler.compile(articlePath, "# Circuit open\n")).rejects.toThrow(
+    "temporarily unavailable after repeated worker failures"
+  );
+});
+
 it("times out a stuck compiler worker instead of hanging the Studio transaction queue", async () => {
   const hangingModule = `data:text/javascript,${encodeURIComponent("export async function compileScribeMdx(){return new Promise(()=>{})}")}`;
   const compiler = new StudioCompiler(hangingModule, 25);

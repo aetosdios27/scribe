@@ -21,12 +21,17 @@ interface WorkerResult {
 }
 
 export class StudioCompiler {
-  #worker: Worker;
+  #worker: Worker | undefined;
   readonly #pending = new Map<number, PendingCompilation>();
   readonly #mdxModuleUrl: string;
   readonly #timeoutMilliseconds: number;
   #nextId = 0;
   #closed = false;
+  #consecutiveFailures = 0;
+  #circuitOpenUntil = 0;
+
+  static readonly maximumConsecutiveFailures = 3;
+  static readonly failureCooldownMilliseconds = 1_000;
 
   constructor(
     mdxModuleUrl = import.meta.resolve("@scribe-sdk/mdx"),
@@ -48,6 +53,8 @@ export class StudioCompiler {
       if (pending === undefined) return;
       clearTimeout(pending.timer);
       this.#pending.delete(message.id);
+      this.#consecutiveFailures = 0;
+      this.#circuitOpenUntil = 0;
       if (message.error !== undefined) pending.reject(new Error(message.error));
       else pending.resolve(message.diagnostics ?? []);
     });
@@ -62,9 +69,14 @@ export class StudioCompiler {
 
   compile(path: string, source: string): Promise<StudioCompilerDiagnostic[]> {
     if (this.#closed) return Promise.reject(new Error("Studio compiler is closed."));
+    let worker: Worker;
+    try {
+      worker = this.#availableWorker();
+    } catch (error) {
+      return Promise.reject(error);
+    }
     const id = ++this.#nextId;
     return new Promise((resolve, reject) => {
-      const worker = this.#worker;
       const timer = setTimeout(() => {
         if (!this.#pending.has(id)) return;
         this.#restartWorker(
@@ -76,9 +88,7 @@ export class StudioCompiler {
       try {
         worker.postMessage({ id, path, source });
       } catch (error) {
-        clearTimeout(timer);
-        this.#pending.delete(id);
-        reject(error instanceof Error ? error : new Error(String(error)));
+        this.#restartWorker(worker, error instanceof Error ? error : new Error(String(error)));
       }
     });
   }
@@ -87,14 +97,27 @@ export class StudioCompiler {
     if (this.#closed) return;
     this.#closed = true;
     this.#rejectPending(new Error("Studio compiler closed before validation completed."));
-    await this.#worker.terminate();
+    await this.#worker?.terminate();
   }
 
   #restartWorker(worker: Worker, error: Error): void {
     if (this.#closed || this.#worker !== worker) return;
+    this.#worker = undefined;
     this.#rejectPending(error);
-    this.#worker = this.#createWorker();
+    this.#consecutiveFailures += 1;
+    if (this.#consecutiveFailures >= StudioCompiler.maximumConsecutiveFailures) {
+      this.#circuitOpenUntil = Date.now() + StudioCompiler.failureCooldownMilliseconds;
+    }
     void worker.terminate();
+  }
+
+  #availableWorker(): Worker {
+    if (this.#worker !== undefined) return this.#worker;
+    if (Date.now() < this.#circuitOpenUntil) {
+      throw new Error("Studio compiler is temporarily unavailable after repeated worker failures. Try again shortly.");
+    }
+    this.#worker = this.#createWorker();
+    return this.#worker;
   }
 
   #rejectPending(error: Error): void {

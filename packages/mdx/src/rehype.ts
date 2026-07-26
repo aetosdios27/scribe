@@ -176,12 +176,31 @@ function maximumTableColumnCount(node: unknown): number {
   const candidate = node as { children?: unknown[] };
   if (!Array.isArray(candidate.children)) return 0;
   if (isNamedNode(node, "tr")) {
-    return candidate.children.filter((child) => isNamedNode(child, "th") || isNamedNode(child, "td")).length;
+    return candidate.children
+      .filter((child) => isNamedNode(child, "th") || isNamedNode(child, "td"))
+      .reduce<number>((columns, child) => columns + tableCellSpan(child), 0);
   }
   return candidate.children.reduce<number>(
     (maximum, child) => Math.max(maximum, maximumTableColumnCount(child)),
     0
   );
+}
+
+function tableCellSpan(node: unknown): number {
+  if (!node || typeof node !== "object") return 1;
+  const candidate = node as {
+    properties?: Record<string, unknown>;
+    attributes?: Array<{ name?: string; value?: unknown }>;
+  };
+  const property = candidate.properties?.["colSpan"] ?? candidate.properties?.["colspan"];
+  const attribute = candidate.attributes?.find(({ name }) => name?.toLowerCase() === "colspan")?.value;
+  const rawSpan = property ?? attribute;
+  const span = Number(
+    rawSpan && typeof rawSpan === "object" && "value" in rawSpan
+      ? (rawSpan as { value: unknown }).value
+      : rawSpan
+  );
+  return Number.isFinite(span) && span > 0 ? Math.floor(span) : 1;
 }
 
 function isNamedNode(node: unknown, name: string): boolean {

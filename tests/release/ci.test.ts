@@ -1,7 +1,13 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
+
+import {
+  decodeAuditResponse,
+  publicPackages as auditedPublicPackages
+} from "../../scripts/audit-public-packages.mjs";
 
 const root = process.cwd();
 
@@ -60,8 +66,20 @@ describe("public CI contract", () => {
     expect(manifest.scripts["release:audit"]).toBe("node scripts/audit-public-packages.mjs");
     expect(workflow).toContain("run: bun run release:audit");
     expect(workflow).not.toContain("run: bun audit --production");
-    expect(auditScript).toContain('const publicPackages = ["styles", "react", "mdx", "cli"];');
-    expect(auditScript).toContain('join(root, "packages", directory)');
+    expect(auditedPublicPackages).toEqual(["styles", "react", "mdx", "cli"]);
+    expect(auditScript).toContain("manifest.peerDependencies");
+    expect(auditScript).toContain('name.startsWith("@scribe-sdk/")');
+    expect(auditScript).toContain("/-/npm/v1/security/advisories/bulk");
+    expect(auditScript).toContain("collectPackageVersions(installedTree)");
+    expect(auditScript).toContain("AbortSignal.timeout(commandTimeoutMilliseconds)");
+    expect(auditScript).toContain("timeout: commandTimeoutMilliseconds");
+    expect(auditScript).toContain("Monaco 0.56.0 pins DOMPurify 3.4.8");
+  });
+
+  it("decodes registry advisory responses even when a proxy leaves gzip bytes encoded", () => {
+    const report = { package: [{ id: 1, severity: "high" }] };
+    expect(decodeAuditResponse(gzipSync(JSON.stringify(report)))).toEqual(report);
+    expect(decodeAuditResponse(Buffer.from(JSON.stringify(report)))).toEqual(report);
   });
 
   it("exposes separate portable browser and canonical Helium commands", async () => {

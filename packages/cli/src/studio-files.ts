@@ -38,8 +38,9 @@ export class StudioFileConflictError extends Error {
 
 export async function readStudioFile(requestedPath: string): Promise<StudioFileSnapshot> {
   const resolvedPath = await realpath(requestedPath);
-  const [bytes, info] = await Promise.all([readFile(resolvedPath), stat(resolvedPath)]);
+  const info = await stat(resolvedPath);
   if (!info.isFile()) throw new Error(`Studio source is not a regular file: ${requestedPath}`);
+  const bytes = await readFile(resolvedPath);
   const bom = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
   const content = bom ? bytes.subarray(3) : bytes;
   let source: string;
@@ -71,9 +72,10 @@ export async function durableWriteStudioFile(options: DurableStudioWrite): Promi
   const temporaryPath = `${options.resolvedPath}.scribe-${process.pid}-${randomBytes(8).toString("hex")}.tmp`;
   let temporaryExists = false;
   try {
-    const temporary = await open(temporaryPath, "wx", options.mode & 0o777);
+    const temporary = await open(temporaryPath, "wx", options.mode & 0o7777);
     temporaryExists = true;
     try {
+      await temporary.chmod(options.mode & 0o7777);
       await temporary.writeFile(bytes);
       await temporary.sync();
     } finally {
@@ -118,6 +120,10 @@ export function encodeStudioSource(source: string, lineEnding: "\n" | "\r\n", bo
 function detectLineEnding(source: string): "\n" | "\r\n" {
   const crlf = source.match(/\r\n/gu)?.length ?? 0;
   const lf = source.match(/(?<!\r)\n/gu)?.length ?? 0;
+  const bareCr = source.match(/\r(?!\n)/gu)?.length ?? 0;
+  if (bareCr > 0) {
+    throw new Error("Studio does not edit files with bare carriage returns or mixed line endings. Normalize the file first to avoid silent rewriting.");
+  }
   if (crlf > 0 && lf > 0) {
     throw new Error("Studio does not edit files with mixed LF and CRLF line endings. Normalize the file first to avoid silent rewriting.");
   }

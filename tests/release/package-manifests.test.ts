@@ -123,7 +123,7 @@ describe("publishable package manifests", () => {
       clsx: "2.1.1",
       lenis: "1.3.25",
       "lucide-react": "1.25.0",
-      "monaco-editor": "0.55.1",
+      "monaco-editor": "0.56.0",
       sonner: "2.0.7",
       "tailwind-merge": "3.6.0",
       vite: "8.1.3"
