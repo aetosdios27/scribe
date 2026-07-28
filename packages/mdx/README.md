@@ -40,8 +40,8 @@ npm install --save-dev @scribe-sdk/cli@alpha
 1. Commit the host project before changing its integration.
 2. Install the four Scribe packages using the commands above.
 3. If the repository has no content directory, run `bunx scribe init --dry-run` or the equivalent `npx` command, then create the empty launchpad.
-4. Run `bunx scribe integrate --dry-run` or `npx scribe integrate --dry-run`.
-5. Review the proposed integration changes, then run `bunx scribe integrate` or `npx scribe integrate`.
+4. Run `bunx scribe integrate --dry-run` or `npx --no-install scribe integrate --dry-run`.
+5. Review the proposed integration changes, then run `bunx scribe integrate` or `npx --no-install scribe integrate`.
 6. Migrate one real article.
 7. Run `bunx scribe validate ./path/to/article.mdx` or the equivalent `npx` command.
 8. Run the host project's production build.
@@ -59,12 +59,12 @@ bunx scribe integrate --dry-run
 With npm, run the same locally installed binary through `npx`:
 
 ```bash
-npx scribe integrate --dry-run
+npx --no-install scribe integrate --dry-run
 ```
 
 ### CLI reference
 
-Run CLI commands through `bunx scribe` or `npx scribe` after installing `@scribe-sdk/cli` locally. The examples below use `scribe` to show the command surface without repeating both runners.
+Run CLI commands through `bunx scribe` or `npx --no-install scribe` after installing `@scribe-sdk/cli` locally. The examples below use `scribe` to show the command surface without repeating both runners.
 
 `scribe` is the primary executable. The prerelease-only `scb` compatibility alias remains available with identical behavior for existing alpha users; new integrations should use `scribe`.
 
@@ -136,8 +136,8 @@ bunx scribe integrate
 With npm:
 
 ```bash
-npx scribe integrate --dry-run
-npx scribe integrate
+npx --no-install scribe integrate --dry-run
+npx --no-install scribe integrate
 ```
 
 `integrate` inspects React, Next.js or Vite, Tailwind v3/v4, Typography and `.prose`, existing MDX integrations and plugins, syntax highlighters, global CSS, component maps, and current Scribe wiring. It recommends `foundation`, `default`, or `tailwind`, reports every proposed command and file edit, and asks before mutation. Use `--mode foundation|default|tailwind` to override the recommendation or `--yes` for a reviewed non-interactive plan.
@@ -431,8 +431,8 @@ bunx scribe studio ./content/article.mdx --mode foundation --host-css ./src/app/
 With npm:
 
 ```bash
-npx scribe studio ./content/article.mdx
-npx scribe studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
+npx --no-install scribe studio ./content/article.mdx
+npx --no-install scribe studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
 ```
 
 Studio detects the project style mode using the same rules as `scribe integrate`; pass `--mode` only to override that result deliberately. An ambiguous project exits with guidance instead of silently choosing a visual preset. Studio starts at port `4317` and advances to the next available port when necessary.
@@ -459,8 +459,8 @@ bunx scribe validate ./content/article.mdx --strict
 With npm:
 
 ```bash
-npx scribe validate ./content/article.mdx
-npx scribe validate ./content/article.mdx --strict
+npx --no-install scribe validate ./content/article.mdx
+npx --no-install scribe validate ./content/article.mdx --strict
 ```
 
 `scribe validate` checks MDX syntax, Scribe code metadata, supported static component metadata, compile-time highlighting, and article-level diagnostics. It does not execute or validate the complete consumer application.

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 
@@ -86,11 +86,10 @@ export async function inspectProject(inputRoot: string): Promise<ProjectInspecti
   const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
   const packageNames = new Set(Object.keys(dependencies));
   const files = await collectSourceFiles(root);
-  const entries = await Promise.all(files.map(async (path) => [path, await readFile(path, "utf8")] as const));
+  const entries = await mapWithConcurrency(files, 32, async (path) => [path, await readFile(path, "utf8")] as const);
   const source = entries.map(([, value]) => value).join("\n");
   const css = entries.filter(([path]) => path.endsWith(".css")).map(([, value]) => value).join("\n");
-  const tailwindVersion = dependencies.tailwindcss;
-  const tailwindMajor = tailwindVersion?.match(/(?:^|[^\d])([34])(?:\.|$)/u)?.[1];
+  const tailwindMajor = parseTailwindMajor(dependencies.tailwindcss);
   const globalStyle = await firstExisting(root, styleCandidates);
 
   return {
@@ -99,7 +98,7 @@ export async function inspectProject(inputRoot: string): Promise<ProjectInspecti
     ...(dependencies.react === undefined ? {} : { reactVersion: dependencies.react }),
     hasNext: packageNames.has("next"),
     hasVite: packageNames.has("vite"),
-    ...(tailwindMajor === "3" || tailwindMajor === "4" ? { tailwindMajor: Number(tailwindMajor) as 3 | 4 } : {}),
+    ...(tailwindMajor === undefined ? {} : { tailwindMajor }),
     hasTypographyPlugin: packageNames.has("@tailwindcss/typography") || /@plugin\s+["']@tailwindcss\/typography["']/u.test(css),
     hasProseUsage: /(?:className|class)\s*=\s*(?:["'][^"']*\bprose\b|\{[^}]*["'][^"']*\bprose\b)/u.test(source),
     hasEstablishedTypography: /(?:\.prose|\.article|\.post(?:-content)?|article)\s*(?:[,{:]|\.[\w-]+\s*\{)[\s\S]{0,400}(?:font-family|font-size|line-height|max-width|inline-size)/u.test(css),
@@ -270,10 +269,17 @@ export async function runIntegrate(args: readonly string[], dependencies: Integr
     }
   }
 
+  const written: string[] = [];
   try {
-    for (const change of plan.changes) await atomicWrite(change.path, change.content);
+    for (const change of plan.changes) {
+      await atomicWrite(change.path, change.content);
+      written.push(change.path);
+    }
   } catch (error) {
-    stderr(`Could not apply the reported Scribe changes: ${error instanceof Error ? error.message : String(error)}\n`);
+    const completed = written.length === 0
+      ? "\nNo source files were changed."
+      : `\nFiles already written:\n${written.map((path) => `  ${displayPath(plan.inspection.root, path)}`).join("\n")}`;
+    stderr(`Could not apply the reported Scribe changes: ${error instanceof Error ? error.message : String(error)}${completed}\n`);
     return 1;
   }
 
@@ -405,7 +411,7 @@ function verificationCommand(manager: PackageManager): string {
   if (manager === "bun") return "bunx scribe validate path/to/article.mdx";
   if (manager === "pnpm") return "pnpm exec scribe validate path/to/article.mdx";
   if (manager === "yarn") return "yarn scribe validate path/to/article.mdx";
-  return "npx scribe validate path/to/article.mdx";
+  return "npx --no-install scribe validate path/to/article.mdx";
 }
 
 function insertCssImport(existing: string, importLine: string): string {
@@ -420,8 +426,39 @@ function insertCssImport(existing: string, importLine: string): string {
 async function atomicWrite(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = resolve(dirname(path), `.${basename(path)}.scribe-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
-  await writeFile(temporary, content, "utf8");
-  await rename(temporary, path);
+  try {
+    await writeFile(temporary, content, "utf8");
+    await rename(temporary, path);
+  } catch (error) {
+    await unlink(temporary).catch(() => undefined);
+    throw error;
+  }
+}
+
+function parseTailwindMajor(version: string | undefined): 3 | 4 | undefined {
+  if (version === undefined) return undefined;
+  const normalized = version.trim().replace(/^[\s<=>~^]*/u, "");
+  const match = /^(\d+)(?:\.|$)/u.exec(normalized);
+  const major = match === null ? undefined : Number(match[1]);
+  return major === 3 || major === 4 ? major : undefined;
+}
+
+async function mapWithConcurrency<Input, Output>(
+  values: readonly Input[],
+  concurrency: number,
+  map: (value: Input) => Promise<Output>
+): Promise<Output[]> {
+  const results = new Array<Output>(values.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await map(values[index] as Input);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, worker));
+  return results;
 }
 
 function displayPath(root: string, path: string): string {

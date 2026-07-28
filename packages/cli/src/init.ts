@@ -45,7 +45,7 @@ export async function planInit(rootInput: string, options: InitOptions): Promise
   const contentDirectory = explicitContent ?? detected[0] ?? resolve(root, "content/blog");
   const assetDirectory = options.withAssets ? resolve(root, "content/assets") : undefined;
   const candidates = [contentDirectory, assetDirectory].filter((path): path is string => path !== undefined);
-  const existing = await existingAbsoluteDirectories(candidates);
+  const existing = await existingAbsoluteDirectories(root, candidates);
 
   return {
     root,
@@ -199,15 +199,15 @@ function resolveInsideWorkspace(root: string, input: string, option: string): st
 }
 
 async function existingDirectories(root: string, candidates: readonly string[]): Promise<string[]> {
-  return existingAbsoluteDirectories(candidates.map((candidate) => resolve(root, candidate)));
+  return existingAbsoluteDirectories(root, candidates.map((candidate) => resolve(root, candidate)));
 }
 
-async function existingAbsoluteDirectories(candidates: readonly string[]): Promise<string[]> {
+async function existingAbsoluteDirectories(root: string, candidates: readonly string[]): Promise<string[]> {
   const existing: string[] = [];
   for (const path of candidates) {
     try {
       const info = await stat(path);
-      if (!info.isDirectory()) throw new Error(`${path} exists but is not a directory.`);
+      if (!info.isDirectory()) throw new Error(`${displayPath(root, path)} exists but is not a directory.`);
       existing.push(path);
     } catch (error) {
       if (isFileSystemError(error, "ENOENT")) continue;

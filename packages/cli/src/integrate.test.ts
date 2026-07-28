@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -70,6 +70,15 @@ it("requires an explicit mode for an ambiguous Tailwind stack", async () => {
   expect((await planIntegrate(cwd, "foundation", "0.1.0-alpha.2")).mode).toBe("foundation");
 });
 
+it("does not misclassify an unrelated two-digit Tailwind major", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, tailwindcss: "^10.3.1", vite: "8.1.3" } }),
+    "src/index.css": "@tailwind base;"
+  });
+
+  expect((await inspectProject(cwd)).tailwindMajor).toBeUndefined();
+});
+
 it("lets Studio's explicit mode override bypass framework recommendation ambiguity", async () => {
   const cwd = await project({ "package.json": JSON.stringify({ private: true }) });
 
@@ -123,10 +132,12 @@ it("applies one style import and remains idempotent", async () => {
     "src/index.css": "body { margin: 0; }\n"
   });
   const confirm = vi.fn(async () => true);
+  const stdout = vi.fn();
 
-  expect(await runIntegrate(["--mode", "foundation"], { cwd, version: "0.1.0-alpha.2", stdout: vi.fn(), confirm })).toBe(0);
+  expect(await runIntegrate(["--mode", "foundation"], { cwd, version: "0.1.0-alpha.2", stdout, confirm })).toBe(0);
   expect(await runIntegrate(["--mode", "foundation", "--yes"], { cwd, version: "0.1.0-alpha.2", stdout: vi.fn() })).toBe(0);
   expect(confirm).toHaveBeenCalledWith("Apply this Scribe integration plan?");
+  expect(stdout.mock.calls.join("\n")).toContain("npx --no-install scribe validate path/to/article.mdx");
   const css = await readFile(join(cwd, "src/index.css"), "utf8");
   expect(css.match(/@scribe-sdk\/styles\/foundation\.css/gu)).toHaveLength(1);
 });
@@ -179,6 +190,29 @@ it("preserves CRLF files while adding the selected import", async () => {
   const css = await readFile(join(cwd, "src/index.css"), "utf8");
   expect(css).toContain('default.css";\r\n\r\nbody');
   expect(css.replaceAll("\r\n", "")).not.toContain("\n");
+});
+
+it("reports already-written files and removes temporary files after a later write fails", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, next: "16.2.11", "@next/mdx": "16.2.11" } }),
+    "app/globals.css": "body { margin: 0; }\n",
+    "next.config.mjs": "import createMDX from '@next/mdx';\nexport default createMDX({})({});\n"
+  });
+  const stderr = vi.fn();
+
+  expect(await runIntegrate(["--mode", "default"], {
+    cwd,
+    version: "0.1.0-alpha.2",
+    stdout: vi.fn(),
+    stderr,
+    confirm: async () => {
+      await mkdir(join(cwd, "mdx-components.tsx"));
+      return true;
+    }
+  })).toBe(1);
+  expect(await readFile(join(cwd, "app/globals.css"), "utf8")).toContain("@scribe-sdk/styles/default.css");
+  expect(stderr.mock.calls.join("\n")).toContain("Files already written:\n  app/globals.css");
+  expect((await readdir(cwd)).filter((name) => name.includes(".scribe-") && name.endsWith(".tmp"))).toEqual([]);
 });
 
 it("rejects invalid options and unresolved projects with usage status", async () => {

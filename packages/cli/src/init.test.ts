@@ -59,9 +59,9 @@ it("creates only requested directories and remains idempotent", async () => {
 
   expect(await runInit(["--yes", "--with-assets"], { cwd, stdout })).toBe(0);
   expect(await runInit(["--yes", "--with-assets"], { cwd, stdout })).toBe(0);
-  expect(await readdir(join(cwd, "content"))).toEqual(["assets", "blog"]);
-  expect(await readdir(join(cwd, "content", "blog"))).toEqual([]);
-  expect(await readdir(join(cwd, "content", "assets"))).toEqual([]);
+  expect((await readdir(join(cwd, "content"))).sort()).toEqual(["assets", "blog"]);
+  expect((await readdir(join(cwd, "content", "blog"))).sort()).toEqual([]);
+  expect((await readdir(join(cwd, "content", "assets"))).sort()).toEqual([]);
   const output = stdout.mock.calls.join("\n");
   expect(output).toContain("scribe studio content/blog/your-article.mdx");
   expect(output).not.toContain("<article>");
@@ -82,6 +82,7 @@ it("refuses to treat a colliding file as a content directory", async () => {
 
   expect(await runInit(["--dry-run"], { cwd, stderr })).toBe(1);
   expect(stderr.mock.calls.join("\n")).toContain("content/blog exists but is not a directory");
+  expect(stderr.mock.calls.join("\n")).not.toContain(cwd);
 });
 
 it("rejects paths outside the workspace and points old integration flags to integrate", async () => {

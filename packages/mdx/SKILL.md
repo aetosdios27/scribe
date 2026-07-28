@@ -183,7 +183,7 @@ bunx scribe validate path/to/article.mdx
 bunx scribe validate path/to/article.mdx --strict
 ```
 
-With npm, use `npx scribe validate path/to/article.mdx`.
+With npm, use `npx --no-install scribe validate path/to/article.mdx`.
 
 Interpret exit codes as `0` success, `1` article validation failure, and `2` invalid CLI usage. Warnings do not fail unless strict mode requires it. Diagnostics should name the file, position when available, severity, stable code, and remediation.
 

@@ -8,7 +8,13 @@ import * as cli from "./index.js";
 
 const { isMainModule, main, version } = cli;
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.doUnmock("./studio.js");
+  vi.doUnmock("./init.js");
+  vi.doUnmock("./integrate.js");
+  vi.doUnmock("@scribe-sdk/mdx");
+});
 
 it("prints the packaged prerelease version", async () => {
   const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -37,19 +43,33 @@ it("contains unexpected command failures without exposing an internal stack", as
 });
 
 it("keeps heavyweight commands behind dynamic import boundaries", async () => {
-  const source = await readFile(new URL("./index.ts", import.meta.url), "utf8");
+  const loaded = new Set<string>();
+  vi.resetModules();
+  vi.doMock("./studio.js", () => {
+    loaded.add("studio");
+    return { runStudio: vi.fn() };
+  });
+  vi.doMock("./init.js", () => {
+    loaded.add("init");
+    return { runInit: vi.fn() };
+  });
+  vi.doMock("./integrate.js", () => {
+    loaded.add("integrate");
+    return { runIntegrate: vi.fn() };
+  });
+  vi.doMock("@scribe-sdk/mdx", () => {
+    loaded.add("mdx");
+    return { compileScribeMdx: vi.fn() };
+  });
 
-  expect(source).not.toMatch(/^import .* from ["']\.\/studio\.js["'];$/mu);
-  expect(source).not.toMatch(/^import .* from ["']\.\/init\.js["'];$/mu);
-  expect(source).not.toMatch(/^import .* from ["']\.\/integrate\.js["'];$/mu);
-  expect(source).not.toMatch(/^import .* from ["']@scribe-sdk\/mdx["'];$/mu);
+  await import("./index.js");
+  expect(loaded).toEqual(new Set());
+
+  const source = await readFile(new URL("./index.ts", import.meta.url), "utf8");
   expect(source).toContain('await import("./studio.js")');
   expect(source).toContain('await import("./init.js")');
   expect(source).toContain('await import("./integrate.js")');
   expect(source).toContain('await import("@scribe-sdk/mdx")');
-  expect(source).toMatch(/if \(command === "studio"\) \{\s+if \(rest\.includes\("--help"\).*?\}\s+const \{ runStudio \} = await import\("\.\/studio\.js"\)/su);
-  expect(source).toMatch(/if \(command === "init"\) \{\s+if \(rest\.includes\("--help"\).*?\}\s+const \{ runInit \} = await import\("\.\/init\.js"\)/su);
-  expect(source).toMatch(/if \(command === "integrate"\) \{\s+if \(rest\.includes\("--help"\).*?\}\s+const \{ runIntegrate \} = await import\("\.\/integrate\.js"\)/su);
 });
 
 it("prints readable help and succeeds", async () => {

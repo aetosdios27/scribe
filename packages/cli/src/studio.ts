@@ -1179,6 +1179,7 @@ function PreviewApp() {
   React.useEffect(() => {
     let activeTarget = null;
     let clearReveal;
+    let revealSequence = 0;
     const clearActiveTarget = () => {
       if (activeTarget !== null) activeTarget.removeAttribute("data-scribe-reveal-active");
       activeTarget = null;
@@ -1207,6 +1208,7 @@ function PreviewApp() {
         activeTarget = target;
         target.setAttribute("data-scribe-reveal-active", "");
       }
+      document.body.setAttribute("data-scribe-reveal-sequence", String(++revealSequence));
       clearTimeout(clearReveal);
       clearReveal = setTimeout(
         clearActiveTarget,
