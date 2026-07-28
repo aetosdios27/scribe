@@ -27,9 +27,11 @@ describe("release documentation", () => {
     expect(readme).toContain("https://github.com/aetosdios27/scribe/blob/main/examples/starter-article.mdx");
     expect(readme).toContain("https://github.com/aetosdios27/scribe/blob/main/examples/starter-diagram.svg");
     expect(readme).toContain("return <Publication>{children}</Publication>");
-    expect(readme).toContain("npx scribe validate ./content/article.mdx --strict");
+    expect(readme).toContain("npx --no-install scribe validate ./content/article.mdx --strict");
+    expect(readme).not.toMatch(/\bnpx scribe\b/u);
     expect(readme).toContain("`scb` compatibility alias");
     expect(readme.match(/\bscb\b/gu)).toHaveLength(1);
+    expect(readme).toContain("If an earlier prerelease used `scribe init` for website integration, run `scribe integrate` now. `scribe init` creates only an empty content launchpad.");
     expect(readme).toContain("`0 1.25rem 3rem color-mix(in oklab, #000 12%, transparent)`");
   });
 
@@ -69,7 +71,7 @@ describe("release documentation", () => {
     expect(skill).toContain("Do not wrap an MDX article in a second `Publication`; the Scribe MDX component map already supplies the article boundary.");
     expect(skill).toContain("bunx scribe validate path/to/article.mdx");
     expect(skill).toContain("bunx scribe validate path/to/article.mdx --strict");
-    expect(skill).toContain("npx scribe validate path/to/article.mdx");
+    expect(skill).toContain("npx --no-install scribe validate path/to/article.mdx");
     expect(skill).not.toMatch(/^scribe validate /mu);
     expect(skill).not.toMatch(/\bscb\b/u);
     expect(skill.trim().split(/\s+/u).length).toBeGreaterThan(500);

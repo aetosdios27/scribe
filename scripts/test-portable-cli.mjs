@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -51,12 +51,34 @@ try {
     runCli(command, ["validate", "--help"]);
   }
   runCli("scribe", ["init", "--help"]);
+  runCli("scribe", ["integrate", "--help"]);
   runCli("scribe", ["studio", "--help"]);
   run(executable("bun"), ["run", "scribe:version"], directory);
-  const beforeInit = await readFile(globalStyle, "utf8");
+  const beforeInitDryRun = await snapshotFixtureTree(directory);
   const dryRun = runCli("scribe", ["init", "--dry-run"]);
-  assert(dryRun.stdout.includes("Recommendation") && dryRun.stdout.includes("Mode    default"), "Init dry run did not recommend default mode for the raw Vite fixture.");
-  assert(await readFile(globalStyle, "utf8") === beforeInit, "Init dry run modified the fixture.");
+  assert(
+    dryRun.stdout.includes("content/blog") && dryRun.stdout.includes("No files will be generated."),
+    "Init dry run did not describe the empty content launchpad."
+  );
+  assert(
+    JSON.stringify(await snapshotFixtureTree(directory)) === JSON.stringify(beforeInitDryRun),
+    "Init dry run modified the fixture."
+  );
+  const beforeInit = await snapshotFixtureTree(directory, new Set(["content"]));
+  runCli("scribe", ["init", "--yes"]);
+  assert(
+    JSON.stringify(await snapshotFixtureTree(directory, new Set(["content"]))) === JSON.stringify(beforeInit),
+    "Init changed host files while creating the content launchpad."
+  );
+  assert((await readdir(join(directory, "content", "blog"))).length === 0, "Init generated content instead of leaving the launchpad empty.");
+  runCli("scribe", ["init", "--yes"]);
+  const beforeIntegrateDryRun = await snapshotFixtureTree(directory);
+  const integrateDryRun = runCli("scribe", ["integrate", "--dry-run"]);
+  assert(integrateDryRun.stdout.includes("Recommendation") && integrateDryRun.stdout.includes("Mode    default"), "Integrate dry run did not recommend default mode for the raw Vite fixture.");
+  assert(
+    JSON.stringify(await snapshotFixtureTree(directory)) === JSON.stringify(beforeIntegrateDryRun),
+    "Integrate dry run modified the fixture."
+  );
   const usage = runCli("scribe", [], false);
   assert(usage.status === 2, `scribe without arguments exited ${usage.status}; expected 2.`);
 
@@ -173,6 +195,26 @@ async function findExecutable(directory, name) {
 async function write(path, content) {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content);
+}
+
+async function snapshotFixtureTree(directory, extraExcluded = new Set()) {
+  const excluded = new Set(["node_modules", "tarballs", ...extraExcluded]);
+  const snapshot = [];
+  async function visit(current, prefix = "") {
+    for (const entry of (await readdir(current, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name))) {
+      if (prefix === "" && excluded.has(entry.name)) continue;
+      const relativePath = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        snapshot.push(`directory:${relativePath}`);
+        await visit(path, relativePath);
+      } else {
+        snapshot.push(`file:${relativePath}:${(await readFile(path)).toString("base64")}`);
+      }
+    }
+  }
+  await visit(directory);
+  return snapshot;
 }
 
 function assert(condition, message) {
