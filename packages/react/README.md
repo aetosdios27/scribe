@@ -39,26 +39,27 @@ npm install --save-dev @scribe-sdk/cli@alpha
 
 1. Commit the host project before changing its integration.
 2. Install the four Scribe packages using the commands above.
-3. Run `bunx scribe init --dry-run` or `npx scribe init --dry-run`.
-4. Review the proposed changes, then run `bunx scribe init` or `npx scribe init`.
-5. Migrate one real article.
-6. Run `bunx scribe validate ./path/to/article.mdx` or the equivalent `npx` command.
-7. Run the host project's production build.
-8. Open the article with `bunx scribe studio ./path/to/article.mdx` or the equivalent `npx` command.
-9. Report anything confusing through [GitHub Issues](https://github.com/aetosdios27/scribe/issues).
+3. If the repository has no content directory, run `bunx scribe init --dry-run` or the equivalent `npx` command, then create the empty launchpad.
+4. Run `bunx scribe integrate --dry-run` or `npx scribe integrate --dry-run`.
+5. Review the proposed integration changes, then run `bunx scribe integrate` or `npx scribe integrate`.
+6. Migrate one real article.
+7. Run `bunx scribe validate ./path/to/article.mdx` or the equivalent `npx` command.
+8. Run the host project's production build.
+9. Open the article with `bunx scribe studio ./path/to/article.mdx` or the equivalent `npx` command.
+10. Report anything confusing through [GitHub Issues](https://github.com/aetosdios27/scribe/issues).
 
 Project-local CLI installation is recommended so every contributor uses the same prerelease. A user-level CLI is also supported through `bun add --global @scribe-sdk/cli@alpha` or `npm install --global @scribe-sdk/cli@alpha`; the project still owns its runtime Scribe dependencies.
 
 Package installation is inert: it does not edit source files, run project detection, or make network calls beyond normal package-manager behavior. Inspect a proposed integration explicitly:
 
 ```bash
-bunx scribe init --dry-run
+bunx scribe integrate --dry-run
 ```
 
 With npm, run the same locally installed binary through `npx`:
 
 ```bash
-npx scribe init --dry-run
+npx scribe integrate --dry-run
 ```
 
 ### CLI reference
@@ -69,13 +70,16 @@ Run CLI commands through `bunx scribe` or `npx scribe` after installing `@scribe
 
 | Command | Purpose |
 | --- | --- |
-| `scribe init [--dry-run] [--mode <mode>] [--yes]` | Inspect and deliberately initialize Scribe in the current React project; mode is `foundation`, `default`, or `tailwind` |
+| `scribe init [--content-dir <path>] [--with-assets] [--dry-run] [--yes]` | Create an empty, source-owned content launchpad without generating an article |
+| `scribe integrate [--dry-run] [--mode <mode>] [--yes]` | Inspect and deliberately connect Scribe to the current React project; mode is `foundation`, `default`, or `tailwind` |
 | `scribe validate <article.mdx> [--strict]` | Compile and validate one article without executing the complete host application |
 | `scribe studio <article> [--mode <mode>] [--host-css <file>] [--port <number>] [--no-open]` | Open the local, source-authoritative Markdown/MDX Studio; mode is `foundation`, `default`, or `tailwind` |
 | `scribe --help` | Show the installed CLI command surface |
 | `scribe --version` | Print the installed Scribe version |
 
-Use `scribe init --help`, `scribe validate --help`, or `scribe studio --help` for focused option summaries and examples. CLI exit codes are consistent: `0` means success, `1` means execution or article-compilation failure, and `2` means invalid usage or unresolved initialization configuration.
+If an earlier prerelease used `scribe init` for website integration, run `scribe integrate` now. `scribe init` creates only an empty content launchpad.
+
+Use `scribe <command> --help` for focused option summaries and examples. CLI exit codes are consistent: `0` means success, `1` means execution or article-compilation failure, and `2` means invalid usage or unresolved setup configuration.
 
 ## Choose a style mode
 
@@ -107,25 +111,38 @@ For a Tailwind Typography site, keep the existing `.prose` wrapper and load Scri
 
 Scribe ships no fonts and does not clone Tailwind Typography. In Tailwind mode, compiled Shiki foreground and background colors remain paired so the host's prose code background cannot make highlighted code unreadable. Tailwind's conventional ancestor `.dark` class selects the dark pair; an explicit `data-theme="light"` or `data-theme="dark"` on `Publication` takes precedence.
 
-## Initialize an existing project
+## Create an empty content launchpad
 
-Run initialization deliberately from the host project's root after installation:
+If the repository does not already have a content convention, `init` can create one without generating an article or prescribing how it should be written:
 
 ```bash
 bunx scribe init --dry-run
 bunx scribe init
 ```
 
+`init` reuses one unambiguous existing `content/blog`, `content/blogs`, `posts`, or `src/content` directory. Otherwise it proposes `content/blog`. Pass `--content-dir <path>` to choose another repository-relative directory and `--with-assets` to also create `content/assets`.
+
+It creates directories only. It does not install packages, generate starter prose or metadata, edit framework configuration, or integrate Scribe into the website.
+
+## Integrate an existing project
+
+Run integration deliberately from the host project's root after installation:
+
+```bash
+bunx scribe integrate --dry-run
+bunx scribe integrate
+```
+
 With npm:
 
 ```bash
-npx scribe init --dry-run
-npx scribe init
+npx scribe integrate --dry-run
+npx scribe integrate
 ```
 
-`init` inspects React, Next.js or Vite, Tailwind v3/v4, Typography and `.prose`, existing MDX integrations and plugins, syntax highlighters, global CSS, component maps, and current Scribe wiring. It recommends `foundation`, `default`, or `tailwind`, reports every proposed command and file edit, and asks before mutation. Use `--mode foundation|default|tailwind` to override the recommendation or `--yes` for a reviewed non-interactive plan.
+`integrate` inspects React, Next.js or Vite, Tailwind v3/v4, Typography and `.prose`, existing MDX integrations and plugins, syntax highlighters, global CSS, component maps, and current Scribe wiring. It recommends `foundation`, `default`, or `tailwind`, reports every proposed command and file edit, and asks before mutation. Use `--mode foundation|default|tailwind` to override the recommendation or `--yes` for a reviewed non-interactive plan.
 
-Initialization is minimal and idempotent. It does not replace existing remark/rehype plugins or remove another highlighter automatically; ambiguous configuration becomes a precise manual step. Roll back by reverting only the files listed in its completion report and removing the displayed packages.
+Integration is minimal and idempotent. It does not replace existing remark/rehype plugins or remove another highlighter automatically; ambiguous configuration becomes a precise manual step. Roll back by reverting only the files listed in its completion report and removing the displayed packages.
 
 ## Next.js MDX integration
 
@@ -418,7 +435,7 @@ npx scribe studio ./content/article.mdx
 npx scribe studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
 ```
 
-Studio detects the project style mode using the same rules as `scribe init`; pass `--mode` only to override that result deliberately. An ambiguous project exits with guidance instead of silently choosing a visual preset. Port `4317` remains the default.
+Studio detects the project style mode using the same rules as `scribe integrate`; pass `--mode` only to override that result deliberately. An ambiguous project exits with guidance instead of silently choosing a visual preset. Studio starts at port `4317` and advances to the next available port when necessary.
 
 Studio has exactly two authoring modes. Markdown mode keeps the source editable beside the production renderer and has no formatting toolbar. Rich Text mode is a constrained visual helper for ordinary Markdown; it provides a minimal toolbar, writes accepted edits back to the canonical Markdown draft, and shows a read-only Markdown mirror by default. Its secondary pane can switch to the same production renderer. Unsupported MDX, frontmatter, HTML, JSX, expressions, and metadata-bearing code fences remain byte-identical protected blocks with an **Edit in Markdown** action. Rich Text may refuse to edit a construct; it never pretends to support one and silently rewrites the source.
 
@@ -428,7 +445,7 @@ Studio binds to `127.0.0.1`, opens the browser unless `--no-open` is supplied, p
 
 MDX is executable local project content; open only files you trust. `--host-css` loads one explicit local stylesheet. It does not crawl the application or reproduce framework processing automatically: Tailwind directives, CSS imports, asset URLs, and fonts may require a separately compiled CSS artifact. Studio writes only after Save, uses an atomic replacement, preserves LF/CRLF line endings, and refuses to overwrite an externally changed file until the conflict is resolved.
 
-Use `--port 4317` to select a port and `--no-open` for headless workflows. Stop the local server with the CLI process.
+Use `--port 4317` to require an exact port and `--no-open` for headless workflows. Stop the local server with the CLI process.
 
 ## Validate and troubleshoot
 
@@ -459,10 +476,10 @@ If rendering differs between the Vite and Next builds, confirm that both use the
 ## Migrating from `0.1.0-alpha.2`
 
 - Existing `default.css` imports remain supported and retain the complete editorial preset.
-- Established sites that already own article typography should switch to `foundation.css` after reviewing `scribe init --dry-run` and before/after computed styles.
+- Established sites that already own article typography should switch to `foundation.css` after reviewing `scribe integrate --dry-run` and before/after computed styles.
 - Tailwind Typography sites should use `tailwind.css` and keep their `.prose` wrapper.
 - `next-mdx-remote/rsc` integrations should replace loader-shaped configuration with `createScribeRemoteMdxOptions()` from `@scribe-sdk/mdx/next-remote`.
-- Installation performs no migration. `scribe init` reports and confirms any safe edits; existing plugins and highlighters remain untouched unless the owner changes them explicitly.
+- Installation performs no migration. `scribe integrate` reports and confirms any safe edits; existing plugins and highlighters remain untouched unless the owner changes them explicitly.
 
 ## Responsibility boundary
 

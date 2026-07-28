@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import { afterAll, afterEach, expect, it, vi } from "vitest";
 import { studioRecoveryKey } from "./studio-recovery.js";
 import {
   formatStudioStartup,
+  openBrowser,
   parseStudioArguments,
   runStudio,
   startStudio,
@@ -67,12 +69,14 @@ it("parses the documented studio command surface and rejects unknown flags", () 
     mode: "tailwind",
     hostCss: "src/app.css",
     port: 4317,
+    portExplicit: true,
     open: false,
     help: false
   });
   expect(parseStudioArguments(["content/a.mdx"])).toEqual({
     path: "content/a.mdx",
     port: 4317,
+    portExplicit: false,
     open: true,
     help: false
   });
@@ -87,6 +91,40 @@ it("formats Studio startup with a project-relative source path", () => {
 
   expect(output).toMatch(/Source  content[\\/]peer notes\.mdx/u);
   expect(output).not.toContain(root);
+});
+
+it("reports automatic port movement and a browser-opening fallback", () => {
+  const output = formatStudioStartup(
+    "/workspace",
+    "/workspace/content/article.mdx",
+    "default",
+    "http://127.0.0.1:4318",
+    4317,
+    false
+  );
+
+  expect(output).toContain("Port 4317 was busy; using 4318.");
+  expect(output).toContain("The browser could not be opened automatically.");
+  expect(output).toContain("http://127.0.0.1:4318");
+});
+
+it("treats browser-launch failure as recoverable", async () => {
+  const child = new EventEmitter() as EventEmitter & { unref: () => void };
+  child.unref = vi.fn();
+  const opening = openBrowser(
+    "http://127.0.0.1:4317",
+    (() => child) as never
+  );
+  child.emit("error", new Error("xdg-open is unavailable"));
+
+  await expect(opening).resolves.toBe(false);
+  expect(child.unref).not.toHaveBeenCalled();
+  await expect(openBrowser(
+    "http://127.0.0.1:4317",
+    (() => {
+      throw new Error("browser launcher rejected the command");
+    }) as never
+  )).resolves.toBe(false);
 });
 
 it("mirrors the verified host typography boundary only in Tailwind preview mode", () => {
@@ -118,6 +156,8 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
   expect(previewClient).toContain("const PreviewThemeContext = React.createContext");
   expect(previewClient).toContain("const previewComponents = createScribeComponents");
   expect(previewClient).not.toContain("React.useMemo");
+  expect(previewClient).toContain('target.setAttribute("data-scribe-reveal-active", "")');
+  expect(previewClient).toContain('activeTarget.removeAttribute("data-scribe-reveal-active")');
 
   const previewDocument = await (await fetch(`${handle.origin}/preview`)).text();
   expect(previewDocument).toContain("[data-scribe-studio-host-article] :where(table");
@@ -126,6 +166,9 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
   expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#171716!important}");
   expect(previewDocument).toContain("html.dark [data-scribe-studio-host-article]");
   expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#f5f5f4!important}");
+  expect(previewDocument).toContain("[data-scribe-reveal-active]");
+  expect(previewDocument).toContain("@keyframes scribe-studio-reveal");
+  expect(previewDocument).toContain("@media(prefers-reduced-motion:reduce)");
 
   const transformedHostCss = await (await fetch(`${handle.origin}/src/app.css`)).text();
   expect(transformedHostCss).toContain('[data-scribe-table-layout=\\"wide\\"]');
@@ -688,7 +731,7 @@ it("rejects source and host CSS paths outside the selected workspace", async () 
   await expect(startStudio({ root: inside.root, path: inside.path, hostCss: linkedCss, mode: "default", port: 0, open: false })).rejects.toThrow("Resolved host CSS is outside");
 });
 
-it("fails clearly for missing files and occupied ports", async () => {
+it("fails clearly for missing files and explicitly requested occupied ports", async () => {
   const file = await fixture();
   await expect(startStudio({ root: file.root, path: join(file.root, "missing.mdx"), mode: "default", port: 0, open: false })).rejects.toThrow();
 
@@ -697,5 +740,27 @@ it("fails clearly for missing files and occupied ports", async () => {
   const address = occupied.address();
   if (!address || typeof address === "string") throw new Error("Could not reserve a test port.");
   await expect(startStudio({ root: file.root, path: file.path, mode: "default", port: address.port, open: false })).rejects.toThrow("Could not start Scribe Studio");
+  await new Promise<void>((resolveClose) => occupied.close(() => resolveClose()));
+});
+
+it("moves an implicit Studio port forward when the preferred port is occupied", async () => {
+  const file = await fixture();
+  const occupied = createNetServer();
+  await new Promise<void>((resolveListen) => occupied.listen(0, "127.0.0.1", resolveListen));
+  const address = occupied.address();
+  if (!address || typeof address === "string") throw new Error("Could not reserve a test port.");
+
+  const handle = await startStudio({
+    root: file.root,
+    path: file.path,
+    mode: "default",
+    port: address.port,
+    open: false,
+    strictPort: false
+  } as Parameters<typeof startStudio>[0]);
+  handles.push(handle);
+
+  expect(new URL(handle.origin).port).not.toBe(String(address.port));
+  expect((await fetch(handle.origin)).ok).toBe(true);
   await new Promise<void>((resolveClose) => occupied.close(() => resolveClose()));
 });

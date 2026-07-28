@@ -31,15 +31,17 @@ Scribe is in public alpha. Package versions may use prerelease SemVer identifier
 
 Expected packages are `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/mdx`, and development-only `@scribe-sdk/cli`. Read the installed Scribe README and `SKILL.md` before integrating. Depending on the installed package, these are available under paths such as `node_modules/@scribe-sdk/react/README.md` and `node_modules/@scribe-sdk/react/SKILL.md`. Use the packaged copies rather than relying on remembered APIs.
 
+If the host has no content convention yet, inspect `bunx scribe init --dry-run` before running `bunx scribe init`. It creates only an empty content directory and an optional asset directory; it never generates an article, metadata, or framework configuration. Skip it when the repository already has a deliberate content layout.
+
 ## Integrate the compiler
 
 Start with the deliberate detector:
 
 ```bash
-bunx scribe init --dry-run
+bunx scribe integrate --dry-run
 ```
 
-Review the detected stack, recommended mode, touched files, commands, ambiguities, and existing highlighter warnings. Run `bunx scribe init` only after the plan is safe. Installation itself is inert.
+Review the detected stack, recommended mode, touched files, commands, ambiguities, and existing highlighter warnings. Run `bunx scribe integrate` only after the plan is safe. Installation itself is inert.
 
 Choose exactly one style mode:
 
@@ -195,7 +197,7 @@ Use Studio for a source-authoritative local editing loop when helpful:
 bunx scribe studio path/to/article.mdx --mode foundation
 ```
 
-Studio detects the project style mode with the same rules as `scribe init`; use `--mode` only as a deliberate override. Markdown mode edits source beside the production renderer. Rich Text mode is a constrained visual helper whose accepted edits serialize to the canonical Markdown draft; its Markdown mirror is read-only, and unsupported MDX remains a byte-identical protected block that must be edited in Markdown mode. Studio saves explicitly to the displayed article path, warns before closing with unwritten changes, detects external conflicts, and writes atomically. Frontmatter supplies a generated Banner when it includes a title and no explicit Banner exists. Absolute image paths resolve from the project `public` directory, and missing assets remain visible in the preview. Studio is local-only and not a WYSIWYG editor, CMS, or page builder. Use `--host-css` only for one explicit local CSS file and account for framework preprocessing limitations.
+Studio detects the project style mode with the same rules as `scribe integrate`; use `--mode` only as a deliberate override. Markdown mode edits source beside the production renderer. Rich Text mode is a constrained visual helper whose accepted edits serialize to the canonical Markdown draft; its Markdown mirror is read-only, and unsupported MDX remains a byte-identical protected block that must be edited in Markdown mode. Studio saves explicitly to the displayed article path, warns before closing with unwritten changes, detects external conflicts, and writes atomically. Frontmatter supplies a generated Banner when it includes a title and no explicit Banner exists. Absolute image paths resolve from the project `public` directory, and missing assets remain visible in the preview. Studio is local-only and not a WYSIWYG editor, CMS, or page builder. Use `--host-css` only for one explicit local CSS file and account for framework preprocessing limitations.
 
 ## Diagnose the boundary
 

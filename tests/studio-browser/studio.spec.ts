@@ -122,6 +122,8 @@ test("keeps the Studio shell restrained while editing, previewing, resizing, and
   const synchronizedCode = preview.locator("[data-scribe-source-line]").filter({ hasText: "Choked, // synced" });
   await expect(synchronizedCode).toContainText("synced");
   await expect.poll(() => preview.locator("body").evaluate(() => scrollY)).toBeGreaterThan(0);
+  await expect(synchronizedCode).toHaveAttribute("data-scribe-reveal-active", "");
+  await expect(synchronizedCode).not.toHaveAttribute("data-scribe-reveal-active", "", { timeout: 2_000 });
 
   const initialLeftWidth = await page.locator(".source-panel").evaluate((element) => element.getBoundingClientRect().width);
   const splitterBox = await splitter.boundingBox();

@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -51,12 +51,22 @@ try {
     runCli(command, ["validate", "--help"]);
   }
   runCli("scribe", ["init", "--help"]);
+  runCli("scribe", ["integrate", "--help"]);
   runCli("scribe", ["studio", "--help"]);
   run(executable("bun"), ["run", "scribe:version"], directory);
   const beforeInit = await readFile(globalStyle, "utf8");
   const dryRun = runCli("scribe", ["init", "--dry-run"]);
-  assert(dryRun.stdout.includes("Recommendation") && dryRun.stdout.includes("Mode    default"), "Init dry run did not recommend default mode for the raw Vite fixture.");
+  assert(
+    dryRun.stdout.includes("content/blog") && dryRun.stdout.includes("No files will be generated."),
+    "Init dry run did not describe the empty content launchpad."
+  );
   assert(await readFile(globalStyle, "utf8") === beforeInit, "Init dry run modified the fixture.");
+  runCli("scribe", ["init", "--yes"]);
+  assert((await readdir(join(directory, "content", "blog"))).length === 0, "Init generated content instead of leaving the launchpad empty.");
+  runCli("scribe", ["init", "--yes"]);
+  const integrateDryRun = runCli("scribe", ["integrate", "--dry-run"]);
+  assert(integrateDryRun.stdout.includes("Recommendation") && integrateDryRun.stdout.includes("Mode    default"), "Integrate dry run did not recommend default mode for the raw Vite fixture.");
+  assert(await readFile(globalStyle, "utf8") === beforeInit, "Integrate dry run modified the fixture.");
   const usage = runCli("scribe", [], false);
   assert(usage.status === 2, `scribe without arguments exited ${usage.status}; expected 2.`);
 

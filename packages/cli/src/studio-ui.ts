@@ -9,6 +9,7 @@ export interface StudioClientImports {
   readonly lenis: string;
   readonly lucide: string;
   readonly sonner: string;
+  readonly sonnerStyle: string;
   readonly mdxEditor: string;
   readonly mdxEditorStyle: string;
   readonly monaco: string;
@@ -33,6 +34,7 @@ import {
   TriangleAlert, Undo2, X
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
+import "sonner/dist/styles.css";
 import {
   MDXEditor, BlockTypeSelect, BoldItalicUnderlineToggles, CodeToggle,
   CreateLink, InsertCodeBlock, InsertImage, InsertTable, ListsToggle,
@@ -1131,7 +1133,7 @@ function StudioApp() {
     return () => removeEventListener("beforeunload", onBeforeUnload);
   }, [hasUnwrittenChanges]);
 
-  if (!state) return <main className="studio-loading"><LoaderCircle aria-hidden="true" /><span>Opening source…</span></main>;
+  if (!state) return <main className="studio-loading"><LoaderCircle aria-hidden="true" /><span>{"Opening source" + String.fromCodePoint(8230)}</span></main>;
 
   const lines = source.split("\n").length;
   const words = source.trim() ? source.trim().split(/\s+/).length : 0;
@@ -1146,7 +1148,7 @@ function StudioApp() {
         : hasUnwrittenChanges
           ? "save"
           : "saved";
-  const saveLabel = { conflict: "Resolve conflict", readonly: "Read-only", saving: "Saving…", error: "Error", save: "Save", saved: "Saved" }[saveStatus];
+  const saveLabel = { conflict: "Resolve conflict", readonly: "Read-only", saving: "Saving" + String.fromCodePoint(8230), error: "Error", save: "Save", saved: "Saved" }[saveStatus];
   const SaveIcon = saveStatus === "saving"
     ? LoaderCircle
     : saveStatus === "saved"
@@ -1210,10 +1212,10 @@ function StudioApp() {
     <footer className="studio-statusbar">
       <span className="studio-statusbar__path" title={state.sourcePath}>{state.sourcePath}</span>
       <span className="studio-statusbar__meta">
-        <span>{lines.toLocaleString()} lines</span><i aria-hidden="true">·</i>
-        <span>{words.toLocaleString()} words</span><i aria-hidden="true">·</i>
-        <span>{location.host}</span><i aria-hidden="true">·</i>
-        <span>{previewPresets[viewport].width === null ? "Fit" : previewPresets[viewport].width + "px"}</span><i aria-hidden="true">·</i>
+        <span>{lines.toLocaleString()} lines</span><i aria-hidden="true">{String.fromCodePoint(183)}</i>
+        <span>{words.toLocaleString()} words</span><i aria-hidden="true">{String.fromCodePoint(183)}</i>
+        <span>{location.host}</span><i aria-hidden="true">{String.fromCodePoint(183)}</i>
+        <span>{previewPresets[viewport].width === null ? "Fit" : previewPresets[viewport].width + "px"}</span><i aria-hidden="true">{String.fromCodePoint(183)}</i>
         <span className="connection-status" data-status={connectionStatus}><b aria-hidden="true" />{connectionLabel}</span>
       </span>
     </footer>
@@ -1372,12 +1374,13 @@ svg { inline-size: 1rem; block-size: 1rem; stroke-width: 1.8; }
 .protected-island__copy span { margin-block-start:.12rem; font: .66rem/1.4 var(--studio-mono); }
 .rich-error,.conflict-card { position:fixed; z-index:20; inset-inline-end:.75rem; inset-block-end:2.5rem; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:.8rem; max-inline-size:38rem; padding:.75rem; border:1px solid; border-radius:var(--studio-radius); color:var(--studio-text); }
 .rich-error { border-color:#68443b; background:#211416; }
-.conflict-card { border-color:color-mix(in srgb,var(--studio-warning) 52%,var(--studio-border)); background:color-mix(in srgb,var(--studio-warning) 8%,var(--studio-panel-raised)); }
+.conflict-card { inline-size:min(38rem,calc(100vw - 1.5rem)); border-color:color-mix(in srgb,var(--studio-warning) 52%,var(--studio-border)); background:color-mix(in srgb,var(--studio-warning) 8%,var(--studio-panel-raised)); }
 .rich-error > svg { color:var(--studio-danger); }
 .conflict-card > svg { color:var(--studio-warning); }
 .rich-error strong,.rich-error span,.rich-error small,.conflict-card strong,.conflict-card span { display:block; }
 .rich-error span,.conflict-card span { margin-block-start:.15rem; color:var(--studio-muted); font-size:.72rem; }
 .rich-error small { margin-block-start:.25rem; color:#ffaaa0; font-size:.64rem; }
+.conflict-card button { min-block-size:2rem; white-space:nowrap; }
 .studio-statusbar { min-inline-size:0; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding-inline:.625rem; border-block-start:1px solid var(--studio-border); color:#71717a; background:var(--studio-shell); font:.6875rem/1 var(--studio-mono); }
 .studio-statusbar__path { min-inline-size:0; overflow:hidden; color:#a1a1aa; text-overflow:ellipsis; white-space:nowrap; }
 .studio-statusbar__meta { flex:none; display:flex; align-items:center; gap:.375rem; white-space:nowrap; }

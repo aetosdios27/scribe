@@ -1,187 +1,96 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { expect, it, vi } from "vitest";
 
-import { inspectProject, planInit, resolveProjectStyleMode, runInit } from "./init.js";
+import { planInit, runInit } from "./init.js";
 
-async function project(files: Record<string, string>): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "scribe-init-test-"));
-  for (const [name, value] of Object.entries(files)) {
-    const path = join(root, name);
-    await mkdir(join(path, ".."), { recursive: true });
-    await writeFile(path, value);
-  }
-  return root;
+async function workspace(): Promise<string> {
+  return mkdtemp(join(tmpdir(), "scribe-workspace-init-"));
 }
 
-const packages = {
-  dependencies: {
-    react: "19.2.7",
-    "@scribe-sdk/react": "0.1.0-alpha.2",
-    "@scribe-sdk/styles": "0.1.0-alpha.2",
-    "@scribe-sdk/mdx": "0.1.0-alpha.2"
-  },
-  devDependencies: { "@scribe-sdk/cli": "0.1.0-alpha.2" }
-};
+it("plans an empty content launchpad without generating an article", async () => {
+  const cwd = await workspace();
 
-it("recommends tailwind when Tailwind Typography and prose usage are detected", async () => {
-  const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, tailwindcss: "4.3.3", "@tailwindcss/typography": "0.5.20", vite: "8.1.3" } }),
-    "bun.lock": "",
-    "src/app.tsx": "export const App = () => <article className=\"prose\" />;",
-    "src/index.css": "@import 'tailwindcss';\n"
-  });
+  const plan = await planInit(cwd, {});
 
-  const inspection = await inspectProject(cwd);
-  expect(inspection.packageManager).toBe("bun");
-  expect(inspection.tailwindMajor).toBe(4);
-  expect(inspection.hasTypographyPlugin).toBe(true);
-  expect(inspection.hasProseUsage).toBe(true);
-  expect((await planInit(cwd, undefined, "0.1.0-alpha.2")).mode).toBe("tailwind");
+  expect(plan.contentDirectory).toBe(join(cwd, "content", "blog"));
+  expect(plan.assetDirectory).toBeUndefined();
+  expect(plan.directories).toEqual([join(cwd, "content", "blog")]);
+  expect(await readdir(cwd)).toEqual([]);
 });
 
-it("recommends foundation for established custom prose and default for a raw site", async () => {
-  const established = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
-    "package-lock.json": "{}",
-    "src/index.css": ".article { max-width: 68ch; font-family: Georgia, serif; line-height: 1.65; }"
-  });
-  const raw = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
-    "package-lock.json": "{}",
-    "src/index.css": "body { margin: 0; }"
-  });
+it("reuses one existing content convention instead of creating a duplicate", async () => {
+  const cwd = await workspace();
+  await mkdir(join(cwd, "posts"), { recursive: true });
 
-  expect((await planInit(established, undefined, "0.1.0-alpha.2")).mode).toBe("foundation");
-  expect((await planInit(raw, undefined, "0.1.0-alpha.2")).mode).toBe("default");
+  const plan = await planInit(cwd, {});
+
+  expect(plan.contentDirectory).toBe(join(cwd, "posts"));
+  expect(plan.directories).toEqual([]);
 });
 
-it("requires an explicit mode for an ambiguous Tailwind stack", async () => {
-  const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, tailwindcss: "3.4.19", vite: "8.1.3" } }),
-    "src/index.css": "@tailwind base;"
-  });
-
-  const plan = await planInit(cwd, undefined, "0.1.0-alpha.2");
-  expect(plan.mode).toBeUndefined();
-  expect(plan.ambiguities.join(" ")).toContain("--mode");
-  expect((await planInit(cwd, "foundation", "0.1.0-alpha.2")).mode).toBe("foundation");
-});
-
-it("lets Studio's explicit mode override bypass framework recommendation ambiguity", async () => {
-  const cwd = await project({ "package.json": JSON.stringify({ private: true }) });
-
-  const resolution = await resolveProjectStyleMode(cwd, "default");
-  expect(resolution.mode).toBe("default");
-  expect(resolution.ambiguities).toEqual([]);
-  expect(resolution.reason).toContain("Selected explicitly");
-});
-
-it("keeps dry runs pure and reports every proposed change", async () => {
-  const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
-    "src/index.css": "body { margin: 0; }\n"
-  });
-  const before = await readFile(join(cwd, "src/index.css"), "utf8");
-  const stdout = vi.fn();
-
-  expect(await runInit(["--dry-run"], { cwd, version: "0.1.0-alpha.2", stdout })).toBe(0);
-  expect(await readFile(join(cwd, "src/index.css"), "utf8")).toBe(before);
-  const output = stdout.mock.calls.join("\n");
-  expect(output).toContain("Scribe init — dry run");
-  expect(output).not.toContain("beta");
-  expect(output).toMatch(/Detected\n[\s\S]*React 19\.2\.7/u);
-  expect(output).toMatch(/Recommendation\n[\s\S]*default/u);
-  expect(output).toMatch(/Commands\n/u);
-  expect(output).toMatch(/File changes\n[\s\S]*src\/index\.css/u);
-  expect(output).toMatch(/Manual steps\n/u);
-  expect(output).toMatch(/Next\n/u);
-  expect(output).not.toContain(cwd);
-});
-
-it("separates detected integration warnings from manual steps", async () => {
-  const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3", "rehype-pretty-code": "0.14.1" } }),
-    "src/index.css": "body { margin: 0; }\n",
-    "vite.config.ts": 'import prettyCode from "rehype-pretty-code";\n'
-  });
-  const stdout = vi.fn();
-
-  expect(await runInit(["--dry-run"], { cwd, version: "0.1.0-alpha.2", stdout })).toBe(0);
-  const output = stdout.mock.calls.join("\n");
-  expect(output).toMatch(/Warnings\n[\s\S]*existing syntax highlighter/u);
-  expect(output.indexOf("Warnings")).toBeLessThan(output.indexOf("Manual steps"));
-});
-
-it("applies one style import and remains idempotent", async () => {
-  const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
-    "src/index.css": "body { margin: 0; }\n"
-  });
-
-  expect(await runInit(["--mode", "foundation", "--yes"], { cwd, version: "0.1.0-alpha.2", stdout: vi.fn() })).toBe(0);
-  expect(await runInit(["--mode", "foundation", "--yes"], { cwd, version: "0.1.0-alpha.2", stdout: vi.fn() })).toBe(0);
-  const css = await readFile(join(cwd, "src/index.css"), "utf8");
-  expect(css.match(/@scribe-sdk\/styles\/foundation\.css/gu)).toHaveLength(1);
-});
-
-it("keeps the Scribe Tailwind layer after Tailwind v4's required import", async () => {
-  const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, tailwindcss: "4.3.3", "@tailwindcss/typography": "0.5.20", vite: "8.1.3" } }),
-    "src/index.css": "@import \"tailwindcss\";\n@plugin \"@tailwindcss/typography\";\n"
-  });
-
-  expect(await runInit(["--mode", "tailwind", "--yes"], { cwd, version: "0.1.0-alpha.2", stdout: vi.fn() })).toBe(0);
-  expect(await readFile(join(cwd, "src/index.css"), "utf8")).toMatch(
-    /^@import "tailwindcss";\n@import "@scribe-sdk\/styles\/tailwind\.css";\n/u
-  );
-});
-
-it("creates but never duplicates an unambiguous Next component map", async () => {
-  const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, next: "16.2.11", "@next/mdx": "16.2.11" } }),
-    "app/globals.css": "body { margin: 0; }\n",
-    "next.config.mjs": "import createMDX from '@next/mdx';\nexport default createMDX({})({});\n"
-  });
-
-  expect(await runInit(["--mode", "default", "--yes"], { cwd, version: "0.1.0-alpha.2", stdout: vi.fn() })).toBe(0);
-  expect(await runInit(["--mode", "default", "--yes"], { cwd, version: "0.1.0-alpha.2", stdout: vi.fn() })).toBe(0);
-  const components = await readFile(join(cwd, "mdx-components.tsx"), "utf8");
-  expect(components.match(/createScribeComponents/gu)).toHaveLength(2);
-  expect(components.match(/export function useMDXComponents/gu)).toHaveLength(1);
-});
-
-it("names the next-mdx-remote/rsc options prop precisely", async () => {
-  const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, next: "16.2.11", "next-mdx-remote": "6.0.0" } }),
-    "app/globals.css": "body { margin: 0; }\n",
-    "app/page.tsx": 'import { MDXRemote } from "next-mdx-remote/rsc"; export default () => <MDXRemote source="# Article" />;'
-  });
-
-  const plan = await planInit(cwd, "foundation", "0.1.0-alpha.2");
-  expect(plan.manualSteps.join("\n")).toContain("existing MDXRemote options prop");
-  expect(plan.manualSteps.join("\n")).not.toContain("compileOptions");
-});
-
-it("preserves CRLF files while adding the selected import", async () => {
-  const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
-    "src/index.css": "body {\r\n  margin: 0;\r\n}\r\n"
-  });
-
-  expect(await runInit(["--mode", "default", "--yes"], { cwd, version: "0.1.0-alpha.2", stdout: vi.fn() })).toBe(0);
-  const css = await readFile(join(cwd, "src/index.css"), "utf8");
-  expect(css).toContain('default.css";\r\n\r\nbody');
-  expect(css.replaceAll("\r\n", "")).not.toContain("\n");
-});
-
-it("rejects invalid options and unresolved projects with usage status", async () => {
-  const cwd = await project({ "package.json": JSON.stringify({ dependencies: { react: "19.2.7" } }) });
+it("requires an explicit directory when existing conventions are ambiguous", async () => {
+  const cwd = await workspace();
+  await mkdir(join(cwd, "posts"), { recursive: true });
+  await mkdir(join(cwd, "content", "blog"), { recursive: true });
   const stderr = vi.fn();
-  expect(await runInit(["--mode", "loud"], { cwd, version: "0.1.0-alpha.2", stderr })).toBe(2);
-  expect(await runInit(["--dryrun"], { cwd, version: "0.1.0-alpha.2", stderr })).toBe(2);
-  expect(stderr.mock.calls.join("\n")).toContain('Did you mean "--dry-run"?');
-  expect(await runInit(["--dry-run"], { cwd, version: "0.1.0-alpha.2", stderr: vi.fn() })).toBe(2);
+
+  expect(await runInit(["--dry-run"], { cwd, stderr })).toBe(2);
+  expect(stderr.mock.calls.join("\n")).toContain("--content-dir");
+});
+
+it("keeps dry runs pure and shows exactly what would be created", async () => {
+  const cwd = await workspace();
+  const stdout = vi.fn();
+
+  expect(await runInit(["--dry-run", "--with-assets"], { cwd, stdout })).toBe(0);
+  expect(await readdir(cwd)).toEqual([]);
+  const output = stdout.mock.calls.join("\n");
+  expect(output).toContain("content/blog");
+  expect(output).toContain("content/assets");
+  expect(output).toContain("No files will be generated");
+});
+
+it("creates only requested directories and remains idempotent", async () => {
+  const cwd = await workspace();
+  const stdout = vi.fn();
+
+  expect(await runInit(["--yes", "--with-assets"], { cwd, stdout })).toBe(0);
+  expect(await runInit(["--yes", "--with-assets"], { cwd, stdout })).toBe(0);
+  expect(await readdir(join(cwd, "content"))).toEqual(["assets", "blog"]);
+  expect(await readdir(join(cwd, "content", "blog"))).toEqual([]);
+  expect(await readdir(join(cwd, "content", "assets"))).toEqual([]);
+  const output = stdout.mock.calls.join("\n");
+  expect(output).toContain("scribe studio content/blog/your-article.mdx");
+  expect(output).not.toContain("<article>");
+});
+
+it("supports an explicit repository-relative content directory", async () => {
+  const cwd = await workspace();
+
+  expect(await runInit(["--content-dir", "writing/posts", "--yes"], { cwd, stdout: vi.fn() })).toBe(0);
+  await expect(access(join(cwd, "writing", "posts"))).resolves.toBeUndefined();
+});
+
+it("refuses to treat a colliding file as a content directory", async () => {
+  const cwd = await workspace();
+  await mkdir(join(cwd, "content"), { recursive: true });
+  await writeFile(join(cwd, "content", "blog"), "not a directory");
+  const stderr = vi.fn();
+
+  expect(await runInit(["--dry-run"], { cwd, stderr })).toBe(1);
+  expect(stderr.mock.calls.join("\n")).toContain("content/blog exists but is not a directory");
+});
+
+it("rejects paths outside the workspace and points old integration flags to integrate", async () => {
+  const cwd = await workspace();
+  const stderr = vi.fn();
+
+  expect(await runInit(["--content-dir", "../elsewhere", "--yes"], { cwd, stderr })).toBe(2);
+  expect(await runInit(["--mode", "tailwind"], { cwd, stderr })).toBe(2);
+  const output = stderr.mock.calls.join("\n");
+  expect(output).toContain("inside the current workspace");
+  expect(output).toContain("scribe integrate --mode tailwind");
 });

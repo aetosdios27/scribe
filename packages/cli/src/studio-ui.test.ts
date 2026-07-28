@@ -92,8 +92,12 @@ it("renders only the restrained Studio shell and operational status", () => {
   expect(client).toContain('aria-controls={saveStatus === "conflict" ? "studio-conflict-card" : undefined}');
   expect(client).not.toContain('className="save-control" data-state={saveStatus}');
   expect(client).toContain('className="studio-toaster"');
+  expect(client).toContain('import "sonner/dist/styles.css"');
+  expect(client).toContain('position="bottom-right"');
+  expect(client).toContain("offset={{ right: 12, bottom: 42 }}");
   expect(client).toContain('"editor.background": "#111113"');
   expect(client).toContain('"editorGutter.background": "#111113"');
+  expect(client).not.toMatch(/[^\x00-\x7f]/u);
 });
 
 it("styles the workspace, Monaco editor, preview, and toaster consistently", () => {
@@ -128,4 +132,6 @@ it("styles the workspace, Monaco editor, preview, and toaster consistently", () 
   expect(styles).toContain(".connection-status[data-status=readonly]");
   expect(styles).toContain("font:.6875rem/1 var(--studio-mono)");
   expect(styles).toContain(".studio-toaster");
+  expect(styles).toMatch(/\.conflict-card\s*\{[^}]*inline-size:min\(38rem,calc\(100vw - 1\.5rem\)\)/u);
+  expect(styles).toMatch(/\.conflict-card button\s*\{[^}]*white-space:nowrap/u);
 });

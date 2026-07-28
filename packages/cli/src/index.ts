@@ -5,11 +5,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { compileScribeMdx } from "@scribe-sdk/mdx";
-
 import { colorize, commandArgument, displayPath, suggestClosest, supportsColor } from "./cli-output.js";
-import { initHelp, runInit } from "./init.js";
-import { runStudio, studioHelp } from "./studio.js";
+import { initHelp, integrateHelp, studioHelp } from "./command-help.js";
 
 export const version = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
@@ -23,12 +20,14 @@ Usage
   scribe <command> [options]
 
 Commands
-  init       Inspect and deliberately configure Scribe in the current React project.
-  validate   Compile and validate one Markdown or MDX article.
-  studio     Open the local, source-authoritative authoring Studio.
+  init        Create an empty content launchpad without generating an article.
+  integrate   Connect Scribe to an existing React project.
+  validate    Compile and validate one Markdown or MDX article.
+  studio      Open the local, source-authoritative authoring Studio.
 
 Examples
   scribe init --dry-run
+  scribe integrate --dry-run
   scribe validate ./content/article.mdx
   scribe studio ./content/article.mdx
 
@@ -81,7 +80,7 @@ export async function main(
     return 0;
   }
   if (args.length === 0) {
-    stderr("Expected a command. Run `scribe --help` for the three supported actions.\n");
+    stderr("Expected a command. Run `scribe --help` for the supported commands.\n");
     return 2;
   }
 
@@ -91,17 +90,27 @@ export async function main(
       stdout(initHelp);
       return 0;
     }
-    return runInit(rest, { version, cwd, stdout, stderr });
+    const { runInit } = await import("./init.js");
+    return runInit(rest, { cwd, stdout, stderr });
+  }
+  if (command === "integrate") {
+    if (rest.includes("--help") || rest.includes("-h")) {
+      stdout(integrateHelp);
+      return 0;
+    }
+    const { runIntegrate } = await import("./integrate.js");
+    return runIntegrate(rest, { version, cwd, stdout, stderr });
   }
   if (command === "studio") {
     if (rest.includes("--help") || rest.includes("-h")) {
       stdout(studioHelp);
       return 0;
     }
+    const { runStudio } = await import("./studio.js");
     return runStudio(rest, { cwd, stdout, stderr });
   }
   if (command !== "validate") {
-    const suggestion = suggestClosest(String(command), ["init", "validate", "studio"]);
+    const suggestion = suggestClosest(String(command), ["init", "integrate", "validate", "studio"]);
     stderr(`Unknown command "${String(command)}".${suggestion === undefined ? "" : ` Did you mean "${suggestion}"?`}\nRun \`scribe --help\` for the supported actions.\n`);
     return 2;
   }
@@ -134,6 +143,7 @@ async function validate(
   const path = resolve(output.cwd, inputPath);
   const shownPath = displayPath(output.cwd, path);
   try {
+    const { compileScribeMdx } = await import("@scribe-sdk/mdx");
     const source = await readFile(path, "utf8");
     const file = await compileScribeMdx({ path, value: source }, { strict });
     for (const message of file.messages) output.stderr(`${formatDiagnostic(shownPath, message, "warning")}\n`);
@@ -147,19 +157,19 @@ async function validate(
 }
 
 function formatDiagnostic(path: string, error: unknown, severity: "error" | "warning"): string {
-  const diagnostic = error as {
+  const diagnostic = error !== null && typeof error === "object" ? error as {
     readonly line?: number;
     readonly column?: number;
     readonly reason?: string;
     readonly message?: string;
     readonly ruleId?: string;
-  };
+  } : {};
   const location = diagnostic.line === undefined
     ? path
     : `${path}:${diagnostic.line}:${diagnostic.column ?? 1}`;
   const code = diagnostic.ruleId ?? "SCB0001";
   const reason = diagnostic.reason ?? diagnostic.message ?? String(error);
-  return `${location} [${severity} ${code}] ${singleLine(reason)}`;
+  return `${location} [${severity} ${code}] ${singleLine(String(reason))}`;
 }
 
 function singleLine(value: string): string {
@@ -180,8 +190,28 @@ export function isMainModule(
   }
 }
 
+type MainRunner = (
+  args: readonly string[],
+  dependencies?: MainDependencies
+) => Promise<number>;
+
+export async function runCliEntry(
+  args: readonly string[] = process.argv.slice(2),
+  dependencies: MainDependencies = {},
+  execute: MainRunner = main
+): Promise<number> {
+  try {
+    return await execute(args, dependencies);
+  } catch (error) {
+    const stderr = dependencies.stderr ?? ((value: string) => process.stderr.write(value));
+    const message = error instanceof Error ? error.message : String(error);
+    stderr(`Scribe failed: ${singleLine(message)}\n`);
+    return 1;
+  }
+}
+
 if (isMainModule(import.meta.url, process.argv[1])) {
-  void main().then((exitCode) => {
+  void runCliEntry().then((exitCode) => {
     process.exitCode = exitCode;
   });
 }

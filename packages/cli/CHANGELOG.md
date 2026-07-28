@@ -1,5 +1,18 @@
 # @scribe-sdk/cli
 
+## 0.1.0-alpha.7
+
+### Minor Changes
+
+- Separate content setup from website integration: `scribe init` now creates only an empty content launchpad, while `scribe integrate` owns stack detection, package installation, MDX wiring, and stylesheet selection.
+
+### Patch Changes
+
+- Make Studio easier to enter and follow by advancing past occupied default ports, containing browser-launch and unexpected CLI failures, loading heavy commands only when invoked, and briefly emphasizing the preview block reached from sustained Markdown edits.
+  - @scribe-sdk/react@0.1.0-alpha.7
+  - @scribe-sdk/styles@0.1.0-alpha.7
+  - @scribe-sdk/mdx@0.1.0-alpha.7
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes

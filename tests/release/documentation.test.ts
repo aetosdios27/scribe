@@ -30,6 +30,7 @@ describe("release documentation", () => {
     expect(readme).toContain("npx scribe validate ./content/article.mdx --strict");
     expect(readme).toContain("`scb` compatibility alias");
     expect(readme.match(/\bscb\b/gu)).toHaveLength(1);
+    expect(readme).toContain("If an earlier prerelease used `scribe init` for website integration, run `scribe integrate` now. `scribe init` creates only an empty content launchpad.");
     expect(readme).toContain("`0 1.25rem 3rem color-mix(in oklab, #000 12%, transparent)`");
   });
 

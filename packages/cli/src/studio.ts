@@ -18,7 +18,8 @@ import {
 } from "vite";
 
 import { displayPath, suggestClosest } from "./cli-output.js";
-import { resolveProjectStyleMode, type StyleMode } from "./init.js";
+import { studioHelp } from "./command-help.js";
+import { resolveProjectStyleMode, type StyleMode } from "./integrate.js";
 import {
   durableWriteStudioFile,
   readStudioFile,
@@ -59,6 +60,8 @@ export interface StudioOptions {
   readonly modeReason?: string;
   readonly hostCss?: string;
   readonly port: number;
+  /** Explicit ports remain strict; the default CLI port may advance when occupied. */
+  readonly strictPort?: boolean;
   readonly open: boolean;
   /** Override used by isolated tests; normal sessions use the OS state directory. */
   readonly recoveryRoot?: string;
@@ -66,6 +69,7 @@ export interface StudioOptions {
 
 export interface StudioHandle {
   readonly origin: string;
+  readonly browserOpened: boolean | undefined;
   /** Internal capability used by Studio's own client and focused integration tests. */
   readonly sessionToken: string;
   readonly hasUnsavedChanges: () => boolean;
@@ -77,6 +81,7 @@ export interface StudioArguments {
   readonly mode?: StyleMode;
   readonly hostCss?: string;
   readonly port: number;
+  readonly portExplicit: boolean;
   readonly open: boolean;
   readonly help: boolean;
 }
@@ -124,28 +129,12 @@ const styleModes = new Set<StyleMode>(["foundation", "default", "tailwind"]);
 const articleExtensions = new Set([".md", ".mdx"]);
 const maxRequestBytes = 5 * 1024 * 1024;
 
-export const studioHelp = `Open Scribe's local, source-authoritative MDX Studio.
-
-Usage
-  scribe studio <article.mdx> [options]
-
-Examples
-  scribe studio ./content/article.mdx
-  scribe studio ./content/article.mdx --mode foundation --no-open
-
-Options
-  --mode <mode>     Override detected foundation, default, or tailwind CSS.
-  --host-css <path> Load one explicit local host stylesheet.
-  --port <number>   Use a specific loopback port (default: 4317).
-  --no-open         Do not open the system browser automatically.
-  -h, --help        Show this command help.
-`;
-
 export function parseStudioArguments(args: readonly string[]): StudioArguments | StudioArgumentError {
   let path: string | undefined;
   let mode: StyleMode | undefined;
   let hostCss: string | undefined;
   let port = 4317;
+  let portExplicit = false;
   let open = true;
   let help = false;
 
@@ -167,6 +156,7 @@ export function parseStudioArguments(args: readonly string[]): StudioArguments |
       const value = Number(args[index + 1]);
       if (!Number.isInteger(value) || value < 1 || value > 65_535) return { error: "--port requires an integer from 1 to 65535." };
       port = value;
+      portExplicit = true;
       index += 1;
     } else if (argument?.startsWith("-")) {
       const suggestion = suggestClosest(argument, ["--mode", "--host-css", "--port", "--no-open", "--help"]);
@@ -176,10 +166,10 @@ export function parseStudioArguments(args: readonly string[]): StudioArguments |
     else return { error: "Expected exactly one Markdown or MDX source file." };
   }
 
-  if (help) return { path: path ?? "", port, open, help, ...(mode === undefined ? {} : { mode }), ...(hostCss === undefined ? {} : { hostCss }) };
+  if (help) return { path: path ?? "", port, portExplicit, open, help, ...(mode === undefined ? {} : { mode }), ...(hostCss === undefined ? {} : { hostCss }) };
   if (path === undefined) return { error: "Expected one Markdown or MDX source file." };
   if (!articleExtensions.has(extname(path).toLowerCase())) return { error: "Studio source must use a .md or .mdx extension." };
-  return { path, port, open, help, ...(mode === undefined ? {} : { mode }), ...(hostCss === undefined ? {} : { hostCss }) };
+  return { path, port, portExplicit, open, help, ...(mode === undefined ? {} : { mode }), ...(hostCss === undefined ? {} : { hostCss }) };
 }
 
 export async function startStudio(options: StudioOptions): Promise<StudioHandle> {
@@ -253,7 +243,6 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   const session = createStudioSession();
   const lease = new StudioWriterLease();
   const events = new StudioEventHub();
-
   const articleId = `${sourcePath}.scribe-studio.mdx`;
   let server: ViteDevServer;
   const httpServer = createHttpServer((request, response) => {
@@ -282,13 +271,14 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
     const scribeMdxOptions = createScribeMdxOptions();
     server = await createViteServer({
     configFile: false,
+    logLevel: "silent",
     root,
     appType: "custom",
     server: {
       middlewareMode: true,
       host: "127.0.0.1",
       port: options.port,
-      strictPort: options.port !== 0,
+      strictPort: true,
       open: false,
       hmr: { server: httpServer },
       fs: { strict: true, allow: [root, ...Object.values(runtime).map(dirname)] }
@@ -333,7 +323,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   }
 
   try {
-    await listenOnLoopback(httpServer, options.port);
+    await listenOnLoopback(httpServer, options.port, options.strictPort ?? true);
   } catch (error) {
     await Promise.all([server.close(), compiler.close()]);
     throw new Error(`Could not start Scribe Studio on 127.0.0.1:${options.port}: ${error instanceof Error ? error.message : String(error)}`);
@@ -437,9 +427,10 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   }
   const origin = `http://127.0.0.1:${address.port}`;
   session.origin = origin;
-  if (options.open) openBrowser(origin);
+  const browserOpened = options.open ? await openBrowser(origin) : undefined;
   return {
     origin,
+    browserOpened,
     sessionToken: session.token,
     hasUnsavedChanges: () => state.dirty,
     close: async () => {
@@ -485,6 +476,7 @@ export async function runStudio(
   }
 
   let handle: StudioHandle;
+  stdout(`Starting Scribe Studio for ${displayPath(dependencies.cwd ?? process.cwd(), resolve(dependencies.cwd ?? process.cwd(), parsed.path))}…\n`);
   try {
     handle = await startStudio({
       root: dependencies.cwd ?? process.cwd(),
@@ -492,6 +484,7 @@ export async function runStudio(
       mode,
       modeReason,
       port: parsed.port,
+      strictPort: parsed.portExplicit,
       open: parsed.open,
       ...(parsed.hostCss === undefined ? {} : { hostCss: parsed.hostCss })
     });
@@ -500,7 +493,14 @@ export async function runStudio(
     return 1;
   }
 
-  stdout(formatStudioStartup(dependencies.cwd ?? process.cwd(), parsed.path, mode, handle.origin));
+  stdout(formatStudioStartup(
+    dependencies.cwd ?? process.cwd(),
+    parsed.path,
+    mode,
+    handle.origin,
+    parsed.port,
+    handle.browserOpened
+  ));
   await new Promise<void>((resolveStop) => {
     const stop = () => resolveStop();
     process.once("SIGINT", stop);
@@ -513,9 +513,23 @@ export async function runStudio(
   return 0;
 }
 
-export function formatStudioStartup(root: string, sourcePath: string, mode: StyleMode, origin: string): string {
+export function formatStudioStartup(
+  root: string,
+  sourcePath: string,
+  mode: StyleMode,
+  origin: string,
+  preferredPort?: number,
+  browserOpened?: boolean
+): string {
   const source = displayPath(root, resolve(root, sourcePath));
-  return `Scribe Studio\n  ${origin}\n  Source  ${source}\n  Mode    ${mode}\n\nSource remains authoritative. Save explicitly from Studio or your editor.\nPress Ctrl+C to stop.\n`;
+  const selectedPort = Number(new URL(origin).port);
+  const movedPort = preferredPort !== undefined && preferredPort !== 0 && preferredPort !== selectedPort
+    ? `Port ${preferredPort} was busy; using ${selectedPort}.\n`
+    : "";
+  const browserFallback = browserOpened === false
+    ? `The browser could not be opened automatically. Open ${origin} manually.\n`
+    : "";
+  return `Scribe Studio\n  ${origin}\n  Source  ${source}\n  Mode    ${mode}\n\n${movedPort}${browserFallback}Source remains authoritative. Save explicitly from Studio or your editor.\nPress Ctrl+C to stop.\n`;
 }
 
 function createStudioPlugin(context: {
@@ -953,6 +967,7 @@ function studioRuntimePaths(): StudioRuntimePaths {
     lenis: studioImportPath("lenis"),
     lucide: studioImportPath("lucide-react"),
     sonner: studioImportPath("sonner"),
+    sonnerStyle: studioImportPath("sonner/dist/styles.css"),
     mdxEditor: studioImportPath("@mdxeditor/editor"),
     mdxEditorStyle: studioImportPath("@mdxeditor/editor/style.css"),
     monaco: studioImportPath("monaco-editor"),
@@ -985,7 +1000,8 @@ function studioAliases(runtime: StudioRuntimePaths) {
     { find: "@cloudflare/kumo/styles/standalone", replacement: runtime.kumoStyle },
     { find: "lenis", replacement: runtime.lenis },
     { find: "lucide-react", replacement: runtime.lucide },
-    { find: "sonner", replacement: runtime.sonner },
+    { find: "sonner/dist/styles.css", replacement: runtime.sonnerStyle },
+    { find: /^sonner$/u, replacement: runtime.sonner },
     { find: "@mdxeditor/editor/style.css", replacement: runtime.mdxEditorStyle },
     { find: "@mdxeditor/editor", replacement: runtime.mdxEditor },
     {
@@ -996,7 +1012,10 @@ function studioAliases(runtime: StudioRuntimePaths) {
       find: /^monaco-editor\/languages\/definitions\/markdown\/register\.js$/u,
       replacement: runtime.monacoMarkdown
     },
-    { find: /^monaco-editor$/u, replacement: runtime.monaco },
+    {
+      find: /^monaco-editor$/u,
+      replacement: runtime.monaco
+    },
     { find: "@fontsource/ibm-plex-sans/400.css", replacement: runtime.plexSans400 },
     { find: "@fontsource/ibm-plex-sans/500.css", replacement: runtime.plexSans500 },
     { find: "@fontsource/ibm-plex-sans/600.css", replacement: runtime.plexSans600 },
@@ -1018,7 +1037,7 @@ function studioImportPath(specifier: string): string {
 
 const studioSourceMappedElements = new Set([
   "article", "aside", "blockquote", "div", "figure", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6",
-  "hr", "li", "ol", "p", "pre", "section", "table", "ul"
+  "hr", "li", "ol", "p", "pre", "section", "table", "tr", "ul"
 ]);
 
 function rehypeStudioSourceLines() {
@@ -1158,6 +1177,12 @@ function PreviewApp() {
     return () => removeEventListener("message", receiveTheme);
   }, []);
   React.useEffect(() => {
+    let activeTarget = null;
+    let clearReveal;
+    const clearActiveTarget = () => {
+      if (activeTarget !== null) activeTarget.removeAttribute("data-scribe-reveal-active");
+      activeTarget = null;
+    };
     const receiveReveal = (event) => {
       if (event.origin !== location.origin || event.data?.type !== "scribe:reveal-source") return;
       const line = Number(event.data.line);
@@ -1172,13 +1197,28 @@ function PreviewApp() {
         const closestDistance = closestLine <= line ? line - closestLine : Number.POSITIVE_INFINITY;
         return elementDistance < closestDistance ? element : closest;
       }, null);
-      target?.scrollIntoView({
+      if (target === null) return;
+      target.scrollIntoView({
         behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
         block: "center"
       });
+      if (target !== activeTarget) {
+        clearActiveTarget();
+        activeTarget = target;
+        target.setAttribute("data-scribe-reveal-active", "");
+      }
+      clearTimeout(clearReveal);
+      clearReveal = setTimeout(
+        clearActiveTarget,
+        matchMedia("(prefers-reduced-motion: reduce)").matches ? 650 : 1100
+      );
     };
     addEventListener("message", receiveReveal);
-    return () => removeEventListener("message", receiveReveal);
+    return () => {
+      removeEventListener("message", receiveReveal);
+      clearTimeout(clearReveal);
+      clearActiveTarget();
+    };
   }, []);
   return React.createElement(
     PreviewThemeContext.Provider,
@@ -1195,7 +1235,7 @@ function studioHtml(sessionToken: string): string {
 }
 
 function previewHtml(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{--font-body:"IBM Plex Sans","Geist Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-heading:var(--font-body);--font-mono:"IBM Plex Mono","Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716;font-family:var(--font-body);transition:background-color 180ms ease,color 180ms ease}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}[data-scribe-studio-host-article] :where(table,table caption,table thead,table tbody,table tr,table th,table td,table p,table strong,table em,table a,.scribe-code-frame,.scribe-code-frame__header,.scribe-code-frame__pre,.scribe-code-frame__pre code,.scribe-code-frame__pre code *){color:#171716!important}html.dark [data-scribe-studio-host-article] :where(table,table caption,table thead,table tbody,table tr,table th,table td,table p,table strong,table em,table a,.scribe-code-frame,.scribe-code-frame__header,.scribe-code-frame__pre,.scribe-code-frame__pre code,.scribe-code-frame__pre code *){color:#f5f5f4!important}[data-scribe-studio-host-article] .scribe-banner__metadata{color:var(--text,#171716)!important}.scribe-studio-missing-asset{display:grid;gap:.35rem;align-content:center;min-block-size:7rem;margin-block:1rem;padding:1rem;border:1px dashed color-mix(in oklab,currentColor 30%,transparent);border-radius:.55rem;color:color-mix(in oklab,currentColor 72%,transparent);background:color-mix(in oklab,currentColor 5%,transparent);font:500 .8rem/1.45 var(--font-body)}.scribe-studio-missing-asset strong{color:inherit}.scribe-studio-missing-asset code{overflow-wrap:anywhere;color:inherit;font-family:var(--font-mono)}.scribe-studio-missing-asset[data-loading]{opacity:.65}@media(prefers-reduced-motion:reduce){body{transition:none}}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html{color-scheme:light dark}body{--font-body:"IBM Plex Sans","Geist Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--font-heading:var(--font-body);--font-mono:"IBM Plex Mono","Geist Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;margin:0;padding:clamp(1rem,4vw,3rem);background:#fff;color:#171716;font-family:var(--font-body);transition:background-color 180ms ease,color 180ms ease}body:has(.scribe[data-theme=dark]){background:#101112;color:#eeece8}[data-scribe-studio-host-article] :where(table,table caption,table thead,table tbody,table tr,table th,table td,table p,table strong,table em,table a,.scribe-code-frame,.scribe-code-frame__header,.scribe-code-frame__pre,.scribe-code-frame__pre code,.scribe-code-frame__pre code *){color:#171716!important}html.dark [data-scribe-studio-host-article] :where(table,table caption,table thead,table tbody,table tr,table th,table td,table p,table strong,table em,table a,.scribe-code-frame,.scribe-code-frame__header,.scribe-code-frame__pre,.scribe-code-frame__pre code,.scribe-code-frame__pre code *){color:#f5f5f4!important}[data-scribe-studio-host-article] .scribe-banner__metadata{color:var(--text,#171716)!important}.scribe-studio-missing-asset{display:grid;gap:.35rem;align-content:center;min-block-size:7rem;margin-block:1rem;padding:1rem;border:1px dashed color-mix(in oklab,currentColor 30%,transparent);border-radius:.55rem;color:color-mix(in oklab,currentColor 72%,transparent);background:color-mix(in oklab,currentColor 5%,transparent);font:500 .8rem/1.45 var(--font-body)}.scribe-studio-missing-asset strong{color:inherit}.scribe-studio-missing-asset code{overflow-wrap:anywhere;color:inherit;font-family:var(--font-mono)}.scribe-studio-missing-asset[data-loading]{opacity:.65}[data-scribe-reveal-active]{animation:scribe-studio-reveal 1100ms cubic-bezier(.22,1,.36,1)}@keyframes scribe-studio-reveal{0%{background-color:transparent;box-shadow:inset 0 0 #2563eb}18%{background-color:color-mix(in oklab,#2563eb 14%,transparent);box-shadow:inset 3px 0 #2563eb}100%{background-color:transparent;box-shadow:inset 0 0 #2563eb}}@media(prefers-reduced-motion:reduce){body{transition:none}[data-scribe-reveal-active]{animation:none;background-color:color-mix(in oklab,#2563eb 10%,transparent);box-shadow:inset 3px 0 #2563eb}}</style></head><body><div id="preview"></div><script type="module" src="/@scribe-studio/preview.tsx"></script></body></html>`;
 }
 
 function publicState(state: StudioState) {
@@ -1437,16 +1477,46 @@ function json(response: import("node:http").ServerResponse, status: number, valu
   response.end(JSON.stringify(value));
 }
 
-function openBrowser(url: string): void {
+export async function openBrowser(
+  url: string,
+  spawnProcess: typeof spawn = spawn
+): Promise<boolean> {
   const command: [string, ...string[]] = process.platform === "darwin" ? ["open", url]
     : process.platform === "win32" ? ["cmd", "/c", "start", "", url]
       : ["xdg-open", url];
   const [executable, ...args] = command;
-  const child = spawn(executable, args, { detached: true, stdio: "ignore", shell: false });
-  child.unref();
+  return new Promise((resolveOpen) => {
+    let child;
+    try {
+      child = spawnProcess(executable, args, { detached: true, stdio: "ignore", shell: false });
+    } catch {
+      resolveOpen(false);
+      return;
+    }
+    child.once("spawn", () => {
+      child.unref();
+      resolveOpen(true);
+    });
+    child.once("error", () => resolveOpen(false));
+  });
 }
 
-async function listenOnLoopback(server: HttpServer, port: number): Promise<void> {
+async function listenOnLoopback(server: HttpServer, port: number, strict: boolean): Promise<void> {
+  const attempts = strict || port === 0 ? 1 : Math.min(20, 65_536 - port);
+  let lastError: unknown;
+  for (let offset = 0; offset < attempts; offset += 1) {
+    try {
+      await listenOnce(server, port + offset);
+      return;
+    } catch (error) {
+      lastError = error;
+      if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+    }
+  }
+  throw lastError;
+}
+
+async function listenOnce(server: HttpServer, port: number): Promise<void> {
   await new Promise<void>((resolveListen, rejectListen) => {
     const reject = (error: Error) => rejectListen(error);
     server.once("error", reject);
