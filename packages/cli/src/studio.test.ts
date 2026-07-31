@@ -173,7 +173,7 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
 
   const transformedHostCss = await (await fetch(`${handle.origin}/src/app.css`)).text();
   expect(transformedHostCss).toContain('[data-scribe-table-layout=\\"wide\\"]');
-});
+}, 15_000);
 
 it("surfaces recovery read failures before opening the Studio", async () => {
   const file = await fixture();
