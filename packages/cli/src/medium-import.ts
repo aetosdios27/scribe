@@ -1,6 +1,6 @@
 import { link, mkdir, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { compileScribeMdx } from "@scribe-sdk/mdx";
@@ -196,26 +196,37 @@ export async function runMediumImport(
   }
 
   const createdFiles: string[] = [];
+  const createdDirectories = new Set<string>();
   const warnings: ImportWarning[] = plan.articles.flatMap((article) => article.warnings);
   try {
     for (const article of plan.articles) {
       let markdown = article.markdown;
       if (plan.downloadAssets && article.assets.length > 0) {
-        const assetResult = await (dependencies.downloadAssets ?? downloadMediumAssets)({
-          root: plan.root,
-          slug: article.slug,
-          markdown,
-          assets: article.assets
-        });
+        const assetResult = await trackCreatedDirectories(
+          root,
+          join(plan.root, "public", "scribe-imports", article.slug),
+          createdDirectories,
+          () => (dependencies.downloadAssets ?? downloadMediumAssets)({
+            root: plan.root,
+            slug: article.slug,
+            markdown,
+            assets: article.assets
+          })
+        );
         markdown = assetResult.markdown;
         createdFiles.push(...assetResult.createdFiles);
         warnings.push(...assetResult.warnings);
       }
-      await (dependencies.writeArticle ?? writeArticleExclusively)(article.targetPath, markdown);
+      await trackCreatedDirectories(
+        root,
+        dirname(article.targetPath),
+        createdDirectories,
+        () => (dependencies.writeArticle ?? writeArticleExclusively)(article.targetPath, markdown)
+      );
       createdFiles.push(article.targetPath);
     }
   } catch (error) {
-    await rollbackCreatedFiles(root, createdFiles);
+    await rollbackCreatedFiles(root, createdFiles, createdDirectories);
     stderr(`Medium import failed and newly created files were rolled back: ${errorMessage(error)}\n`);
     return 1;
   }
@@ -409,19 +420,51 @@ async function writeArticleExclusively(path: string, source: string): Promise<vo
   }
 }
 
-async function rollbackCreatedFiles(root: string, createdFiles: readonly string[]): Promise<void> {
-  const directories = new Set<string>();
+async function rollbackCreatedFiles(
+  root: string,
+  createdFiles: readonly string[],
+  createdDirectories: ReadonlySet<string>
+): Promise<void> {
   for (const path of [...createdFiles].reverse()) {
+    if (!isWithinRoot(root, path)) continue;
     await unlink(path).catch(() => undefined);
-    let directory = dirname(path);
-    while (directory !== root && relative(root, directory) !== "") {
-      directories.add(directory);
-      directory = dirname(directory);
-    }
   }
-  for (const directory of [...directories].sort((left, right) => right.length - left.length)) {
+  for (const directory of [...createdDirectories].sort((left, right) => right.length - left.length)) {
     await rmdir(directory).catch(() => undefined);
   }
+}
+
+async function trackCreatedDirectories<T>(
+  root: string,
+  target: string,
+  createdDirectories: Set<string>,
+  operation: () => Promise<T>
+): Promise<T> {
+  const candidates: string[] = [];
+  let directory = resolve(target);
+  if (!isWithinRoot(root, directory)) throw new Error("Import target escaped the project root.");
+  while (directory !== root) {
+    if (!(await pathExists(directory))) candidates.push(directory);
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  try {
+    return await operation();
+  } finally {
+    for (const candidate of candidates) {
+      if (await pathExists(candidate)) createdDirectories.add(candidate);
+    }
+  }
+}
+
+function isWithinRoot(root: string, candidate: string): boolean {
+  const path = relative(root, candidate);
+  return path === "" || (
+    path !== ".."
+    && !path.startsWith(`..${sep}`)
+    && !isAbsolute(path)
+  );
 }
 
 async function pathExists(path: string): Promise<boolean> {

@@ -167,3 +167,36 @@ it("normalizes Medium's decorative invisible spacing without flattening punctuat
   expect(converted.markdown).toContain("Behavior System and metrics — stability.");
   expect(converted.markdown).not.toMatch(/[\u00a0\u200a]/u);
 });
+
+it("drops malformed exported dates with an actionable warning", async () => {
+  const converted = await convertMediumPost({
+    entryPath: "medium-export/posts/malformed-date.html",
+    html: `<!doctype html><html><head>
+      <title>Malformed date</title>
+      <meta property="article:published_time" content="July 31, 2026">
+    </head><body><article><p>Still import the article.</p></article></body></html>`,
+    status: "published"
+  });
+
+  expect(converted.markdown).not.toContain("date:");
+  expect(converted.warnings).toEqual([
+    expect.objectContaining({
+      code: "medium-invalid-date",
+      source: "July 31, 2026"
+    })
+  ]);
+});
+
+it("escapes literal MDX punctuation in imported prose", async () => {
+  const converted = await convertMediumPost({
+    entryPath: "medium-export/posts/literal-mdx.html",
+    html: "<article><h1>Literal MDX</h1><p>Use {value} when 3 &lt; 5.</p></article>",
+    status: "published"
+  });
+
+  expect(converted.markdown).toContain("Use \\{value} when 3 \\< 5.");
+  await expect(compileScribeMdx({
+    path: `${converted.slug}.mdx`,
+    value: converted.markdown
+  })).resolves.toEqual(expect.objectContaining({ messages: [] }));
+});

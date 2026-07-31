@@ -394,15 +394,22 @@ export async function convertMediumPost(post: MediumArchivePost): Promise<Conver
   const description = metaValues(parsed, "description")[0]
     ?? metaValues(parsed, "og:description")[0]
     ?? (subtitle === undefined ? undefined : normalizedText(subtitle) || undefined);
+  const warnings: ImportWarning[] = [];
   const exportedDate = metaValues(parsed, "article:published_time")[0]
     ?? elements(parsed, "time").map((node) => property(node.properties, "dateTime")).find(Boolean);
-  const date = exportedDate?.match(/^\d{4}-\d{2}-\d{2}/u)?.[0] ?? exportedDate;
+  const date = exportedDate?.match(/^\d{4}-\d{2}-\d{2}/u)?.[0];
+  if (exportedDate !== undefined && date === undefined) {
+    warnings.push({
+      code: "medium-invalid-date",
+      message: `Ignored malformed Medium publication date "${exportedDate}"; expected a leading YYYY-MM-DD value.`,
+      source: exportedDate
+    });
+  }
   const tags = [
     ...metaValues(parsed, "article:tag"),
     ...metaValues(parsed, "keywords").flatMap((value) => value.split(",").map((tag) => tag.trim()).filter(Boolean))
   ].filter((tag, index, all) => all.indexOf(tag) === index);
   const canonical = canonicalUrl(parsed);
-  const warnings: ImportWarning[] = [];
   const assets: MediumAssetReference[] = [];
   const article = contentRoot(parsed);
   article.children = sanitizeChildren(article.children, warnings, assets);
@@ -419,7 +426,11 @@ export async function convertMediumPost(post: MediumArchivePost): Promise<Conver
       fences: true,
       fence: "`",
       listItemIndent: "one",
-      rule: "-"
+      rule: "-",
+      unsafe: [
+        { character: "{", inConstruct: "phrasing" },
+        { character: "<", inConstruct: "phrasing" }
+      ]
     });
   const markdownTree = await serializer.run(article);
   const body = serializer.stringify(markdownTree).trim();

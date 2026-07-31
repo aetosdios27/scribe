@@ -1,6 +1,6 @@
 import { access, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -79,10 +79,49 @@ it("deduplicates repeated URLs and gives colliding filenames distinct paths", as
   }, { fetch });
 
   expect(fetch).toHaveBeenCalledTimes(2);
-  expect(result.createdFiles.map((path) => path.split("/").at(-1))).toEqual(["image.png", "image-2.png"]);
+  expect(result.createdFiles.map((path) => basename(path))).toEqual(["image.png", "image-2.png"]);
   expect(result.markdown).toContain("![First](/scribe-imports/collisions/image.png)");
   expect(result.markdown).toContain("![Again](/scribe-imports/collisions/image.png)");
   expect(result.markdown).toContain("![Second](/scribe-imports/collisions/image-2.png)");
+});
+
+it("applies longer asset references before overlapping shorter references", async () => {
+  const root = await workspace();
+  const short = asset("https://miro.medium.com/image", "Short");
+  const long = asset("https://miro.medium.com/image.png", "Long");
+
+  const result = await downloadMediumAssets({
+    root,
+    slug: "overlap",
+    markdown: `![Short](${short.articleReference})\n![Long](${long.articleReference})`,
+    assets: [short, long]
+  }, { fetch: vi.fn(async () => imageResponse()) });
+
+  expect(result.markdown).toBe([
+    "![Short](/scribe-imports/overlap/image.png)",
+    "![Long](/scribe-imports/overlap/image-2.png)"
+  ].join("\n"));
+  expect(result.warnings).toEqual([]);
+});
+
+it("warns when a downloaded asset reference is absent from the article", async () => {
+  const root = await workspace();
+  const reference = asset("https://miro.medium.com/missing.png");
+
+  const result = await downloadMediumAssets({
+    root,
+    slug: "missing-reference",
+    markdown: "No image reference remains.",
+    assets: [reference]
+  }, { fetch: vi.fn(async () => imageResponse()) });
+
+  expect(result.markdown).toBe("No image reference remains.");
+  expect(result.warnings).toEqual([
+    expect.objectContaining({
+      code: "medium-asset-reference-missing",
+      source: reference.articleReference
+    })
+  ]);
 });
 
 it("follows bounded HTTPS redirects and rejects insecure redirect targets", async () => {

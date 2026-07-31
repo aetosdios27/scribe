@@ -165,7 +165,20 @@ async function writeUniqueAsset(
   }
 }
 
-function replaceReference(markdown: string, source: string, destination: string): string {
+function replaceReference(
+  markdown: string,
+  source: string,
+  destination: string,
+  warnings: ImportWarning[]
+): string {
+  if (!markdown.includes(source)) {
+    warnings.push({
+      code: "medium-asset-reference-missing",
+      message: "Downloaded an image but could not find its original reference in the converted article.",
+      source
+    });
+    return markdown;
+  }
   return markdown.split(source).join(destination);
 }
 
@@ -195,6 +208,7 @@ export async function downloadMediumAssets(
   let markdown = plan.markdown;
   const createdFiles: string[] = [];
   const warnings: ImportWarning[] = [];
+  const replacements = new Map<string, string>();
   const directory = join(plan.root, "public", "scribe-imports", plan.slug);
   await assertNoSymbolicLinkComponents(plan.root, directory);
   for (const [source, references] of grouped) {
@@ -211,7 +225,7 @@ export async function downloadMediumAssets(
       createdFiles.push(created);
       const publicReference = `/scribe-imports/${plan.slug}/${basename(created)}`;
       for (const reference of references) {
-        markdown = replaceReference(markdown, reference.articleReference, publicReference);
+        replacements.set(reference.articleReference, publicReference);
       }
     } catch (error) {
       const reason = controller.signal.aborted
@@ -225,6 +239,10 @@ export async function downloadMediumAssets(
     } finally {
       clearTimeout(timeout);
     }
+  }
+  for (const [source, destination] of [...replacements]
+    .sort(([left], [right]) => right.length - left.length)) {
+    markdown = replaceReference(markdown, source, destination, warnings);
   }
   return { markdown, createdFiles, warnings };
 }

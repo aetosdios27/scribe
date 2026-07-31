@@ -30,8 +30,11 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
       - name: Confirm the verified commit
-        run: test "$(git rev-parse HEAD)" = "${{ github.event.workflow_run.head_sha }}"
+        run: test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"
+        env:
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:

@@ -256,7 +256,7 @@ it("honors --include-drafts and --no-download-assets without prompting", async (
   await expect(access(join(root, "content", "blog", "hidden.mdx"))).resolves.toBeUndefined();
 });
 
-it("refuses existing targets and duplicate generated slugs before mutation", async () => {
+it("refuses an existing target before mutation", async () => {
   const root = await workspace();
   await mkdir(join(root, "content", "blog"), { recursive: true });
   await writeFile(join(root, "content", "blog", "same.mdx"), "existing");
@@ -274,8 +274,29 @@ it("refuses existing targets and duplicate generated slugs before mutation", asy
     stdout: vi.fn()
   })).toBe(1);
 
-  expect(stderr.mock.calls.join("\n")).toMatch(/duplicate|already exists/iu);
+  expect(stderr.mock.calls.join("\n")).toContain("content/blog/same.mdx already exists");
   expect(await readFile(join(root, "content", "blog", "same.mdx"), "utf8")).toBe("existing");
+  expect(deps.downloadAssets).not.toHaveBeenCalled();
+});
+
+it("refuses duplicate generated slugs before mutation", async () => {
+  const root = await workspace();
+  const archive = {
+    posts: [post("posts/first.html", "published"), post("posts/second.html", "published")]
+  } satisfies MediumArchive;
+  const deps = dependencies(archive);
+  vi.mocked(deps.convertPost!).mockResolvedValue(converted("same"));
+  const stderr = vi.fn();
+
+  expect(await runMediumImport(["medium-export.zip", "--yes"], {
+    ...deps,
+    cwd: root,
+    stderr,
+    stdout: vi.fn()
+  })).toBe(1);
+
+  expect(stderr.mock.calls.join("\n")).toContain('duplicate slug "same"');
+  await expect(access(join(root, "content"))).rejects.toMatchObject({ code: "ENOENT" });
   expect(deps.downloadAssets).not.toHaveBeenCalled();
 });
 
@@ -321,6 +342,33 @@ it("rolls back only files created by the import when a later article write fails
 
   await expect(access(join(root, "content", "blog", "first.mdx"))).rejects.toMatchObject({ code: "ENOENT" });
   await expect(access(join(root, "content", "blog", "second.mdx"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(access(join(root, "content"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("preserves pre-existing empty target directories during rollback", async () => {
+  const root = await workspace();
+  const target = join(root, "content", "blog");
+  await mkdir(target, { recursive: true });
+  const archive = {
+    posts: [post("posts/first.html", "published"), post("posts/second.html", "published")]
+  } satisfies MediumArchive;
+  const deps = dependencies(archive);
+  let writes = 0;
+
+  expect(await runMediumImport(["medium-export.zip", "--yes"], {
+    ...deps,
+    cwd: root,
+    stdout: vi.fn(),
+    stderr: vi.fn(),
+    writeArticle: async (path, source) => {
+      writes += 1;
+      if (writes === 2) throw new Error("disk full");
+      await writeFile(path, source, { flag: "wx" });
+    }
+  })).toBe(1);
+
+  await expect(access(target)).resolves.toBeUndefined();
+  expect(await readdir(target)).toEqual([]);
 });
 
 it("returns usage exit code 2 for malformed invocations", async () => {

@@ -46,6 +46,10 @@ describe("public CI contract", () => {
     expect(workflow).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(workflow).toContain("github.event.workflow_run.event == 'push'");
     expect(workflow).toContain("ref: ${{ github.event.workflow_run.head_sha }}");
+    expect(workflow).toContain("persist-credentials: false");
+    expect(workflow).toContain("VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}");
+    expect(workflow).toContain('test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"');
+    expect(workflow).not.toContain('= "${{ github.event.workflow_run.head_sha }}"');
     expect(workflow).toContain("cancel-in-progress: false");
     expect(workflow).toMatch(/permissions:\s*\n\s*actions: write\s*\n\s*contents: write\s*\n\s*id-token: write\s*\n\s*pull-requests: write/u);
     expect(workflow).toContain("node-version: \"24\"");
