@@ -1,9 +1,13 @@
 import { mkdir, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { suggestClosest } from "./cli-output.js";
 import { initHelp } from "./command-help.js";
+import {
+  ContentPathUsageError,
+  chooseContentDirectory
+} from "./content-paths.js";
 
 export interface InitOptions {
   readonly contentDirectory?: string;
@@ -25,24 +29,9 @@ export interface InitDependencies {
   readonly confirm?: (question: string) => Promise<boolean>;
 }
 
-const contentConventions = ["content/blog", "content/blogs", "posts", "src/content"] as const;
-
 export async function planInit(rootInput: string, options: InitOptions): Promise<InitPlan> {
   const root = resolve(rootInput);
-  const explicitContent = options.contentDirectory === undefined
-    ? undefined
-    : resolveInsideWorkspace(root, options.contentDirectory, "--content-dir");
-  const detected = explicitContent === undefined
-    ? await existingDirectories(root, contentConventions)
-    : [];
-
-  if (explicitContent === undefined && detected.length > 1) {
-    throw new InitUsageError(
-      `Multiple content directories already exist: ${detected.map((path) => displayPath(root, path)).join(", ")}. Choose one with --content-dir.`
-    );
-  }
-
-  const contentDirectory = explicitContent ?? detected[0] ?? resolve(root, "content/blog");
+  const contentDirectory = await chooseContentDirectory(root, options.contentDirectory, "--content-dir");
   const assetDirectory = options.withAssets ? resolve(root, "content/assets") : undefined;
   const candidates = [contentDirectory, assetDirectory].filter((path): path is string => path !== undefined);
   const existing = await existingAbsoluteDirectories(root, candidates);
@@ -77,7 +66,7 @@ export async function runInit(args: readonly string[], dependencies: InitDepende
     });
   } catch (error) {
     stderr(`${error instanceof Error ? error.message : String(error)}\n`);
-    return error instanceof InitUsageError ? 2 : 1;
+    return error instanceof ContentPathUsageError ? 2 : 1;
   }
 
   stdout(formatInitPlan(plan, parsed.dryRun));
@@ -186,22 +175,6 @@ function formatInitPlan(plan: InitPlan, dryRun: boolean): string {
   ].join("\n");
 }
 
-function resolveInsideWorkspace(root: string, input: string, option: string): string {
-  if (input.length === 0 || isAbsolute(input)) {
-    throw new InitUsageError(`${option} must point inside the current workspace.`);
-  }
-  const path = resolve(root, input);
-  const fromRoot = relative(root, path);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
-    throw new InitUsageError(`${option} must point inside the current workspace.`);
-  }
-  return path;
-}
-
-async function existingDirectories(root: string, candidates: readonly string[]): Promise<string[]> {
-  return existingAbsoluteDirectories(root, candidates.map((candidate) => resolve(root, candidate)));
-}
-
 async function existingAbsoluteDirectories(root: string, candidates: readonly string[]): Promise<string[]> {
   const existing: string[] = [];
   for (const path of candidates) {
@@ -238,5 +211,3 @@ async function confirmInteractively(question: string): Promise<boolean> {
     prompt.close();
   }
 }
-
-class InitUsageError extends Error {}

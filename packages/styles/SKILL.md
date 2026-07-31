@@ -33,6 +33,8 @@ Expected packages are `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/md
 
 If the host has no content convention yet, inspect `bunx scribe init --dry-run` before running `bunx scribe init`. It creates only an empty content directory and an optional asset directory; it never generates an article, metadata, or framework configuration. Skip it when the repository already has a deliberate content layout.
 
+If existing articles live on Medium, request or locate the official Medium export ZIP. Inspect `bunx scribe import <medium-export.zip> --dry-run` before importing. Published stories are the default; response-shaped entries and drafts stay excluded unless the owner deliberately opts in with `--include-responses` or `--include-drafts`. Images are localized to `public/scribe-imports` by default, while `--no-download-assets` preserves remote URLs. Never scrape Medium URLs or overwrite an existing target to imitate the importer.
+
 ## Integrate the compiler
 
 Start with the deliberate detector:
@@ -108,6 +110,8 @@ import { MDXRemote } from "next-mdx-remote/rsc";
 Preserve the host’s existing MDX options and plugins. Append the `remarkPlugins` and `rehypePlugins` arrays returned by the appropriate Scribe helper to the host’s existing arrays instead of replacing unrelated remark or rehype behavior. Do not create a second MDX compilation pipeline.
 
 Import the selected packaged stylesheet once from the host application shell. Do not copy Scribe CSS into the host.
+
+Package upgrades belong to the host package manager. Use `bun update` or `npm update` for the aligned `@scribe-sdk/*` packages; do not invent or invoke a `scribe upgrade` command.
 
 ## Compose articles
 

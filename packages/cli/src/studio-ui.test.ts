@@ -35,6 +35,7 @@ it("wires the constrained Rich Text and Monaco editors", () => {
   expect(client).toContain("nonBasicASCII: false");
   expect(client).toContain("ambiguousCharacters: false");
   expect(client).toContain("invisibleCharacters: true");
+  expect(client).toContain("allowedCharacters: { [String.fromCodePoint(160)]: true, [String.fromCodePoint(8202)]: true }");
   expect(client).toContain("onSustainedEdit");
   expect(client).toContain("}, 520)");
   expect(client).toContain('type: "scribe:reveal-source"');

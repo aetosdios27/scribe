@@ -34,6 +34,25 @@ Options
   -h, --help      Show this command help.
 `;
 
+export const importHelp = `Import stories from an official Medium export ZIP.
+
+Usage
+  scribe import <medium-export.zip> [options]
+
+Examples
+  scribe import ~/Downloads/medium-export.zip --dry-run
+  scribe import ~/Downloads/medium-export.zip
+
+Options
+  --into <directory>       Choose a repository-relative article directory.
+  --include-drafts         Import unpublished Medium drafts.
+  --include-responses      Import response-shaped entries Medium does not label.
+  --no-download-assets     Keep remote Medium image URLs.
+  --dry-run                Inspect the import without network or file changes.
+  --yes                    Accept safe defaults and the final write confirmation.
+  -h, --help               Show this command help.
+`;
+
 export const studioHelp = `Open Scribe's local, source-authoritative MDX Studio.
 
 Usage

@@ -55,6 +55,21 @@ function BannerWithoutImage() {
   );
 }
 
+function ConstrainedBanner() {
+  return (
+    <Publication className="fixture-constrained-publication" data-theme={theme}>
+      <Banner
+        eyebrow="Field notes"
+        title="What two computers say when they meet for the very first time"
+        description="A deliberately long technical title must remain readable when the host constrains the publication root."
+        image="/peer-wire.svg"
+        imageAlt="Two peers exchanging protocol frames"
+        metadata="12 min read"
+      />
+    </Publication>
+  );
+}
+
 function ContinuityContent() {
   const shikiStyle = {
     "--shiki-light": "#24292e",
@@ -110,7 +125,7 @@ createRoot(root).render(
     {fixture === "continuity" ? <ContinuityFixture /> : (
       <main className={`fixture-shell fixture-${host}${hostile ? " fixture-hostile" : ""}`} data-theme={theme}>
         <div className="fixture-outside-proof">Host content outside the Scribe boundary</div>
-        {fixture === "banner-no-image" ? <BannerWithoutImage /> : <Article components={components} />}
+        {fixture === "banner-no-image" ? <BannerWithoutImage /> : fixture === "constrained-banner" ? <ConstrainedBanner /> : <Article components={components} />}
       </main>
     )}
   </StrictMode>

@@ -163,6 +163,7 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
   expect(previewDocument).toContain("[data-scribe-studio-host-article] :where(table");
   expect(previewDocument).toContain(".scribe-banner__metadata");
   expect(previewDocument).toContain(".scribe-banner__metadata{color:var(--text,#171716)!important}");
+  expect(previewDocument).toContain('body:has(.scribe[data-theme=dark]) [data-scribe-studio-host-article] .scribe-banner__metadata{color:#f5f5f4!important}');
   expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#171716!important}");
   expect(previewDocument).toContain("html.dark [data-scribe-studio-host-article]");
   expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#f5f5f4!important}");

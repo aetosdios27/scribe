@@ -40,13 +40,14 @@ npm install --save-dev @scribe-sdk/cli@alpha
 1. Commit the host project before changing its integration.
 2. Install the four Scribe packages using the commands above.
 3. If the repository has no content directory, run `bunx scribe init --dry-run` or the equivalent `npx` command, then create the empty launchpad.
-4. Run `bunx scribe integrate --dry-run` or `npx --no-install scribe integrate --dry-run`.
-5. Review the proposed integration changes, then run `bunx scribe integrate` or `npx --no-install scribe integrate`.
-6. Migrate one real article.
-7. Run `bunx scribe validate ./path/to/article.mdx` or the equivalent `npx` command.
-8. Run the host project's production build.
-9. Open the article with `bunx scribe studio ./path/to/article.mdx` or the equivalent `npx` command.
-10. Report anything confusing through [GitHub Issues](https://github.com/aetosdios27/scribe/issues).
+4. If the first article currently lives on Medium, export it from Medium and inspect `bunx scribe import ~/Downloads/medium-export.zip --dry-run`.
+5. Run `bunx scribe integrate --dry-run` or `npx --no-install scribe integrate --dry-run`.
+6. Review the proposed integration changes, then run `bunx scribe integrate` or `npx --no-install scribe integrate`.
+7. Migrate or import one real article.
+8. Run `bunx scribe validate ./path/to/article.mdx` or the equivalent `npx` command.
+9. Run the host project's production build.
+10. Open the article with `bunx scribe studio ./path/to/article.mdx` or the equivalent `npx` command.
+11. Report anything confusing through [GitHub Issues](https://github.com/aetosdios27/scribe/issues).
 
 Project-local CLI installation is recommended so every contributor uses the same prerelease. A user-level CLI is also supported through `bun add --global @scribe-sdk/cli@alpha` or `npm install --global @scribe-sdk/cli@alpha`; the project still owns its runtime Scribe dependencies.
 
@@ -72,12 +73,15 @@ Run CLI commands through `bunx scribe` or `npx --no-install scribe` after instal
 | --- | --- |
 | `scribe init [--content-dir <path>] [--with-assets] [--dry-run] [--yes]` | Create an empty, source-owned content launchpad without generating an article |
 | `scribe integrate [--dry-run] [--mode <mode>] [--yes]` | Inspect and deliberately connect Scribe to the current React project; mode is `foundation`, `default`, or `tailwind` |
+| `scribe import <medium-export.zip> [--into <path>] [--include-drafts] [--include-responses] [--no-download-assets] [--dry-run] [--yes]` | Convert an official Medium export into local Scribe MDX without overwriting existing articles |
 | `scribe validate <article.mdx> [--strict]` | Compile and validate one article without executing the complete host application |
 | `scribe studio <article> [--mode <mode>] [--host-css <file>] [--port <number>] [--no-open]` | Open the local, source-authoritative Markdown/MDX Studio; mode is `foundation`, `default`, or `tailwind` |
 | `scribe --help` | Show the installed CLI command surface |
 | `scribe --version` | Print the installed Scribe version |
 
 If an earlier prerelease used `scribe init` for website integration, run `scribe integrate` now. `scribe init` creates only an empty content launchpad.
+
+Update installed prereleases through the package manager rather than a Scribe command: use `bun update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli` or `npm update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli`. Scribe does not mutate its own installation.
 
 Use `scribe <command> --help` for focused option summaries and examples. CLI exit codes are consistent: `0` means success, `1` means execution or article-compilation failure, and `2` means invalid usage or unresolved setup configuration.
 
@@ -123,6 +127,28 @@ bunx scribe init
 `init` reuses one unambiguous existing `content/blog`, `content/blogs`, `posts`, or `src/content` directory. Otherwise it proposes `content/blog`. Pass `--content-dir <path>` to choose another repository-relative directory and `--with-assets` to also create `content/assets`.
 
 It creates directories only. It does not install packages, generate starter prose or metadata, edit framework configuration, or integrate Scribe into the website.
+
+## Import from Medium
+
+Download an [official account export from Medium](https://help.medium.com/hc/en-us/articles/115004745787-Export-your-account-data), then inspect the conversion before writing anything:
+
+```bash
+bunx scribe import ~/Downloads/medium-export.zip --dry-run
+bunx scribe import ~/Downloads/medium-export.zip
+```
+
+With npm:
+
+```bash
+npx --no-install scribe import ~/Downloads/medium-export.zip --dry-run
+npx --no-install scribe import ~/Downloads/medium-export.zip
+```
+
+The importer selects one existing `content/blog`, `content/blogs`, `posts`, or `src/content` directory, or proposes `content/blog`. Use `--into <path>` when the project has multiple content conventions or needs another repository-relative destination.
+
+Published stories are selected by default. Medium does not identify responses in its export, so Scribe conservatively detects its title-only response shape and skips those entries. The interactive command asks before including detected responses; `--include-responses` is the explicit non-interactive opt-in. When the export also contains drafts, the interactive command asks `Include unpublished Medium drafts? [y/N]`; `--include-drafts` is the explicit non-interactive opt-in. Referenced Medium images are downloaded to `public/scribe-imports/<slug>/` by default after confirmation. Pass `--no-download-assets` to retain their remote URLs. A failed image request leaves the remote URL in place and reports a warning instead of failing the article import.
+
+`--dry-run` performs no writes and no image requests. The importer rejects unsafe or oversized ZIP contents, sanitizes exported HTML into semantic Markdown/MDX, compiles every article through Scribe, refuses duplicate or existing targets, and rolls back newly created files if a later write fails. It accepts an official Medium export ZIP only; it does not scrape public URLs, authenticate to Medium, or synchronize future edits.
 
 ## Integrate an existing project
 

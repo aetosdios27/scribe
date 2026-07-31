@@ -79,12 +79,29 @@ function createBanner(data: FrontmatterRecord, node: YAML): MdxBanner | undefine
 }
 
 function metadataText(data: FrontmatterRecord): string | undefined {
-  const date = text(data.date) ?? text(data.year);
+  const rawDate = text(data.date) ?? text(data.year);
+  const date = rawDate === undefined ? undefined : displayDate(rawDate);
   const tags = Array.isArray(data.tags)
     ? data.tags.flatMap((tag) => text(tag) ?? []).join(" · ")
     : text(data.tags);
   const parts = [date, tags].filter((value): value is string => value !== undefined);
   return parts.length === 0 ? undefined : parts.join(" · ");
+}
+
+function displayDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/u.exec(value);
+  if (match === null) return value;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) return value;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[month - 1]} ${day}, ${year}`;
 }
 
 function text(value: unknown): string | undefined {

@@ -1,10 +1,13 @@
 import { access, copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { createRequire } from "node:module";
 
 import { executable } from "./lib/platform.mjs";
 import { spawnPortableSync } from "./lib/spawn.mjs";
 
+const requireCliDependency = createRequire(new URL("../packages/cli/package.json", import.meta.url));
+const { strToU8, zipSync } = requireCliDependency("fflate");
 const root = process.cwd();
 const release = join(root, ".scribe-release");
 const manifest = JSON.parse(await readFile(join(root, "packages", "cli", "package.json"), "utf8"));
@@ -40,6 +43,12 @@ try {
   await write(invalid, '<Callout variant="warnng">Typo</Callout>\r\n');
   const globalStyle = join(directory, "src", "index.css");
   await write(globalStyle, "body { margin: 0; }\r\n");
+  const mediumExport = join(directory, "medium export.zip");
+  await writeFile(mediumExport, zipSync({
+    "medium-export/posts/2026-07-31_portable-story.html": strToU8(
+      "<!doctype html><html><head><title>Portable Medium story</title></head><body><article><h1>Portable Medium story</h1><p>Imported through the packed CLI.</p></article></body></html>"
+    )
+  }));
 
   run(executable("bun"), ["install"], directory);
   run(executable("bun"), ["install", "--frozen-lockfile"], directory);
@@ -52,6 +61,7 @@ try {
   }
   runCli("scribe", ["init", "--help"]);
   runCli("scribe", ["integrate", "--help"]);
+  runCli("scribe", ["import", "--help"]);
   runCli("scribe", ["studio", "--help"]);
   run(executable("bun"), ["run", "scribe:version"], directory);
   const beforeInitDryRun = await snapshotFixtureTree(directory);
@@ -72,6 +82,26 @@ try {
   );
   assert((await readdir(join(directory, "content", "blog"))).length === 0, "Init generated content instead of leaving the launchpad empty.");
   runCli("scribe", ["init", "--yes"]);
+  const beforeImportDryRun = await snapshotFixtureTree(directory);
+  runCli("scribe", ["import", relative(directory, mediumExport), "--into", "imported", "--dry-run"]);
+  assert(
+    JSON.stringify(await snapshotFixtureTree(directory)) === JSON.stringify(beforeImportDryRun),
+    "Medium import dry run modified the fixture."
+  );
+  runCli("scribe", [
+    "import",
+    relative(directory, mediumExport),
+    "--into",
+    "imported",
+    "--no-download-assets",
+    "--yes"
+  ]);
+  const importedArticle = join(directory, "imported", "portable-story.mdx");
+  assert(
+    (await readFile(importedArticle, "utf8")).includes("Imported through the packed CLI."),
+    "Packed CLI did not import the Medium fixture."
+  );
+  runCli("scribe", ["validate", relative(directory, importedArticle)]);
   const beforeIntegrateDryRun = await snapshotFixtureTree(directory);
   const integrateDryRun = runCli("scribe", ["integrate", "--dry-run"]);
   assert(integrateDryRun.stdout.includes("Recommendation") && integrateDryRun.stdout.includes("Mode    default"), "Integrate dry run did not recommend default mode for the raw Vite fixture.");

@@ -369,7 +369,8 @@ function MonacoMarkdownEditor({ value, onChange, onSustainedEdit, editorRef, rea
       unicodeHighlight: {
         nonBasicASCII: false,
         ambiguousCharacters: false,
-        invisibleCharacters: true
+        invisibleCharacters: true,
+        allowedCharacters: { [String.fromCodePoint(160)]: true, [String.fromCodePoint(8202)]: true }
       },
       padding: { top: 20, bottom: 72 },
       scrollbar: {
