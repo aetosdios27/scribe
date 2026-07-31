@@ -37,6 +37,29 @@ describe("public CI contract", () => {
     expect(workflow).not.toMatch(/npm[_-]?token|NODE_AUTH_TOKEN|changesets\/action|npm publish/iu);
   });
 
+  it("publishes only after the complete main-branch CI matrix succeeds", async () => {
+    const ci = await text(".github/workflows/ci.yml");
+    const workflow = await text(".github/workflows/release.yml");
+
+    expect(ci).toContain("workflow_dispatch:");
+    expect(workflow).toMatch(/workflow_run:\s*\n\s*workflows:\s*\[CI\]\s*\n\s*types:\s*\[completed\]\s*\n\s*branches:\s*\[main\]/u);
+    expect(workflow).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(workflow).toContain("github.event.workflow_run.event == 'push'");
+    expect(workflow).toContain("ref: ${{ github.event.workflow_run.head_sha }}");
+    expect(workflow).toContain("cancel-in-progress: false");
+    expect(workflow).toMatch(/permissions:\s*\n\s*actions: write\s*\n\s*contents: write\s*\n\s*id-token: write\s*\n\s*pull-requests: write/u);
+    expect(workflow).toContain("node-version: \"24\"");
+    expect(workflow).toContain("package-manager-cache: false");
+    expect(workflow).toContain("uses: changesets/action@v1");
+    expect(workflow).toContain("version: bun run version:packages");
+    expect(workflow).toContain("createGithubReleases: false");
+    expect(workflow).toContain("if: steps.changesets.outputs.hasChangesets == 'false'");
+    expect(workflow).toContain("run: bun run release:packages");
+    expect(workflow).toContain("if: steps.changesets.outputs.hasChangesets == 'true'");
+    expect(workflow).toContain("gh workflow run ci.yml --ref changeset-release/main");
+    expect(workflow).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|--tag latest|npm publish[^\n]*latest/iu);
+  });
+
   it("documents WebKit as unverified rather than a release gate", async () => {
     const releasing = await text("RELEASING.md");
 

@@ -96,10 +96,15 @@ describe("Changesets release policy", () => {
     expect(manifest.scripts).toMatchObject({
       changeset: "changeset",
       "changeset:status": "changeset status",
-      "version:packages": "changeset version",
+      "version:packages": "node scripts/version-packages.mjs",
       "release:packages": "changeset publish --no-git-tag",
       "release:check": "node scripts/check-release-alignment.mjs"
     });
+    const versionScript = await readFile(join(root, "scripts", "version-packages.mjs"), "utf8");
+    expect(versionScript.indexOf('run("bunx", ["changeset", "version"])')).toBeGreaterThan(-1);
+    expect(versionScript.indexOf('run("bun", ["install"])')).toBeGreaterThan(
+      versionScript.indexOf('run("bunx", ["changeset", "version"])')
+    );
     expect(manifest.devDependencies["@changesets/cli"]).toBe("2.31.1");
   });
 
