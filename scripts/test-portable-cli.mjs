@@ -8,6 +8,7 @@ import { spawnPortableSync } from "./lib/spawn.mjs";
 
 const requireCliDependency = createRequire(new URL("../packages/cli/package.json", import.meta.url));
 const { strToU8, zipSync } = requireCliDependency("fflate");
+const commandTimeoutMilliseconds = 300_000;
 const root = process.cwd();
 const release = join(root, ".scribe-release");
 const manifest = JSON.parse(await readFile(join(root, "packages", "cli", "package.json"), "utf8"));
@@ -149,13 +150,21 @@ function runCli(command, args, requireSuccess = true, env = {}) {
 }
 
 function run(command, args, cwd, requireSuccess = true, env = {}) {
+  const renderedCommand = [command, ...args].join(" ");
+  process.stdout.write(`Running portability command: ${renderedCommand}\n`);
   const result = spawnPortableSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1", ...env }
+    env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1", ...env },
+    timeout: commandTimeoutMilliseconds
   });
   if (result.error) throw result.error;
-  results.push({ command: [command, ...args].join(" "), status: result.status, stdout: result.stdout.trim(), stderr: result.stderr.trim() });
+  results.push({
+    command: renderedCommand,
+    status: result.status,
+    stdout: result.stdout?.trim() ?? "",
+    stderr: result.stderr?.trim() ?? ""
+  });
   if (requireSuccess && result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed with ${result.status}:\n${result.stdout}\n${result.stderr}`);
   }
@@ -176,7 +185,6 @@ async function verifyLocalNpmInstall() {
       react: "19.2.7",
       "react-dom": "19.2.7"
     },
-    overrides: { "js-yaml": "4.3.0" }
   }, null, 2));
   run(executable("npm"), ["install", "--no-audit", "--no-fund"], npmDirectory);
   const npmVersion = run(executable("npx"), ["--no-install", "scribe", "--version"], npmDirectory).stdout.trim();

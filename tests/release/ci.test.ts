@@ -83,6 +83,7 @@ describe("public CI contract", () => {
       expect(job.indexOf("Typecheck with TypeScript 7")).toBeGreaterThan(-1);
       expect(job.indexOf("Build public packages")).toBeLessThan(job.indexOf("Typecheck with TypeScript 7"));
     }
+    expect(portableOs).toContain("timeout-minutes: 40");
   });
 
   it("audits every publishable package without treating private framework fixtures as shipped runtime dependencies", async () => {
@@ -100,9 +101,19 @@ describe("public CI contract", () => {
     expect(auditScript).toContain("collectPackageVersions(installedTree)");
     expect(auditScript).toContain("AbortSignal.timeout(commandTimeoutMilliseconds)");
     expect(auditScript).toContain("timeout: commandTimeoutMilliseconds");
+    expect(auditScript).not.toContain("rootManifest.overrides");
     expect(auditScript).toContain("Monaco 0.56.0 pins DOMPurify 3.4.8");
     expect(auditScript).not.toContain("process.exit(result.status");
     expect(auditScript).toContain("throw new Error(`${command} ${args.join(\" \")} exited with code");
+  });
+
+  it("tests the dependency graph consumers actually receive and bounds portable commands", async () => {
+    const portableScript = await text("scripts/test-portable-cli.mjs");
+
+    expect(portableScript).not.toContain('overrides: { "js-yaml": "4.3.0" }');
+    expect(portableScript).toContain("const commandTimeoutMilliseconds = 300_000;");
+    expect(portableScript).toContain("timeout: commandTimeoutMilliseconds");
+    expect(portableScript).toContain("Running portability command:");
   });
 
   it("decodes registry advisory responses even when a proxy leaves gzip bytes encoded", () => {

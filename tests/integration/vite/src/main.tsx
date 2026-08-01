@@ -93,7 +93,7 @@ function ContinuityContent() {
       <p>The host owns this paragraph's typography, measure, and rhythm.</p>
       <h2 id="wire-states">Wire states <a className="scribe-heading-anchor" href="#wire-states" aria-label="Link to Wire states">#</a></h2>
       <p>Scribe adds publishing mechanics without replacing those decisions.</p>
-      <div className="scribe-table-scroll" role="region" aria-label="Scrollable article table" tabIndex={0}>
+      <div className="scribe-table-scroll" data-scribe-table-layout="wide" role="region" aria-label="Scrollable article table" tabIndex={0}>
         <table><tbody><tr>{["interested", "unchoked", "piece-index", "block-offset", "block-length", "download-rate", "upload-rate", "peer-identifier-with-a-long-token"].map((value) => <td key={value}>{value}</td>)}</tr></tbody></table>
       </div>
       <figure className="scribe-code-frame">

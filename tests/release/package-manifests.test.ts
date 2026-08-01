@@ -113,7 +113,7 @@ describe("publishable package manifests", () => {
       "@fontsource/ibm-plex-serif": "5.2.7",
       "@mdx-js/mdx": "3.1.1",
       "@mdx-js/rollup": "3.1.1",
-      "@mdxeditor/editor": "4.0.4",
+      "@mdxeditor/editor": "4.1.1",
       "@phosphor-icons/react": "2.1.10",
       "@scribe-sdk/mdx": version,
       "@scribe-sdk/react": version,

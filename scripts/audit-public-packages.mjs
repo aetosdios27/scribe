@@ -16,7 +16,6 @@ const acceptedAdvisories = new Map([
 
 export async function auditPublicPackages() {
   const dependencies = {};
-  const rootManifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 
   for (const directory of publicPackages) {
     const manifest = JSON.parse(
@@ -45,8 +44,7 @@ export async function auditPublicPackages() {
         name: "scribe-public-runtime-audit",
         version: "0.0.0",
         private: true,
-        dependencies,
-        overrides: rootManifest.overrides
+        dependencies
       }, null, 2)}\n`
     );
 
