@@ -74,9 +74,32 @@ bunx changeset pre enter alpha
 
 Do not repeat it for each alpha. Add normal Changeset fragments during the cycle. `bunx changeset version` consumes new fragments and advances all fixed packages to the next `0.1.0-alpha.N` version. The prerelease tag and intended npm dist-tag are both `alpha`; never publish an alpha to `latest`.
 
+## Automated release path
+
+The `Release` GitHub Actions workflow runs only after the complete `CI` workflow succeeds for a push to `main`. It never runs for pull requests, failed CI, cancelled CI, or manually dispatched CI. The workflow has two deterministic outcomes:
+
+1. When unreleased Changeset fragments exist, it creates or updates the ready `changeset-release/main` version pull request, synchronizes package versions and changelogs, refreshes `bun.lock`, and dispatches CI for that exact release branch.
+2. When a verified version pull request has been merged and no unreleased fragments remain, it rebuilds and inspects the packages, then publishes the unpublished synchronized versions. Alpha prerelease mode makes Changesets publish under `alpha`; the workflow never targets `latest`, creates Git tags, or creates GitHub releases.
+
+Publishing uses npm trusted publishing through GitHub OIDC. No npm write token, OTP, or `NODE_AUTH_TOKEN` belongs in GitHub secrets.
+
+Before the first automated publication, complete these one-time owner settings:
+
+1. In GitHub, allow Actions to create pull requests under **Settings → Actions → General → Workflow permissions**. Keep branch protection and required CI checks enabled.
+2. For each of `@scribe-sdk/styles`, `@scribe-sdk/react`, `@scribe-sdk/mdx`, and `@scribe-sdk/cli`, configure the npm trusted publisher with:
+   - provider: GitHub Actions
+   - organization or user: `aetosdios27`
+   - repository: `scribe`
+   - workflow filename: `release.yml`
+   - environment: blank
+   - allowed action: `npm publish`
+3. Do not add an npm automation token. The workflow uses Node 24, npm 12.0.2, a GitHub-hosted runner, and `id-token: write` so npm can exchange the job identity for a short-lived publishing credential.
+
+The workflow intentionally creates no Git tag or GitHub release. Those remain explicit owner decisions after registry verification.
+
 ## Generate versions and changelogs
 
-When the release contents are approved, run:
+The automated version pull request runs the equivalent of:
 
 ```bash
 bunx changeset version
@@ -161,15 +184,15 @@ After versioning, run every gate from the repository root:
 
 Before publication, confirm `npm whoami` reports the intended account and that it may publish public packages in the `@scribe-sdk` scope. Keep credentials and one-time passwords outside the repository.
 
-While prerelease mode is active, the installed Changesets CLI reads the `alpha` dist-tag from `.changeset/pre.json` and rejects a custom `--tag` argument. After all gates pass, the owner may publish the synchronized packages with:
+While prerelease mode is active, the installed Changesets CLI reads the `alpha` dist-tag from `.changeset/pre.json` and rejects a custom `--tag` argument. After all gates pass, the automated workflow publishes the synchronized packages with:
 
 ```bash
 bunx changeset publish --no-git-tag
 ```
 
-The root equivalent is `bun run release:packages`. Changesets reads the `alpha` dist-tag from `.changeset/pre.json`; `--no-git-tag` preserves the current policy that package publication does not automatically create Git tags. Changesets discovers unpublished workspace versions and handles the internal `@scribe-sdk/mdx` dependency used by `@scribe-sdk/cli`. Verify the resulting dist-tags immediately and do not proceed to tagging if `latest` changes.
+The root equivalent is `bun run release:packages`. Changesets reads the `alpha` dist-tag from `.changeset/pre.json`; `--no-git-tag` preserves the current policy that package publication does not automatically create Git tags. Changesets discovers unpublished workspace versions and handles the internal `@scribe-sdk/mdx` dependency used by `@scribe-sdk/cli`. npm authenticates this command from the workflow's OIDC identity. Verify the resulting dist-tags immediately and do not proceed to tagging if `latest` changes.
 
-Do not execute this command during release preparation.
+Do not execute this command manually during ordinary release preparation. Manual publication remains an emergency fallback after diagnosing a failed automated release.
 
 ## Post-publication smoke tests
 

@@ -37,6 +37,33 @@ describe("public CI contract", () => {
     expect(workflow).not.toMatch(/npm[_-]?token|NODE_AUTH_TOKEN|changesets\/action|npm publish/iu);
   });
 
+  it("publishes only after the complete main-branch CI matrix succeeds", async () => {
+    const ci = await text(".github/workflows/ci.yml");
+    const workflow = await text(".github/workflows/release.yml");
+
+    expect(ci).toContain("workflow_dispatch:");
+    expect(workflow).toMatch(/workflow_run:\s*\n\s*workflows:\s*\[CI\]\s*\n\s*types:\s*\[completed\]\s*\n\s*branches:\s*\[main\]/u);
+    expect(workflow).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(workflow).toContain("github.event.workflow_run.event == 'push'");
+    expect(workflow).toContain("ref: ${{ github.event.workflow_run.head_sha }}");
+    expect(workflow).toContain("persist-credentials: false");
+    expect(workflow).toContain("VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}");
+    expect(workflow).toContain('test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"');
+    expect(workflow).not.toContain('= "${{ github.event.workflow_run.head_sha }}"');
+    expect(workflow).toContain("cancel-in-progress: false");
+    expect(workflow).toMatch(/permissions:\s*\n\s*actions: write\s*\n\s*contents: write\s*\n\s*id-token: write\s*\n\s*pull-requests: write/u);
+    expect(workflow).toContain("node-version: \"24\"");
+    expect(workflow).toContain("package-manager-cache: false");
+    expect(workflow).toContain("uses: changesets/action@v1");
+    expect(workflow).toContain("version: bun run version:packages");
+    expect(workflow).toContain("createGithubReleases: false");
+    expect(workflow).toContain("if: steps.changesets.outputs.hasChangesets == 'false'");
+    expect(workflow).toContain("run: bun run release:packages");
+    expect(workflow).toContain("if: steps.changesets.outputs.hasChangesets == 'true'");
+    expect(workflow).toContain("gh workflow run ci.yml --ref changeset-release/main");
+    expect(workflow).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|--tag latest|npm publish[^\n]*latest/iu);
+  });
+
   it("documents WebKit as unverified rather than a release gate", async () => {
     const releasing = await text("RELEASING.md");
 
@@ -56,6 +83,7 @@ describe("public CI contract", () => {
       expect(job.indexOf("Typecheck with TypeScript 7")).toBeGreaterThan(-1);
       expect(job.indexOf("Build public packages")).toBeLessThan(job.indexOf("Typecheck with TypeScript 7"));
     }
+    expect(portableOs).toContain("timeout-minutes: 40");
   });
 
   it("audits every publishable package without treating private framework fixtures as shipped runtime dependencies", async () => {
@@ -73,9 +101,19 @@ describe("public CI contract", () => {
     expect(auditScript).toContain("collectPackageVersions(installedTree)");
     expect(auditScript).toContain("AbortSignal.timeout(commandTimeoutMilliseconds)");
     expect(auditScript).toContain("timeout: commandTimeoutMilliseconds");
+    expect(auditScript).not.toContain("rootManifest.overrides");
     expect(auditScript).toContain("Monaco 0.56.0 pins DOMPurify 3.4.8");
     expect(auditScript).not.toContain("process.exit(result.status");
     expect(auditScript).toContain("throw new Error(`${command} ${args.join(\" \")} exited with code");
+  });
+
+  it("tests the dependency graph consumers actually receive and bounds portable commands", async () => {
+    const portableScript = await text("scripts/test-portable-cli.mjs");
+
+    expect(portableScript).not.toContain('overrides: { "js-yaml": "4.3.0" }');
+    expect(portableScript).toContain("const commandTimeoutMilliseconds = 300_000;");
+    expect(portableScript).toContain("timeout: commandTimeoutMilliseconds");
+    expect(portableScript).toContain("Running portability command:");
   });
 
   it("decodes registry advisory responses even when a proxy leaves gzip bytes encoded", () => {

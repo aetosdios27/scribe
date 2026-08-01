@@ -169,6 +169,14 @@
     padding-inline-start: 1.5em;
   }
 
+  :where(.scribe ul) {
+    list-style-type: disc;
+  }
+
+  :where(.scribe ol) {
+    list-style-type: decimal;
+  }
+
   :where(.scribe :is(ul, ol) :is(ul, ol)) {
     margin-block-start: 0.45em;
   }

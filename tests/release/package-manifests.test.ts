@@ -113,7 +113,7 @@ describe("publishable package manifests", () => {
       "@fontsource/ibm-plex-serif": "5.2.7",
       "@mdx-js/mdx": "3.1.1",
       "@mdx-js/rollup": "3.1.1",
-      "@mdxeditor/editor": "4.0.4",
+      "@mdxeditor/editor": "4.1.1",
       "@phosphor-icons/react": "2.1.10",
       "@scribe-sdk/mdx": version,
       "@scribe-sdk/react": version,
@@ -121,11 +121,17 @@ describe("publishable package manifests", () => {
       "@vitejs/plugin-react": "6.0.3",
       "class-variance-authority": "0.7.1",
       clsx: "2.1.1",
+      fflate: "0.8.3",
       lenis: "1.3.25",
       "lucide-react": "1.25.0",
       "monaco-editor": "0.56.0",
+      "rehype-parse": "9.0.1",
+      "rehype-remark": "10.0.1",
+      "remark-gfm": "4.0.1",
+      "remark-stringify": "11.0.0",
       sonner: "2.0.7",
       "tailwind-merge": "3.6.0",
+      unified: "11.0.5",
       vite: "8.1.3"
     });
     expect(manifest.peerDependencies).toEqual({ react: "19.2.7", "react-dom": "19.2.7" });

@@ -34,7 +34,7 @@ image: /styx3-banner.jpeg
     expect(output).toContain('eyebrow: "Styx"');
     expect(output).toContain('image: "/styx3-banner.jpeg"');
     expect(output).toContain('imageAlt: "The peer wire protocol"');
-    expect(output).toContain('metadata: "2026-07-11 · rust · bittorrent"');
+    expect(output).toContain('metadata: "Jul 11, 2026 · rust · bittorrent"');
     expect(output).not.toContain("title: The peer wire protocol\\nbrief:");
     expect(output).not.toContain("_components.hr");
   });

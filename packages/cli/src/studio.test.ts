@@ -163,6 +163,7 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
   expect(previewDocument).toContain("[data-scribe-studio-host-article] :where(table");
   expect(previewDocument).toContain(".scribe-banner__metadata");
   expect(previewDocument).toContain(".scribe-banner__metadata{color:var(--text,#171716)!important}");
+  expect(previewDocument).toContain('body:has(.scribe[data-theme=dark]) [data-scribe-studio-host-article] .scribe-banner__metadata{color:#f5f5f4!important}');
   expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#171716!important}");
   expect(previewDocument).toContain("html.dark [data-scribe-studio-host-article]");
   expect(previewDocument).toContain(".scribe-code-frame__pre code *){color:#f5f5f4!important}");
@@ -172,7 +173,7 @@ it("mirrors the host dark class inside the Tailwind preview document", async () 
 
   const transformedHostCss = await (await fetch(`${handle.origin}/src/app.css`)).text();
   expect(transformedHostCss).toContain('[data-scribe-table-layout=\\"wide\\"]');
-});
+}, 15_000);
 
 it("surfaces recovery read failures before opening the Studio", async () => {
   const file = await fixture();

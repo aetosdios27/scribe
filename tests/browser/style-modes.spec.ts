@@ -123,6 +123,41 @@ test("default mode supplies a complete editorial scale for an otherwise raw arti
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+for (const viewport of [
+  { name: "desktop", width: 1100, height: 800 },
+  { name: "collapsed", width: 620, height: 900 }
+] as const) {
+  test(`default Banner remains contained by a constrained host on ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/?fixture=constrained-banner&style=default");
+
+    const publication = page.locator(".fixture-constrained-publication");
+    const banner = publication.locator(".scribe-banner");
+    const title = banner.locator(".scribe-banner__title");
+    const media = banner.locator(".scribe-banner__media");
+    await expect(title).toBeVisible();
+    await expect(media).toBeVisible();
+
+    const measure = (locator: import("@playwright/test").Locator) =>
+      locator.evaluate((node) => {
+        const bounds = node.getBoundingClientRect();
+        return { left: bounds.left, right: bounds.right, width: bounds.width };
+      });
+    const [publicationBounds, bannerBounds, titleBounds, mediaBounds] = await Promise.all([
+      measure(publication),
+      measure(banner),
+      measure(title),
+      measure(media)
+    ]);
+    for (const bounds of [bannerBounds, titleBounds, mediaBounds]) {
+      expect(bounds.left).toBeGreaterThanOrEqual(publicationBounds.left - 1);
+      expect(bounds.right).toBeLessThanOrEqual(publicationBounds.right + 1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    expect(await publication.evaluate((node) => Number(node.matches(".scribe")) + node.querySelectorAll(".scribe").length)).toBe(1);
+  });
+}
+
 for (const mode of ["tailwind-v3", "tailwind-v4"] as const) {
   for (const themeCase of [
     {

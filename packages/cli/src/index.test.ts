@@ -13,6 +13,7 @@ afterEach(() => {
   vi.doUnmock("./studio.js");
   vi.doUnmock("./init.js");
   vi.doUnmock("./integrate.js");
+  vi.doUnmock("./medium-import.js");
   vi.doUnmock("@scribe-sdk/mdx");
 });
 
@@ -57,6 +58,10 @@ it("keeps heavyweight commands behind dynamic import boundaries", async () => {
     loaded.add("integrate");
     return { runIntegrate: vi.fn() };
   });
+  vi.doMock("./medium-import.js", () => {
+    loaded.add("import");
+    return { runMediumImport: vi.fn() };
+  });
   vi.doMock("@scribe-sdk/mdx", () => {
     loaded.add("mdx");
     return { compileScribeMdx: vi.fn() };
@@ -69,6 +74,7 @@ it("keeps heavyweight commands behind dynamic import boundaries", async () => {
   expect(source).toContain('await import("./studio.js")');
   expect(source).toContain('await import("./init.js")');
   expect(source).toContain('await import("./integrate.js")');
+  expect(source).toContain('await import("./medium-import.js")');
   expect(source).toContain('await import("@scribe-sdk/mdx")');
 });
 
@@ -82,9 +88,11 @@ it("prints readable help and succeeds", async () => {
   expect(output).toContain("integrate");
   expect(output).toContain("validate");
   expect(output).toContain("studio");
+  expect(output).toContain("import");
   expect(output).toContain("scribe init --dry-run");
   expect(output).toContain("scribe validate ./content/article.mdx");
   expect(output).toContain("scribe studio ./content/article.mdx");
+  expect(output).toContain("scribe import ~/Downloads/medium-export.zip");
   expect(output).toContain("public alpha");
   expect(output).not.toContain("beta");
   expect(output).toContain("host-owned React site");
@@ -106,6 +114,10 @@ it("prints focused help for every public command", async () => {
   write.mockClear();
   expect(await main(["integrate", "--help"])).toBe(0);
   expect(write.mock.calls.join("\n")).toContain("scribe integrate --mode foundation");
+
+  write.mockClear();
+  expect(await main(["import", "--help"])).toBe(0);
+  expect(write.mock.calls.join("\n")).toContain("scribe import <medium-export.zip> [options]");
 
   write.mockClear();
   expect(await main(["studio", "--help"])).toBe(0);

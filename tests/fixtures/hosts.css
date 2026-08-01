@@ -67,6 +67,11 @@ body {
   opacity: 0.7;
 }
 
+.fixture-constrained-publication {
+  max-inline-size: 42rem;
+  margin-inline: auto;
+}
+
 .fixture-continuity {
   padding: 2rem;
 }

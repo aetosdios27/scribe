@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { colorize, commandArgument, displayPath, suggestClosest, supportsColor } from "./cli-output.js";
-import { initHelp, integrateHelp, studioHelp } from "./command-help.js";
+import { importHelp, initHelp, integrateHelp, studioHelp } from "./command-help.js";
 
 export const version = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
@@ -22,12 +22,14 @@ Usage
 Commands
   init        Create an empty content launchpad without generating an article.
   integrate   Connect Scribe to an existing React project.
+  import      Convert an official Medium export into local MDX articles.
   validate    Compile and validate one Markdown or MDX article.
   studio      Open the local, source-authoritative authoring Studio.
 
 Examples
   scribe init --dry-run
   scribe integrate --dry-run
+  scribe import ~/Downloads/medium-export.zip --dry-run
   scribe validate ./content/article.mdx
   scribe studio ./content/article.mdx
 
@@ -101,6 +103,14 @@ export async function main(
     const { runIntegrate } = await import("./integrate.js");
     return runIntegrate(rest, { version, cwd, stdout, stderr });
   }
+  if (command === "import") {
+    if (rest.includes("--help") || rest.includes("-h")) {
+      stdout(importHelp);
+      return 0;
+    }
+    const { runMediumImport } = await import("./medium-import.js");
+    return runMediumImport(rest, { cwd, stdout, stderr });
+  }
   if (command === "studio") {
     if (rest.includes("--help") || rest.includes("-h")) {
       stdout(studioHelp);
@@ -110,7 +120,7 @@ export async function main(
     return runStudio(rest, { cwd, stdout, stderr });
   }
   if (command !== "validate") {
-    const suggestion = suggestClosest(String(command), ["init", "integrate", "validate", "studio"]);
+    const suggestion = suggestClosest(String(command), ["init", "integrate", "import", "validate", "studio"]);
     stderr(`Unknown command "${String(command)}".${suggestion === undefined ? "" : ` Did you mean "${suggestion}"?`}\nRun \`scribe --help\` for the supported actions.\n`);
     return 2;
   }

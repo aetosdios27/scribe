@@ -22,6 +22,9 @@ describe("release documentation", () => {
     expect(readme).toContain("createScribeNextMdxOptions");
     expect(readme).toContain("createScribeComponents");
     expect(readme).toContain("scribe validate");
+    expect(readme).toContain("scribe import <medium-export.zip>");
+    expect(readme).toContain("official Medium export ZIP only");
+    expect(readme).toContain("bun update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli");
     expect(readme).toContain("SKILL.md");
     expect(readme).toContain("Licensed under Apache-2.0");
     expect(readme).toContain("https://github.com/aetosdios27/scribe/blob/main/examples/starter-article.mdx");
@@ -72,6 +75,8 @@ describe("release documentation", () => {
     expect(skill).toContain("bunx scribe validate path/to/article.mdx");
     expect(skill).toContain("bunx scribe validate path/to/article.mdx --strict");
     expect(skill).toContain("npx --no-install scribe validate path/to/article.mdx");
+    expect(skill).toContain("bunx scribe import <medium-export.zip> --dry-run");
+    expect(skill).toContain("do not invent or invoke a `scribe upgrade` command");
     expect(skill).not.toMatch(/^scribe validate /mu);
     expect(skill).not.toMatch(/\bscb\b/u);
     expect(skill.trim().split(/\s+/u).length).toBeGreaterThan(500);

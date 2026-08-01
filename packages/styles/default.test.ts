@@ -39,6 +39,11 @@ describe("published CSS contract", () => {
     expect(defaultCss).not.toMatch(/@container scribe \(max-width: 46rem\)[\s\S]*?\.scribe-code-frame, \.scribe \.scribe-table-scroll\)[\s\S]*?border-inline:\s*0;/u);
   });
 
+  it("restores semantic list markers after host resets", () => {
+    expect(defaultCss).toMatch(/:where\(\.scribe ul\)\s*\{[^}]*list-style-type:\s*disc;/su);
+    expect(defaultCss).toMatch(/:where\(\.scribe ol\)\s*\{[^}]*list-style-type:\s*decimal;/su);
+  });
+
   it("does not introduce obvious global element selectors", () => {
     for (const css of [foundationCss, defaultCss, tailwindCss]) {
       expect(css).not.toMatch(/^\s*(?:html|body|pre|table|button|img)\s*[{,]/gmu);

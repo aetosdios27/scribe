@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Two computers meet</title>
+    <meta property="og:title" content="Two computers meet">
+    <meta name="description" content="Building a peer protocol from scratch.">
+    <meta property="article:published_time" content="2026-07-30T12:00:00.000Z">
+    <meta property="article:tag" content="rust">
+    <meta property="article:tag" content="networking">
+    <link rel="canonical" href="https://example.medium.com/two-computers-meet-1234abcd">
+    <style>body { display: none }</style>
+    <script>globalThis.stolen = document.cookie</script>
+  </head>
+  <body>
+    <header>Medium navigation and account controls</header>
+    <article>
+      <section data-field="body">
+        <h1>Two computers meet</h1>
+        <h2>Building a peer protocol from scratch.</h2>
+        <p onclick="steal()">Peers exchange <strong>bytes</strong>, not JSON.</p>
+        <h2>The handshake</h2>
+        <p>Use <code>read_exact</code> before decoding a frame.</p>
+        <ul><li>Read the length.</li><li>Validate the payload.</li></ul>
+        <ol><li>Connect.</li><li>Exchange handshakes.</li></ol>
+        <blockquote><p>A protocol is a sequence of promises.</p></blockquote>
+        <pre><code class="language-rust">fn decode(bytes: &amp;[u8]) {
+    assert!(!bytes.is_empty());
+}</code></pre>
+        <table>
+          <thead><tr><th>state</th><th>meaning</th></tr></thead>
+          <tbody><tr><td>choked</td><td>requests are paused</td></tr></tbody>
+        </table>
+        <figure>
+          <img src="https://cdn-images-1.medium.com/max/1200/peer-wire.png" alt="Peer wire exchange" onerror="steal()">
+          <figcaption>Peer messages crossing one connection.</figcaption>
+        </figure>
+        <hr>
+        <iframe src="https://www.youtube.com/watch?v=peer-wire" title="Peer wire demo"></iframe>
+        <figure><script src="https://gist.github.com/aetos/abc123.js"></script></figure>
+        <img src="https://medium.com/_/stat?event=post.clientViewed" width="1" height="1" alt="">
+        <script>alert("never copy this")</script>
+      </section>
+    </article>
+    <footer>Medium membership promotion</footer>
+  </body>
+</html>

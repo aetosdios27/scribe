@@ -55,6 +55,21 @@ function BannerWithoutImage() {
   );
 }
 
+function ConstrainedBanner() {
+  return (
+    <Publication className="fixture-constrained-publication" data-theme={theme}>
+      <Banner
+        eyebrow="Field notes"
+        title="What two computers say when they meet for the very first time"
+        description="A deliberately long technical title must remain readable when the host constrains the publication root."
+        image="/peer-wire.svg"
+        imageAlt="Two peers exchanging protocol frames"
+        metadata="12 min read"
+      />
+    </Publication>
+  );
+}
+
 function ContinuityContent() {
   const shikiStyle = {
     "--shiki-light": "#24292e",
@@ -78,7 +93,7 @@ function ContinuityContent() {
       <p>The host owns this paragraph's typography, measure, and rhythm.</p>
       <h2 id="wire-states">Wire states <a className="scribe-heading-anchor" href="#wire-states" aria-label="Link to Wire states">#</a></h2>
       <p>Scribe adds publishing mechanics without replacing those decisions.</p>
-      <div className="scribe-table-scroll" role="region" aria-label="Scrollable article table" tabIndex={0}>
+      <div className="scribe-table-scroll" data-scribe-table-layout="wide" role="region" aria-label="Scrollable article table" tabIndex={0}>
         <table><tbody><tr>{["interested", "unchoked", "piece-index", "block-offset", "block-length", "download-rate", "upload-rate", "peer-identifier-with-a-long-token"].map((value) => <td key={value}>{value}</td>)}</tr></tbody></table>
       </div>
       <figure className="scribe-code-frame">
@@ -110,7 +125,7 @@ createRoot(root).render(
     {fixture === "continuity" ? <ContinuityFixture /> : (
       <main className={`fixture-shell fixture-${host}${hostile ? " fixture-hostile" : ""}`} data-theme={theme}>
         <div className="fixture-outside-proof">Host content outside the Scribe boundary</div>
-        {fixture === "banner-no-image" ? <BannerWithoutImage /> : <Article components={components} />}
+        {fixture === "banner-no-image" ? <BannerWithoutImage /> : fixture === "constrained-banner" ? <ConstrainedBanner /> : <Article components={components} />}
       </main>
     )}
   </StrictMode>
