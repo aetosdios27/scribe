@@ -9,6 +9,7 @@ import { spawnPortableSync } from "./lib/spawn.mjs";
 const requireCliDependency = createRequire(new URL("../packages/cli/package.json", import.meta.url));
 const { strToU8, zipSync } = requireCliDependency("fflate");
 const commandTimeoutMilliseconds = 300_000;
+const packageManagerInstallTimeoutMilliseconds = 600_000;
 const root = process.cwd();
 const release = join(root, ".scribe-release");
 const manifest = JSON.parse(await readFile(join(root, "packages", "cli", "package.json"), "utf8"));
@@ -149,14 +150,14 @@ function runCli(command, args, requireSuccess = true, env = {}) {
   return run(executable("bun"), ["x", "--bun", command, ...args], directory, requireSuccess, env);
 }
 
-function run(command, args, cwd, requireSuccess = true, env = {}) {
+function run(command, args, cwd, requireSuccess = true, env = {}, timeoutMilliseconds = commandTimeoutMilliseconds) {
   const renderedCommand = [command, ...args].join(" ");
   process.stdout.write(`Running portability command: ${renderedCommand}\n`);
   const result = spawnPortableSync(command, args, {
     cwd,
     encoding: "utf8",
     env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1", ...env },
-    timeout: commandTimeoutMilliseconds
+    timeout: timeoutMilliseconds
   });
   if (result.error) throw result.error;
   results.push({
@@ -186,7 +187,7 @@ async function verifyLocalNpmInstall() {
       "react-dom": "19.2.7"
     },
   }, null, 2));
-  run(executable("npm"), ["install", "--no-audit", "--no-fund"], npmDirectory);
+  run(executable("npm"), ["install", "--no-audit", "--no-fund"], npmDirectory, true, {}, packageManagerInstallTimeoutMilliseconds);
   const npmVersion = run(executable("npx"), ["--no-install", "scribe", "--version"], npmDirectory).stdout.trim();
   assert(npmVersion === version, `Local npm scribe reported ${npmVersion}; expected ${version}.`);
   assert(run(executable("npx"), ["--no-install", "scb", "--version"], npmDirectory).stdout.trim() === version, "Local npm scb alias reported a different version.");
@@ -197,7 +198,7 @@ async function verifyGlobalInstalls() {
     .map((name) => join(tarballDirectory, `scribe-sdk-${name}-${version}.tgz`));
 
   const npmPrefix = join(directory, "npm-global");
-  run(executable("npm"), ["install", "--global", "--prefix", npmPrefix, "--no-audit", "--no-fund", ...packageTarballs], directory);
+  run(executable("npm"), ["install", "--global", "--prefix", npmPrefix, "--no-audit", "--no-fund", ...packageTarballs], directory, true, {}, packageManagerInstallTimeoutMilliseconds);
   const npmScribe = await findExecutable(process.platform === "win32" ? npmPrefix : join(npmPrefix, "bin"), "scribe");
   const npmVersion = run(npmScribe, ["--version"], directory).stdout.trim();
   assert(npmVersion === version, `Global npm scribe reported ${npmVersion}; expected ${version}.`);

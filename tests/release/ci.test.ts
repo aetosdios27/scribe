@@ -112,7 +112,10 @@ describe("public CI contract", () => {
 
     expect(portableScript).not.toContain('overrides: { "js-yaml": "4.3.0" }');
     expect(portableScript).toContain("const commandTimeoutMilliseconds = 300_000;");
-    expect(portableScript).toContain("timeout: commandTimeoutMilliseconds");
+    expect(portableScript).toContain("const packageManagerInstallTimeoutMilliseconds = 600_000;");
+    expect(portableScript).toContain("timeoutMilliseconds = commandTimeoutMilliseconds");
+    expect(portableScript).toContain("timeout: timeoutMilliseconds");
+    expect(portableScript).toContain("true, {}, packageManagerInstallTimeoutMilliseconds");
     expect(portableScript).toContain("Running portability command:");
   });
 
