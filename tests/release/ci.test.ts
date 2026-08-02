@@ -53,6 +53,7 @@ describe("public CI contract", () => {
     expect(workflow).toContain("cancel-in-progress: false");
     expect(workflow).toMatch(/permissions:\s*\n\s*actions: write\s*\n\s*contents: write\s*\n\s*id-token: write\s*\n\s*pull-requests: write/u);
     expect(workflow).toContain("node-version: \"24\"");
+    expect(workflow).toContain("npm@11.6.2");
     expect(workflow).toContain("package-manager-cache: false");
     expect(workflow).toContain("uses: changesets/action@v1");
     expect(workflow).toContain("version: bun run version:packages");

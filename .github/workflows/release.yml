@@ -46,7 +46,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - name: Install an OIDC-capable npm CLI
-        run: npm install --global npm@12.0.2
+        run: npm install --global npm@11.6.2
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Verify release alignment
