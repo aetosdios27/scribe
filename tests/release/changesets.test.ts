@@ -97,7 +97,7 @@ describe("Changesets release policy", () => {
       changeset: "changeset",
       "changeset:status": "changeset status",
       "version:packages": "node scripts/version-packages.mjs",
-      "release:packages": "changeset publish --no-git-tag",
+      "release:packages": "node scripts/publish-alpha-packages.mjs",
       "release:check": "node scripts/check-release-alignment.mjs"
     });
     const versionScript = await readFile(join(root, "scripts", "version-packages.mjs"), "utf8");
@@ -116,8 +116,9 @@ describe("Changesets release policy", () => {
     expect(releasing).toContain("bunx changeset status");
     expect(releasing).toContain("bunx changeset pre enter alpha");
     expect(releasing).toContain("bunx changeset version");
-    expect(releasing).toContain("bunx changeset publish --no-git-tag");
-    expect(releasing).not.toContain("changeset publish --tag alpha");
+    expect(releasing).toContain("bun run release:packages");
+    expect(releasing).toContain("npm publish");
+    expect(releasing).toContain("--tag alpha");
     expect(releasing).toContain("bunx changeset pre exit");
     expect(releasing).toContain("observable user impact");
     expect(releasing).toContain("packages/*/CHANGELOG.md");

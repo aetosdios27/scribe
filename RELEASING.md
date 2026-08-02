@@ -79,7 +79,7 @@ Do not repeat it for each alpha. Add normal Changeset fragments during the cycle
 The `Release` GitHub Actions workflow runs only after the complete `CI` workflow succeeds for a push to `main`. It never runs for pull requests, failed CI, cancelled CI, or manually dispatched CI. The workflow has two deterministic outcomes:
 
 1. When unreleased Changeset fragments exist, it creates or updates the ready `changeset-release/main` version pull request, synchronizes package versions and changelogs, refreshes `bun.lock`, and dispatches CI for that exact release branch.
-2. When a verified version pull request has been merged and no unreleased fragments remain, it rebuilds and inspects the packages, then publishes the unpublished synchronized versions. Alpha prerelease mode makes Changesets publish under `alpha`; the workflow never targets `latest`, creates Git tags, or creates GitHub releases.
+2. When a verified version pull request has been merged and no unreleased fragments remain, it rebuilds and inspects the packages, then runs Scribe's guarded publisher. The publisher requires alpha prerelease mode, publishes each inspected tarball with an explicit `--tag alpha`, skips versions already on npm, publishes the CLI last, and fails if `latest` moves.
 
 Publishing uses npm trusted publishing through GitHub OIDC. No npm write token, OTP, or `NODE_AUTH_TOKEN` belongs in GitHub secrets.
 
@@ -93,7 +93,7 @@ Before the first automated publication, complete these one-time owner settings:
    - workflow filename: `release.yml`
    - environment: blank
    - allowed action: `npm publish`
-3. Do not add an npm automation token. The workflow uses Node 24, npm 12.0.2, a GitHub-hosted runner, and `id-token: write` so npm can exchange the job identity for a short-lived publishing credential.
+3. Do not add an npm automation token. The workflow uses Node 24, npm 11.6.2, a GitHub-hosted runner, and `id-token: write` so npm can exchange the job identity for a short-lived publishing credential.
 
 The workflow intentionally creates no Git tag or GitHub release. Those remain explicit owner decisions after registry verification.
 
@@ -184,15 +184,15 @@ After versioning, run every gate from the repository root:
 
 Before publication, confirm `npm whoami` reports the intended account and that it may publish public packages in the `@scribe-sdk` scope. Keep credentials and one-time passwords outside the repository.
 
-While prerelease mode is active, the installed Changesets CLI reads the `alpha` dist-tag from `.changeset/pre.json` and rejects a custom `--tag` argument. After all gates pass, the automated workflow publishes the synchronized packages with:
+Changesets owns versioning and changelogs; it does not publish Scribe packages. After all gates pass, the automated workflow publishes the inspected tarballs with:
 
 ```bash
-bunx changeset publish --no-git-tag
+bun run release:packages
 ```
 
-The root equivalent is `bun run release:packages`. Changesets reads the `alpha` dist-tag from `.changeset/pre.json`; `--no-git-tag` preserves the current policy that package publication does not automatically create Git tags. Changesets discovers unpublished workspace versions and handles the internal `@scribe-sdk/mdx` dependency used by `@scribe-sdk/cli`. npm authenticates this command from the workflow's OIDC identity. Verify the resulting dist-tags immediately and do not proceed to tagging if `latest` changes.
+The publisher verifies `.changeset/pre.json`, synchronized `0.1.0-alpha.N` manifests, and the npm dist-tags. It publishes only missing `.scribe-release/*.tgz` artifacts, explicitly passes `npm publish --tag alpha --access public`, and protects the `latest` dist-tag by comparing it before and after publication. npm authenticates the command from the workflow's OIDC identity.
 
-Do not execute this command manually during ordinary release preparation. Manual publication remains an emergency fallback after diagnosing a failed automated release.
+Do not execute this command manually during ordinary release preparation. Manual publication remains an emergency fallback after diagnosing a failed automated release. Run it from an interactive terminal so npm can open its browser/passkey challenge; never paste a credential into the repository or CI logs. Publish tarballs in the documented order—styles, React, MDX, then CLI—and always include `--tag alpha --access public`.
 
 ## Post-publication smoke tests
 
