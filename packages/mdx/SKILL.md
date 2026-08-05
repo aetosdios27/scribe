@@ -43,7 +43,9 @@ Start with the deliberate detector:
 bunx scribe integrate --dry-run
 ```
 
-Review the detected stack, recommended mode, touched files, commands, ambiguities, and existing highlighter warnings. Run `bunx scribe integrate` only after the plan is safe. Installation itself is inert.
+Review the detected stack, recommended mode, proposed packages, commands, touched files, ambiguities, and existing highlighter warnings. Run `bunx scribe integrate` only after the plan is safe. Bootstrap a new project with `bunx @scribe-sdk/cli@alpha integrate`; the alpha CLI installs the four Scribe packages at the running CLI's version and verifies the result. For Bun and npm, the reported package-manager commands run as part of the reviewed transaction; for pnpm and yarn, the plan defers installation to a precise manual step and runs no commands. When installed Scribe package versions do not match the running CLI, `integrate` prints the exact aligned `update` command instead of upgrading automatically.
+
+`integrate` snapshots the manifest, lockfile, and affected source files before mutating anything and rolls them back if an install or file write fails. Re-running after completion reports no further changes. The project owns the local `@scribe-sdk/cli`; a user-level `scribe` delegates to it inside a supported project and runs directly elsewhere. Scribe never auto-updates its own packages. In CI, keep the run read-only with `--dry-run` until the integration is committed, then use `--yes` for a reviewed non-interactive plan.
 
 Choose exactly one style mode:
 
@@ -218,6 +220,7 @@ Reduce defects to ordinary semantic content before adding CSS. Do not introduce 
 - Confirm all Scribe packages use the same version.
 - Confirm the shared MDX helper is active in development and production.
 - Confirm the packaged stylesheet is imported once.
+- Confirm `scribe integrate` reports no further changes on a second run.
 - Confirm the selected mode matches the host: foundation for established CSS, default for raw sites, tailwind for `.prose`.
 - Confirm host body font, size, line height, paragraph rhythm, heading scale, content width, and code font did not drift.
 - Confirm ordinary Markdown and literal JSX tables both scroll on mobile.

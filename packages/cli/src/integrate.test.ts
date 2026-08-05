@@ -192,7 +192,7 @@ it("preserves CRLF files while adding the selected import", async () => {
   expect(css.replaceAll("\r\n", "")).not.toContain("\n");
 });
 
-it("reports already-written files and removes temporary files after a later write fails", async () => {
+it("rolls back earlier file changes after a later write fails", async () => {
   const cwd = await project({
     "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, next: "16.2.11", "@next/mdx": "16.2.11" } }),
     "app/globals.css": "body { margin: 0; }\n",
@@ -210,9 +210,119 @@ it("reports already-written files and removes temporary files after a later writ
       return true;
     }
   })).toBe(1);
-  expect(await readFile(join(cwd, "app/globals.css"), "utf8")).toContain("@scribe-sdk/styles/default.css");
-  expect(stderr.mock.calls.join("\n")).toContain("Files already written:\n  app/globals.css");
+  expect(await readFile(join(cwd, "app/globals.css"), "utf8")).not.toContain("@scribe-sdk/styles/default.css");
+  const error = stderr.mock.calls.join("\n");
+  expect(error).toContain("Could not complete the Scribe integration");
+  expect(error).toContain("Could not apply the reported Scribe change");
+  expect(error).toContain("Rollback");
   expect((await readdir(cwd)).filter((name) => name.includes(".scribe-") && name.endsWith(".tmp"))).toEqual([]);
+});
+
+it("restores manifests and leaves source files untouched after an install command fails", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ private: true, dependencies: { react: "19.2.7", vite: "8.1.3" } }),
+    "bun.lock": "",
+    "src/index.css": "body { margin: 0; }\n"
+  });
+  const runCommand = vi.fn(async () => 1);
+  const stderr = vi.fn();
+
+  expect(await runIntegrate(["--mode", "default", "--yes"], { cwd, version: "0.1.0-alpha.2", stdout: vi.fn(), stderr, runCommand })).toBe(1);
+  expect(runCommand).toHaveBeenCalledTimes(1);
+  expect(await readFile(join(cwd, "src/index.css"), "utf8")).toBe("body { margin: 0; }\n");
+  expect(stderr.mock.calls.join("\n")).toContain("Command failed with status 1");
+  expect((await readdir(cwd)).filter((name) => name === ".scribe-integrate.lock")).toEqual([]);
+});
+
+it("cancels cleanly with a zero exit code when the plan is declined", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
+    "src/index.css": "body { margin: 0; }\n"
+  });
+  const confirm = vi.fn(async () => false);
+  const stdout = vi.fn();
+
+  expect(await runIntegrate(["--mode", "default"], { cwd, version: "0.1.0-alpha.2", stdout, confirm })).toBe(0);
+  expect(confirm).toHaveBeenCalledWith("Apply this Scribe integration plan?");
+  expect(stdout.mock.calls.join("\n")).toContain("Cancelled");
+  expect(await readFile(join(cwd, "src/index.css"), "utf8")).toBe("body { margin: 0; }\n");
+  expect((await readdir(cwd)).filter((name) => name === ".scribe-integrate.lock")).toEqual([]);
+});
+
+it("refuses to apply without confirmation in a non-interactive terminal", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
+    "src/index.css": "body { margin: 0; }\n"
+  });
+  const stderr = vi.fn();
+
+  expect(await runIntegrate(["--mode", "default"], { cwd, version: "0.1.0-alpha.2", stderr })).toBe(2);
+  expect(stderr.mock.calls.join("\n")).toContain("--yes");
+  expect((await readdir(cwd)).filter((name) => name === ".scribe-integrate.lock")).toEqual([]);
+});
+
+it("installs missing packages transactionally with --yes and reports the bootstrap", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ private: true, dependencies: { react: "19.2.7", vite: "8.1.3" } }),
+    "package-lock.json": "{}",
+    "src/index.css": "body { margin: 0; }\n"
+  });
+  const installed: (readonly string[])[] = [];
+  const runCommand = vi.fn(async (command: readonly string[]) => {
+    installed.push(command);
+    for (const spec of command.filter((value) => value.startsWith("@scribe-sdk/"))) {
+      const version = spec.split("@").pop();
+      const name = spec.slice(0, -(Number(version?.length) + 1));
+      await mkdir(join(cwd, "node_modules", ...name.split("/")), { recursive: true });
+      await writeFile(join(cwd, "node_modules", ...name.split("/"), "package.json"), JSON.stringify({ name, version }));
+    }
+    await writeFile(join(cwd, "node_modules", "@scribe-sdk", "styles", "default.css"), "");
+    return 0;
+  });
+  const stdout = vi.fn();
+
+  expect(await runIntegrate(["--mode", "default", "--yes"], { cwd, version: "0.1.0-alpha.8", stdout, runCommand })).toBe(0);
+  expect(installed).toHaveLength(2);
+  expect(installed[0]?.join(" ")).toBe("npm install @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
+  expect(installed[1]?.join(" ")).toBe("npm install --save-dev @scribe-sdk/cli@0.1.0-alpha.8");
+  expect(await readFile(join(cwd, "src/index.css"), "utf8")).toContain("@scribe-sdk/styles/default.css");
+  const output = stdout.mock.calls.join("\n");
+  expect(output).toContain("Success  Scribe integrated");
+  expect(output).toContain("+ @scribe-sdk/cli@0.1.0-alpha.8 (dev)");
+  expect(output).toContain("Scribe is installed in this project.");
+  expect(output).toContain("npm install --global @scribe-sdk/cli@alpha");
+});
+
+it("warns and defers package installation for unsupported package managers", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ private: true, dependencies: { react: "19.2.7", vite: "8.1.3" } }),
+    "pnpm-lock.yaml": "",
+    "src/index.css": "body { margin: 0; }\n"
+  });
+
+  const plan = await planIntegrate(cwd, "default", "0.1.0-alpha.8");
+  expect(plan.inspection.packageManager).toBe("pnpm");
+  expect(plan.commands).toEqual([]);
+  expect(plan.packages.map((entry) => entry.name)).toEqual(["@scribe-sdk/react", "@scribe-sdk/styles", "@scribe-sdk/mdx", "@scribe-sdk/cli"]);
+  expect(plan.warnings.join("\n")).toContain("not automated for pnpm");
+  expect(plan.manualSteps.join("\n")).toContain("Install the reported packages manually with pnpm");
+});
+
+it("warns when installed Scribe package versions do not match the running CLI", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
+    "package-lock.json": "{}",
+    "src/index.css": "body { margin: 0; }\n"
+  });
+  for (const name of ["react", "styles", "mdx", "cli"]) {
+    await mkdir(join(cwd, "node_modules", "@scribe-sdk", name), { recursive: true });
+    await writeFile(join(cwd, "node_modules", "@scribe-sdk", name, "package.json"), JSON.stringify({ name: `@scribe-sdk/${name}`, version: "0.1.0-alpha.2" }));
+  }
+
+  const plan = await planIntegrate(cwd, undefined, "0.1.0-alpha.8");
+  expect(plan.packages).toEqual([]);
+  expect(plan.warnings.join("\n")).toContain("Scribe package versions do not match");
+  expect(plan.warnings.join("\n")).toContain("npm update @scribe-sdk/cli @scribe-sdk/mdx @scribe-sdk/react @scribe-sdk/styles");
 });
 
 it("rejects invalid options and unresolved projects with usage status", async () => {

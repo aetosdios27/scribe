@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -124,13 +124,44 @@ it("prints focused help for every public command", async () => {
   expect(write.mock.calls.join("\n")).toContain("scribe studio <article.mdx> [options]");
 });
 
-it("uses status 2 when no command is supplied", async () => {
-  vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+it("prints state-aware output and exits 0 when no command is supplied", async () => {
+  const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-  expect(await main([])).toBe(2);
-  expect(stderr.mock.calls.join("\n")).toContain("Run `scribe --help`");
-  expect(stderr.mock.calls.join("\n")).not.toContain("three supported actions");
+  const unsupported = await project({
+    "package.json": JSON.stringify({ name: "plain-dir", private: true })
+  });
+  expect(await main([], { cwd: unsupported })).toBe(0);
+  expect(stdout.mock.calls.join("\n")).toContain("No supported React project was found.");
+  expect(stderr.mock.calls.join("\n")).not.toContain("Expected a command");
+
+  stdout.mockClear();
+  const unintegrated = await project({
+    "package.json": JSON.stringify({ dependencies: { react: "19.2.7", next: "16.2.11" } })
+  });
+  expect(await main([], { cwd: unintegrated })).toBe(0);
+  expect(stdout.mock.calls.join("\n")).toContain("Scribe is not integrated here.");
+  expect(stdout.mock.calls.join("\n")).toContain("scribe integrate --dry-run");
+
+  stdout.mockClear();
+  const integrated = await project({
+    "package.json": JSON.stringify({
+      dependencies: {
+        react: "19.2.7",
+        next: "16.2.11",
+        "@scribe-sdk/react": "0.1.0-alpha.2",
+        "@scribe-sdk/styles": "0.1.0-alpha.2",
+        "@scribe-sdk/mdx": "0.1.0-alpha.2"
+      },
+      devDependencies: { "@scribe-sdk/cli": "0.1.0-alpha.2" }
+    }),
+    "app/globals.css": "body { margin: 0; }\n@import \"@scribe-sdk/styles/default.css\";\n",
+    "app/page.tsx": "export const page = () => <article className=\"prose\" />;\nimport { createScribeComponents } from \"@scribe-sdk/react\";\nexport const c = createScribeComponents;\n"
+  });
+  expect(await main([], { cwd: integrated })).toBe(0);
+  expect(stdout.mock.calls.join("\n")).toContain("Project");
+  expect(stdout.mock.calls.join("\n")).toContain("scribe validate <article>");
+  expect(stdout.mock.calls.join("\n")).toContain("scribe studio <article>");
 });
 
 it("validates a file and reports unsupported languages as non-fatal warnings", async () => {
@@ -256,9 +287,65 @@ it.each(["scribe", "scb"])("recognizes the symlinked %s binary as the entrypoint
   ).toBe(true);
 });
 
+it("prints the scb deprecation notice only for scb command invocations", async () => {
+  const scbStderr = vi.fn();
+  expect(await cli.runCliMain(["init", "--help"], { cwd: await project({ "package.json": "{}" }), argv1: "/bin/scb", stderr: scbStderr, stdout: vi.fn() })).toBe(0);
+  expect(scbStderr.mock.calls.join("\n")).toContain("prerelease compatibility alias");
+
+  const scribeStderr = vi.fn();
+  await cli.runCliMain(["init", "--help"], { cwd: await project({ "package.json": "{}" }), argv1: "/bin/scribe", stderr: scribeStderr, stdout: vi.fn() });
+  expect(scribeStderr.mock.calls.join("\n")).not.toContain("compatibility alias");
+
+  const versionStderr = vi.fn();
+  await cli.runCliMain(["--version"], { cwd: await project({ "package.json": "{}" }), argv1: "/bin/scb", stderr: versionStderr, stdout: vi.fn() });
+  expect(versionStderr.mock.calls.join("\n")).not.toContain("compatibility alias");
+
+  const delegatedStderr = vi.fn();
+  await cli.runCliMain(["--help"], { cwd: await project({ "package.json": "{}" }), argv1: "/bin/scb", env: { SCRIBE_DELEGATED: "1" }, stderr: delegatedStderr, stdout: vi.fn() });
+  expect(delegatedStderr.mock.calls.join("\n")).not.toContain("compatibility alias");
+});
+
+it("delegates the full invocation from the global entry to the project-local CLI", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ dependencies: { react: "19.2.7", next: "16.2.11" } })
+  });
+  const localDirectory = join(cwd, "node_modules", "@scribe-sdk", "cli");
+  await mkdir(join(localDirectory, "dist"), { recursive: true });
+  await writeFile(join(localDirectory, "package.json"), JSON.stringify({
+    name: "@scribe-sdk/cli",
+    version: "7.7.7",
+    bin: { scribe: "./dist/index.mjs" }
+  }));
+  const entry = join(localDirectory, "dist", "index.mjs");
+  await writeFile(entry, [
+    'import { writeFileSync } from "node:fs";',
+    'import { resolve } from "node:path";',
+    'writeFileSync(resolve(process.cwd(), "delegated.json"), JSON.stringify({',
+    "  args: process.argv.slice(2),",
+    "  marker: process.env.SCRIBE_DELEGATED ?? null",
+    "}));",
+    ""
+  ].join("\n"));
+
+  const result = await cli.runCliMain(["--version"], { cwd, argv1: "/global/bin/scribe", stdout: vi.fn(), stderr: vi.fn() });
+  expect(result).toBe(0);
+  const record = JSON.parse(await readFile(join(cwd, "delegated.json"), "utf8")) as { args: string[]; marker: string | null };
+  expect(record.args).toEqual(["--version"]);
+  expect(record.marker).toBe("1");
+});
+
 async function fixture(source: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "scribe cli test "));
   const path = join(directory, "article.mdx");
   await writeFile(path, source);
   return path;
+}
+
+async function project(files: Record<string, string>): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "scribe cli project "));
+  for (const [name, value] of Object.entries(files)) {
+    await mkdir(join(root, name, ".."), { recursive: true });
+    await writeFile(join(root, name), value);
+  }
+  return root;
 }
