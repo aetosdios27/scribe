@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { colorize, commandArgument, displayPath, suggestClosest, supportsColor } from "./cli-output.js";
 import { importHelp, initHelp, integrateHelp, studioHelp } from "./command-help.js";
+import { delegateToLocalCli, resolveCliPackageRoot, resolveExecutionContext, shouldDelegate } from "./launcher.js";
 
 export const version = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
@@ -14,26 +15,28 @@ export const version = JSON.parse(
 
 const help = `Scribe ${version} · public alpha
 
-Technical-publishing structure and behavior for a host-owned React site.
+Publication structure and behavior for a host-owned React site.
 
 Usage
   scribe <command> [options]
 
 Commands
-  init        Create an empty content launchpad without generating an article.
-  integrate   Connect Scribe to an existing React project.
-  import      Convert an official Medium export into local MDX articles.
-  validate    Compile and validate one Markdown or MDX article.
-  studio      Open the local, source-authoritative authoring Studio.
+  integrate   Install and connect Scribe to the current React project
+  init        Create an empty source-owned content launchpad
+  import      Convert an official Medium export into local Scribe MDX
+  validate    Compile and validate one Markdown or MDX article
+  studio      Open the local source-authoritative authoring Studio
+
+Bootstrap
+  bunx @scribe-sdk/cli@alpha integrate --dry-run
 
 Examples
   scribe init --dry-run
-  scribe integrate --dry-run
-  scribe import ~/Downloads/medium-export.zip --dry-run
   scribe validate ./content/article.mdx
   scribe studio ./content/article.mdx
+  scribe import ~/Downloads/medium-export.zip
 
-Global options
+Options
   -h, --help       Show this help.
   -v, --version    Show the installed Scribe version.
 
@@ -60,6 +63,7 @@ export interface MainDependencies {
   readonly stderr?: (value: string) => void;
   readonly isTTY?: boolean;
   readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly argv1?: string;
 }
 
 export async function main(
@@ -82,8 +86,9 @@ export async function main(
     return 0;
   }
   if (args.length === 0) {
-    stderr("Expected a command. Run `scribe --help` for the supported commands.\n");
-    return 2;
+    const { bareStateOutput } = await import("./bare.js");
+    stdout(await bareStateOutput({ cwd, version }));
+    return 0;
   }
 
   const [command, ...rest] = args;
@@ -205,10 +210,33 @@ type MainRunner = (
   dependencies?: MainDependencies
 ) => Promise<number>;
 
+export async function runCliMain(
+  args: readonly string[] = process.argv.slice(2),
+  dependencies: MainDependencies = {}
+): Promise<number> {
+  const cwd = dependencies.cwd ?? process.cwd();
+  const env = dependencies.env ?? process.env;
+  const stderr = dependencies.stderr ?? ((value: string) => process.stderr.write(value));
+  const context = await resolveExecutionContext({
+    cwd,
+    ...(dependencies.argv1 === undefined ? {} : { argv1: dependencies.argv1 }),
+    env,
+    packageRoot: resolveCliPackageRoot(),
+    packageVersion: version
+  });
+  if (context.invokedBinary === "scb" && !context.delegated && !isQuietInvocation(args)) {
+    stderr("`scb` is a prerelease compatibility alias.\nUse `scribe` for new integrations.\n");
+  }
+  if (await shouldDelegate(context)) {
+    return delegateToLocalCli(context, args, { env });
+  }
+  return main(args, dependencies);
+}
+
 export async function runCliEntry(
   args: readonly string[] = process.argv.slice(2),
   dependencies: MainDependencies = {},
-  execute: MainRunner = main
+  execute: MainRunner = runCliMain
 ): Promise<number> {
   try {
     return await execute(args, dependencies);
@@ -218,6 +246,10 @@ export async function runCliEntry(
     stderr(`Scribe failed: ${singleLine(message)}\n`);
     return 1;
   }
+}
+
+function isQuietInvocation(args: readonly string[]): boolean {
+  return args.includes("--version") || args.includes("-v") || args[0] === "--help" || args[0] === "-h";
 }
 
 if (isMainModule(import.meta.url, process.argv[1])) {

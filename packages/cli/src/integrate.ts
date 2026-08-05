@@ -1,14 +1,29 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, relative, resolve } from "node:path";
+import { access, readFile, readdir, realpath } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { suggestClosest } from "./cli-output.js";
 import { integrateHelp } from "./command-help.js";
+import { detectPackageManager, installCommand, isSupportedPackageManager, type PackageManager } from "./package-manager.js";
+import {
+  acquireIntegrationLock,
+  applyFileChanges,
+  FileTransactionError,
+  manifestAndLockfilePaths,
+  releaseIntegrationLock,
+  restoreSnapshot,
+  snapshotFiles,
+  verifyIntegration,
+  type AppliedChange,
+  type SnapshotEntry
+} from "./transaction.js";
+import { checkPackageAlignment, formatAlignmentDiagnostic } from "./version-alignment.js";
 
 export type StyleMode = "foundation" | "default" | "tailwind";
-export type PackageManager = "bun" | "npm" | "pnpm" | "yarn";
+export type { PackageManager };
 
 export interface ProjectInspection {
   readonly root: string;
@@ -29,10 +44,17 @@ export interface ProjectInspection {
   readonly packageNames: ReadonlySet<string>;
 }
 
+export interface PackageChange {
+  readonly name: string;
+  readonly version: string;
+  readonly development: boolean;
+}
+
 interface FileChange {
   readonly path: string;
   readonly description: string;
   readonly content: string;
+  readonly new: boolean;
 }
 
 export interface IntegratePlan {
@@ -40,6 +62,7 @@ export interface IntegratePlan {
   readonly mode?: StyleMode;
   readonly reason: string;
   readonly ambiguities: readonly string[];
+  readonly packages: readonly PackageChange[];
   readonly commands: readonly (readonly string[])[];
   readonly changes: readonly FileChange[];
   readonly warnings: readonly string[];
@@ -74,6 +97,7 @@ const styleCandidates = [
   "src/main.css",
   "index.css"
 ];
+const scribePackages = ["@scribe-sdk/react", "@scribe-sdk/styles", "@scribe-sdk/mdx", "@scribe-sdk/cli"] as const;
 
 export async function inspectProject(inputRoot: string): Promise<ProjectInspection> {
   const root = resolve(inputRoot);
@@ -122,13 +146,19 @@ export async function planIntegrate(root: string, explicitMode: StyleMode | unde
 
   const { mode, reason, ambiguities } = recommendStyleMode(inspection, explicitMode);
 
+  const packages: PackageChange[] = [];
+  const missingRuntime = scribePackages.slice(0, 3).filter((name) => !inspection.packageNames.has(name));
+  for (const name of missingRuntime) packages.push({ name, version, development: false });
+  const cliMissing = !inspection.packageNames.has("@scribe-sdk/cli");
+  if (cliMissing) packages.push({ name: "@scribe-sdk/cli", version, development: true });
+
+  const manager = inspection.packageManager;
+  const supported = isSupportedPackageManager(manager);
   const commands: string[][] = [];
-  const missingRuntime = ["@scribe-sdk/react", "@scribe-sdk/styles", "@scribe-sdk/mdx"]
-    .filter((name) => !inspection.packageNames.has(name))
-    .map((name) => `${name}@${version}`);
-  const missingCli = inspection.packageNames.has("@scribe-sdk/cli") ? [] : [`@scribe-sdk/cli@${version}`];
-  if (missingRuntime.length > 0) commands.push(installCommand(inspection.packageManager, missingRuntime, false));
-  if (missingCli.length > 0) commands.push(installCommand(inspection.packageManager, missingCli, true));
+  if (supported) {
+    if (missingRuntime.length > 0) commands.push(installCommand(manager, missingRuntime.map((name) => `${name}@${version}`), false));
+    if (cliMissing) commands.push(installCommand(manager, [`@scribe-sdk/cli@${version}`], true));
+  }
 
   const changes: FileChange[] = [];
   const warnings: string[] = [];
@@ -146,7 +176,8 @@ export async function planIntegrate(root: string, explicitMode: StyleMode | unde
         changes.push({
           path: inspection.globalStyle,
           description: `Add the ${mode} stylesheet import`,
-          content: insertCssImport(existing, importLine)
+          content: insertCssImport(existing, importLine),
+          new: false
         });
       }
     }
@@ -156,11 +187,11 @@ export async function planIntegrate(root: string, explicitMode: StyleMode | unde
     ? (await firstExisting(inspection.root, ["mdx-components.tsx", "src/mdx-components.tsx"]))
     : undefined;
   if (inspection.hasNextMdx && !inspection.hasScribeComponents && componentMap === undefined) {
-    const path = resolve(inspection.root, "mdx-components.tsx");
     changes.push({
-      path,
+      path: resolve(inspection.root, "mdx-components.tsx"),
       description: "Create the Next.js MDX component map",
-      content: `import { createScribeComponents, type ScribeComponents } from "@scribe-sdk/react";\n\nexport function useMDXComponents(components: ScribeComponents): ScribeComponents {\n  return createScribeComponents({ components });\n}\n`
+      content: `import { createScribeComponents, type ScribeComponents } from "@scribe-sdk/react";\n\nexport function useMDXComponents(components: ScribeComponents): ScribeComponents {\n  return createScribeComponents({ components });\n}\n`,
+      new: true
     });
   } else if (!inspection.hasScribeComponents) {
     manualSteps.push("Connect createScribeComponents() at the host's existing MDX render boundary; preserve all current component overrides.");
@@ -175,11 +206,24 @@ export async function planIntegrate(root: string, explicitMode: StyleMode | unde
       manualSteps.push("Merge createScribeMdxOptions() into the existing Vite MDX plugin; keep one compilation pipeline and preserve current plugins.");
     }
   }
+
+  if (!supported && packages.length > 0) {
+    warnings.push(`Package installation is not automated for ${inspection.packageManager}; integrate will not run package-manager commands.`);
+    for (const command of deferredInstallCommands(packages, inspection.packageManager)) {
+      manualSteps.push(command);
+    }
+  }
   if (inspection.hasSyntaxHighlighter) {
     warnings.push("An existing syntax highlighter was detected. Review the overlap manually; integrate will not remove or replace it.");
   }
 
-  return { inspection, ...(mode === undefined ? {} : { mode }), reason, ambiguities, commands, changes, warnings, manualSteps };
+  const allDeclared = scribePackages.every((name) => inspection.packageNames.has(name));
+  if (allDeclared && await pathExists(resolve(inspection.root, "node_modules"))) {
+    const alignment = await checkPackageAlignment(inspection.root, version);
+    if (!alignment.aligned) warnings.push(formatAlignmentDiagnostic(alignment, inspection.packageManager));
+  }
+
+  return { inspection, ...(mode === undefined ? {} : { mode }), reason, ambiguities, packages, commands, changes, warnings, manualSteps };
 }
 
 export async function resolveProjectStyleMode(
@@ -254,36 +298,75 @@ export async function runIntegrate(args: readonly string[], dependencies: Integr
   if (plan.ambiguities.length > 0 || plan.mode === undefined) return 2;
   if (parsed.dryRun) return 0;
 
-  const confirmed = parsed.yes || await (dependencies.confirm ?? confirmInteractively)("Apply this Scribe integration plan?");
-  if (!confirmed) {
-    stdout("No files were changed.\n");
+  let confirmed: boolean | null;
+  if (parsed.yes) confirmed = true;
+  else if (dependencies.confirm !== undefined) confirmed = await dependencies.confirm("Apply this Scribe integration plan?");
+  else confirmed = await confirmInteractively("Apply this Scribe integration plan?");
+  if (confirmed === null) {
+    stderr(`This project uses ${plan.inspection.packageManager} and the terminal is non-interactive.\nRe-run with \`--yes\` to apply the reviewed plan without a prompt.\n`);
+    return 2;
+  }
+  if (confirmed === false) {
+    stdout("Cancelled. No changes made.\n");
     return 0;
   }
 
+  const projectRoot = plan.inspection.root;
+  const manager = plan.inspection.packageManager;
+  const supported = isSupportedPackageManager(manager);
+  const installedSomething = plan.commands.length > 0;
   const runCommand = dependencies.runCommand ?? spawnCommand;
-  for (const command of plan.commands) {
-    const status = await runCommand(command, plan.inspection.root);
-    if (status !== 0) {
-      stderr(`Command failed with status ${status}: ${command.join(" ")}\nNo source files were changed.\n`);
-      return 1;
-    }
+
+  if (!supported && plan.packages.length > 0) {
+    stderr(deferredInstallMessage(plan));
+    return 2;
   }
 
-  const written: string[] = [];
+  let lockPath: string;
   try {
-    for (const change of plan.changes) {
-      await atomicWrite(change.path, change.content);
-      written.push(change.path);
-    }
+    lockPath = await acquireIntegrationLock(projectRoot);
   } catch (error) {
-    const completed = written.length === 0
-      ? "\nNo source files were changed."
-      : `\nFiles already written:\n${written.map((path) => `  ${displayPath(plan.inspection.root, path)}`).join("\n")}`;
-    stderr(`Could not apply the reported Scribe changes: ${error instanceof Error ? error.message : String(error)}${completed}\n`);
+    stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+  let snapshot: Map<string, SnapshotEntry>;
+  try {
+    snapshot = await snapshotFiles(projectRoot, [
+      ...(supported ? manifestAndLockfilePaths(projectRoot, manager) : []),
+      ...plan.changes.map((change) => change.path)
+    ]);
+  } catch (error) {
+    await releaseIntegrationLock(lockPath);
+    stderr(`${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
 
-  stdout(`Success  Scribe integrated\n  Mode           ${plan.mode}\n\nChanged files\n${plan.changes.length === 0 ? "  none" : plan.changes.map((change) => `  ${displayPath(plan.inspection.root, change.path)}`).join("\n")}\n\nPreserved\n  Existing configuration outside the reported plan.\n\nNext\n  Run \`${verificationCommand(plan.inspection.packageManager)}\`.\n  Roll back by reverting only the files above and removing packages from the displayed commands.\n`);
+  let applied: readonly AppliedChange[] = [];
+  try {
+    for (const command of plan.commands) {
+      const status = await runCommand(command, projectRoot);
+      if (status !== 0) throw new Error(`Command failed with status ${status}: ${command.join(" ")}`);
+    }
+    applied = await applyFileChanges(projectRoot, plan.changes);
+    const targets = await verificationPackageTargets(plan, dependencies.version);
+    const problems = await verifyIntegration(projectRoot, {
+      ...(targets.length === 0 ? {} : { packages: targets }),
+      ...(plan.mode === undefined ? {} : { stylesheetMode: plan.mode }),
+      files: applied.map((change) => ({ path: change.path, created: change.created }))
+    });
+    if (problems.length > 0) throw new Error(problems.join("\n"));
+  } catch (error) {
+    const created = error instanceof FileTransactionError
+      ? error.written.filter((change) => change.created).map((change) => change.path)
+      : applied.filter((change) => change.created).map((change) => change.path);
+    const failures = await restoreSnapshot(projectRoot, snapshot, created);
+    await releaseIntegrationLock(lockPath);
+    stderr(failureMessage(error, failures, projectRoot));
+    return 1;
+  }
+
+  await releaseIntegrationLock(lockPath);
+  stdout(successMessage(plan, installedSomething));
   return 0;
 }
 
@@ -341,11 +424,14 @@ function formatIntegratePlan(plan: IntegratePlan, dryRun: boolean): string {
     "Commands",
     ...(plan.commands.length === 0 ? ["  none"] : plan.commands.map((command) => `  ${command.join(" ")}`)),
     "",
+    "Packages",
+    ...(plan.packages.length === 0 ? ["  none"] : packageLines(plan.packages)),
+    "",
     "File changes",
-    ...(plan.changes.length === 0 ? ["  none"] : plan.changes.map((change) => `  ${displayPath(plan.inspection.root, change.path)} — ${change.description}`)),
+    ...(plan.changes.length === 0 ? ["  none"] : plan.changes.map((change) => `  ${change.new ? "+" : "~"} ${displayPath(plan.inspection.root, change.path)} — ${change.description}`)),
     "",
     "Warnings",
-    ...(plan.warnings.length === 0 ? ["  none"] : plan.warnings.map((warning) => `  ${warning}`)),
+    ...(plan.warnings.length === 0 ? ["  none"] : plan.warnings.flatMap((warning) => warning.split("\n").map((line) => `  ${line}`))),
     "",
     "Manual steps",
     ...(plan.manualSteps.length === 0 ? ["  none"] : plan.manualSteps.map((step) => `  ${step}`))
@@ -363,20 +449,91 @@ function formatIntegratePlan(plan: IntegratePlan, dryRun: boolean): string {
   return `${lines.join("\n")}\n`;
 }
 
-async function collectSourceFiles(root: string): Promise<string[]> {
+function packageLines(packages: readonly PackageChange[]): string[] {
+  const dependencies = packages.filter((entry) => !entry.development);
+  const development = packages.filter((entry) => entry.development);
+  const lines: string[] = [];
+  if (dependencies.length > 0) lines.push("  dependencies", ...dependencies.map((entry) => `    + ${entry.name}@${entry.version}`));
+  if (development.length > 0) lines.push("  devDependencies", ...development.map((entry) => `    + ${entry.name}@${entry.version}`));
+  return lines;
+}
+
+function failureMessage(error: unknown, failures: readonly string[], root: string): string {
+  const lines = [
+    `Could not complete the Scribe integration: ${error instanceof Error ? error.message : String(error)}`,
+    "",
+    "Rollback",
+    failures.length > 0
+      ? `  Could not restore: ${failures.map((path) => displayPath(root, path)).join(", ")}. Review and restore these files manually.`
+      : "  Restored the reported manifest, lockfile, and source files to their previous state."
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function successMessage(plan: IntegratePlan, installedSomething: boolean): string {
+  const lines = [
+    "Success  Scribe integrated",
+    `  Mode           ${plan.mode}`,
+    "",
+    "Packages",
+    plan.packages.length === 0
+      ? "  none"
+      : plan.packages.map((entry) => `  + ${entry.name}@${entry.version}${entry.development ? " (dev)" : ""}`).join("\n"),
+    "",
+    "Changed files",
+    plan.changes.length === 0
+      ? "  none"
+      : plan.changes.map((change) => `  ${change.new ? "+" : "~"} ${displayPath(plan.inspection.root, change.path)}`).join("\n"),
+    "",
+    "Warnings",
+    plan.warnings.length === 0 ? "  none" : plan.warnings.flatMap((warning) => warning.split("\n").map((line) => `  ${line}`)).join("\n"),
+    "",
+    "Next",
+    `  Run \`${verificationCommand(plan.inspection.packageManager)}\`.`,
+    "  Roll back by reverting the files above and removing the packages listed above."
+  ];
+  if (installedSomething) {
+    lines.push(
+      "",
+      "Scribe is installed in this project.",
+      "",
+      "Daily commands",
+      "  scribe studio <article>",
+      "  scribe validate <article>",
+      "",
+      "Run the project-local CLI through your package manager, or install it globally:",
+      plan.inspection.packageManager === "bun"
+        ? "  bun add --global @scribe-sdk/cli@alpha   # then: scribe <command>"
+        : "  npm install --global @scribe-sdk/cli@alpha   # then: scribe <command>"
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+async function collectSourceFiles(inputRoot: string): Promise<string[]> {
   const files: string[] = [];
+  const root = await realpath(inputRoot).catch(() => resolve(inputRoot));
+  const bunGlobalInstall = await resolveBunGlobalInstall(root);
   async function visit(directory: string, depth: number): Promise<void> {
     if (depth > 7 || files.length >= 1_000) return;
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (entry.name.startsWith(".") && entry.name !== ".prose") continue;
       const path = resolve(directory, entry.name);
       if (entry.isDirectory()) {
+        if (path === bunGlobalInstall) continue;
         if (!ignoredDirectories.has(entry.name)) await visit(path, depth + 1);
       } else if (sourceExtensions.test(entry.name)) files.push(path);
     }
   }
   await visit(root, 0);
   return files;
+}
+
+async function resolveBunGlobalInstall(root: string): Promise<string | undefined> {
+  const configured = process.env.BUN_INSTALL ?? join(homedir(), ".bun");
+  const resolved = await realpath(resolve(configured)).catch(() => resolve(configured));
+  if (resolved === root || resolved.startsWith(root + sep)) return resolved;
+  return undefined;
 }
 
 async function firstExisting(root: string, candidates: readonly string[]): Promise<string | undefined> {
@@ -392,19 +549,13 @@ async function firstExisting(root: string, candidates: readonly string[]): Promi
   return undefined;
 }
 
-async function detectPackageManager(root: string, declaration?: string): Promise<PackageManager> {
-  for (const [filename, manager] of [["bun.lock", "bun"], ["bun.lockb", "bun"], ["pnpm-lock.yaml", "pnpm"], ["yarn.lock", "yarn"], ["package-lock.json", "npm"]] as const) {
-    if (await firstExisting(root, [filename]) !== undefined) return manager;
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.F_OK);
+    return true;
+  } catch {
+    return false;
   }
-  const declared = declaration?.split("@")[0];
-  return declared === "bun" || declared === "pnpm" || declared === "yarn" || declared === "npm" ? declared : "npm";
-}
-
-function installCommand(manager: PackageManager, packages: readonly string[], development: boolean): string[] {
-  if (manager === "bun") return ["bun", "add", ...(development ? ["--dev"] : []), ...packages];
-  if (manager === "pnpm") return ["pnpm", "add", ...(development ? ["--save-dev"] : []), ...packages];
-  if (manager === "yarn") return ["yarn", "add", ...(development ? ["--dev"] : []), ...packages];
-  return ["npm", "install", ...(development ? ["--save-dev"] : []), ...packages];
 }
 
 function verificationCommand(manager: PackageManager): string {
@@ -414,6 +565,46 @@ function verificationCommand(manager: PackageManager): string {
   return "npx --no-install scribe validate path/to/article.mdx";
 }
 
+function deferredInstallCommands(packages: readonly PackageChange[], manager: PackageManager): readonly string[] {
+  const runtime = packages.filter((entry) => !entry.development).map((entry) => `${entry.name}@${entry.version}`);
+  const development = packages.filter((entry) => entry.development).map((entry) => `${entry.name}@${entry.version}`);
+  const commands: string[] = [];
+  if (runtime.length > 0) commands.push(installCommand(manager, runtime, false).join(" "));
+  if (development.length > 0) commands.push(installCommand(manager, development, true).join(" "));
+  return commands;
+}
+
+function deferredInstallMessage(plan: IntegratePlan): string {
+  const commands = deferredInstallCommands(plan.packages, plan.inspection.packageManager);
+  return [
+    `This project uses ${plan.inspection.packageManager}, whose package installation is not automated yet.`,
+    "Integrate stopped without changing files. Install the packages with these commands, then re-run it:",
+    "",
+    ...commands.map((command) => `  ${command}`),
+    ""
+  ].join("\n");
+}
+
+async function verificationPackageTargets(plan: IntegratePlan, version: string): Promise<readonly { readonly name: string; readonly version: string }[]> {
+  const targets = new Map(plan.packages.map((entry) => [entry.name, entry.version]));
+  for (const name of scribePackages) {
+    if ((await installedScribePackageVersion(plan.inspection.root, name)) !== undefined) {
+      targets.set(name, version);
+    }
+  }
+  return [...targets.entries()].map(([name, target]) => ({ name, version: target }));
+}
+
+async function installedScribePackageVersion(root: string, name: string): Promise<string | undefined> {
+  try {
+    const segments = name.split("/").filter(Boolean);
+    const manifest = JSON.parse(await readFile(resolve(root, "node_modules", ...segments, "package.json"), "utf8")) as { readonly version?: string };
+    return typeof manifest.version === "string" ? manifest.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function insertCssImport(existing: string, importLine: string): string {
   const newline = existing.includes("\r\n") ? "\r\n" : "\n";
   const leadingImports = existing.match(/^(?:(?:\uFEFF?@charset[^\r\n]*;\r?\n)?(?:@import[^\r\n]*;\r?\n)+)/u)?.[0];
@@ -421,18 +612,6 @@ function insertCssImport(existing: string, importLine: string): string {
     return `${leadingImports}${importLine}${newline}${existing.slice(leadingImports.length)}`;
   }
   return `${importLine}${newline}${newline}${existing}`;
-}
-
-async function atomicWrite(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = resolve(dirname(path), `.${basename(path)}.scribe-${process.pid}-${Math.random().toString(16).slice(2)}.tmp`);
-  try {
-    await writeFile(temporary, content, "utf8");
-    await rename(temporary, path);
-  } catch (error) {
-    await unlink(temporary).catch(() => undefined);
-    throw error;
-  }
 }
 
 function parseTailwindMajor(version: string | undefined): 3 | 4 | undefined {
@@ -466,8 +645,8 @@ function displayPath(root: string, path: string): string {
   return value === "" ? "." : value;
 }
 
-async function confirmInteractively(question: string): Promise<boolean> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
+async function confirmInteractively(question: string): Promise<boolean | null> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
   const prompt = createInterface({ input: process.stdin, output: process.stdout });
   try {
     return /^(?:y|yes)$/iu.test((await prompt.question(`${question} [y/N] `)).trim());

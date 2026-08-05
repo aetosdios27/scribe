@@ -112,7 +112,8 @@ try {
     "Integrate dry run modified the fixture."
   );
   const usage = runCli("scribe", [], false);
-  assert(usage.status === 2, `scribe without arguments exited ${usage.status}; expected 2.`);
+  assert(usage.status === 0, `scribe without arguments exited ${usage.status}; expected 0.`);
+  assert(usage.stdout.includes("Scribe is not integrated here."), "Bare scribe did not report the project integration state.");
 
   const validResult = runCli("scribe", ["validate", relative(directory, valid)]);
   assert(!/\u001B\[/u.test(`${validResult.stdout}${validResult.stderr}`), "Captured CLI output contained ANSI styling.");
@@ -204,6 +205,9 @@ async function verifyGlobalInstalls() {
   assert(npmVersion === version, `Global npm scribe reported ${npmVersion}; expected ${version}.`);
   const npmAlias = await findExecutable(process.platform === "win32" ? npmPrefix : join(npmPrefix, "bin"), "scb");
   assert(run(npmAlias, ["--version"], directory).stdout.trim() === version, "Global npm scb alias reported a different version.");
+  const npmGlobalBare = run(npmScribe, [], directory, false);
+  assert(npmGlobalBare.status === 0, `Global npm scribe without arguments exited ${npmGlobalBare.status}; expected 0.`);
+  assert(npmGlobalBare.stdout.includes("Scribe is not integrated here."), "Global npm scribe did not delegate to print the project integration state.");
 
   const bunHome = join(directory, "bun-global");
   const bunEnv = { BUN_INSTALL: bunHome };
@@ -214,6 +218,9 @@ async function verifyGlobalInstalls() {
   assert(bunVersion === version, `Global Bun scribe reported ${bunVersion}; expected ${version}.`);
   const bunAlias = await findExecutable(bunBinDirectory, "scb");
   assert(run(bunAlias, ["--version"], directory, true, bunEnv).stdout.trim() === version, "Global Bun scb alias reported a different version.");
+  const bunGlobalBare = run(bunScribe, [], directory, false, bunEnv);
+  assert(bunGlobalBare.status === 0, `Global Bun scribe without arguments exited ${bunGlobalBare.status}; expected 0.`);
+  assert(bunGlobalBare.stdout.includes("Scribe is not integrated here."), "Global Bun scribe did not delegate to print the project integration state.");
 }
 
 async function findExecutable(directory, name) {

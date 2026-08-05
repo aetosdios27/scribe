@@ -21,6 +21,22 @@ Each installed package includes the same canonical `SKILL.md`. Agents can discov
 
 ## Install
 
+The recommended path bootstraps through the alpha CLI. It installs the four Scribe packages, connects Scribe to the project, and verifies the result as one reviewed transaction. With Bun run it through `bunx`, with npm through `npx`; both run the same alpha CLI. Always inspect the proposed plan before applying it:
+
+```bash
+bunx @scribe-sdk/cli@alpha integrate --dry-run   # inspect the proposed plan
+bunx @scribe-sdk/cli@alpha integrate             # review, confirm, and apply
+```
+
+With npm:
+
+```bash
+npx @scribe-sdk/cli@alpha integrate --dry-run    # inspect the proposed plan
+npx @scribe-sdk/cli@alpha integrate              # review, confirm, and apply
+```
+
+`integrate` owns package installation for Bun and npm. With pnpm or yarn it reports the reviewed plan and stops before changing files until you install the reported packages manually. Install the four packages explicitly instead if you prefer a separate manifest step:
+
 With Bun:
 
 ```bash
@@ -38,23 +54,21 @@ npm install --save-dev @scribe-sdk/cli@alpha
 ### First integration checklist
 
 1. Commit the host project before changing its integration.
-2. Install the four Scribe packages using the commands above.
+2. Bootstrap with `bunx @scribe-sdk/cli@alpha integrate --dry-run` to inspect the plan, then `bunx @scribe-sdk/cli@alpha integrate` to review and apply it. The plan installs the four Scribe packages, connects Scribe, and verifies the result.
 3. If the repository has no content directory, run `bunx scribe init --dry-run` or the equivalent `npx` command, then create the empty launchpad.
 4. If the first article currently lives on Medium, export it from Medium and inspect `bunx scribe import ~/Downloads/medium-export.zip --dry-run`.
-5. Run `bunx scribe integrate --dry-run` or `npx --no-install scribe integrate --dry-run`.
-6. Review the proposed integration changes, then run `bunx scribe integrate` or `npx --no-install scribe integrate`.
-7. Migrate or import one real article.
-8. Run `bunx scribe validate ./path/to/article.mdx` or the equivalent `npx` command.
-9. Run the host project's production build.
-10. Open the article with `bunx scribe studio ./path/to/article.mdx` or the equivalent `npx` command.
-11. Report anything confusing through [GitHub Issues](https://github.com/aetosdios27/scribe/issues).
+5. Migrate or import one real article.
+6. Run `bunx scribe validate ./path/to/article.mdx` or the equivalent `npx` command.
+7. Run the host project's production build.
+8. Open the article with `bunx scribe studio ./path/to/article.mdx` or the equivalent `npx` command.
+9. Report anything confusing through [GitHub Issues](https://github.com/aetosdios27/scribe/issues).
 
-Project-local CLI installation is recommended so every contributor uses the same prerelease. A user-level CLI is also supported through `bun add --global @scribe-sdk/cli@alpha` or `npm install --global @scribe-sdk/cli@alpha`; the project still owns its runtime Scribe dependencies.
+The project-local CLI installation means every contributor runs the same prerelease. A user-level `scribe` is also supported through `bun add --global @scribe-sdk/cli@alpha` or `npm install --global @scribe-sdk/cli@alpha`; when run inside a supported project it delegates to that project's own CLI, and outside a project it runs directly. The project always owns its runtime Scribe dependencies.
 
-Package installation is inert: it does not edit source files, run project detection, or make network calls beyond normal package-manager behavior. Inspect a proposed integration explicitly:
+Package installation is part of `integrate`'s reviewed transaction and only ever runs the reported package-manager commands. Inspect a proposed integration explicitly:
 
 ```bash
-bunx scribe integrate --dry-run
+bunx @scribe-sdk/cli@alpha integrate --dry-run
 ```
 
 With npm, run the same locally installed binary through `npx`:
@@ -72,18 +86,19 @@ Run CLI commands through `bunx scribe` or `npx --no-install scribe` after instal
 | Command | Purpose |
 | --- | --- |
 | `scribe init [--content-dir <path>] [--with-assets] [--dry-run] [--yes]` | Create an empty, source-owned content launchpad without generating an article |
-| `scribe integrate [--dry-run] [--mode <mode>] [--yes]` | Inspect and deliberately connect Scribe to the current React project; mode is `foundation`, `default`, or `tailwind` |
+| `scribe integrate [--dry-run] [--mode <mode>] [--yes]` | Inspect and deliberately connect Scribe to the current React project; installs missing Scribe packages and mode is `foundation`, `default`, or `tailwind` |
 | `scribe import <medium-export.zip> [--into <path>] [--include-drafts] [--include-responses] [--no-download-assets] [--dry-run] [--yes]` | Convert an official Medium export into local Scribe MDX without overwriting existing articles |
 | `scribe validate <article.mdx> [--strict]` | Compile and validate one article without executing the complete host application |
 | `scribe studio <article> [--mode <mode>] [--host-css <file>] [--port <number>] [--no-open]` | Open the local, source-authoritative Markdown/MDX Studio; mode is `foundation`, `default`, or `tailwind` |
+| `scribe` | Print the project's Scribe state and integration guidance |
 | `scribe --help` | Show the installed CLI command surface |
 | `scribe --version` | Print the installed Scribe version |
 
-If an earlier prerelease used `scribe init` for website integration, run `scribe integrate` now. `scribe init` creates only an empty content launchpad.
+Bootstrap a new project with `bunx @scribe-sdk/cli@alpha integrate`. If an earlier prerelease used `scribe init` for website integration, run `scribe integrate` now. `scribe init` creates only an empty content launchpad.
 
 Update installed prereleases through the package manager rather than a Scribe command: use `bun update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli` or `npm update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli`. Scribe does not mutate its own installation.
 
-Use `scribe <command> --help` for focused option summaries and examples. CLI exit codes are consistent: `0` means success, `1` means execution or article-compilation failure, and `2` means invalid usage or unresolved setup configuration.
+Use `scribe <command> --help` for focused option summaries and examples. Running `scribe` with no arguments prints the project's Scribe state and exits `0`. CLI exit codes are consistent: `0` means success or a cancelled integration, `1` means execution, transaction, or article-compilation failure, and `2` means invalid usage, unresolved setup configuration, or a required manual package install for a package manager `integrate` does not automate.
 
 ## Choose a style mode
 
@@ -166,9 +181,13 @@ npx --no-install scribe integrate --dry-run
 npx --no-install scribe integrate
 ```
 
-`integrate` inspects React, Next.js or Vite, Tailwind v3/v4, Typography and `.prose`, existing MDX integrations and plugins, syntax highlighters, global CSS, component maps, and current Scribe wiring. It recommends `foundation`, `default`, or `tailwind`, reports every proposed command and file edit, and asks before mutation. Use `--mode foundation|default|tailwind` to override the recommendation or `--yes` for a reviewed non-interactive plan.
+`integrate` inspects React, Next.js or Vite, Tailwind v3/v4, Typography and `.prose`, existing MDX integrations and plugins, syntax highlighters, global CSS, component maps, and current Scribe wiring. It recommends `foundation`, `default`, or `tailwind`, reports every proposed package, command, and file edit, and asks before mutation. Use `--mode foundation|default|tailwind` to override the recommendation or `--yes` for a reviewed non-interactive plan.
 
-Integration is minimal and idempotent. It does not replace existing remark/rehype plugins or remove another highlighter automatically; ambiguous configuration becomes a precise manual step. Roll back by reverting only the files listed in its completion report and removing the displayed packages.
+Package installation is part of the reviewed plan. For Bun and npm, `integrate` installs `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/mdx`, and the project-local `@scribe-sdk/cli` at the running CLI's exact version. pnpm and yarn are not automated yet: the plan reports the two copyable install commands (the runtime packages and the development-only CLI) as manual steps, and on apply it stops with exit `2` before changing any files until those packages are installed. After applying a plan, `integrate` verifies the packages that should be present at the running CLI's version — both the ones it installed and the ones already installed — along with the selected stylesheet and the reported files.
+
+Applying a plan is a transaction: Scribe snapshots the manifest, lockfile, and affected source files before changing anything, restores them if an install or file write fails, and reports the rollback instead of leaving a half-applied integration. Integration is minimal and idempotent — re-running after completion reports no further changes. It does not replace existing remark/rehype plugins or remove another highlighter automatically; ambiguous configuration becomes a precise manual step. When installed Scribe packages do not match the running CLI, `integrate` reports the exact `update` command instead of silently upgrading unrelated packages.
+
+Roll back by reverting only the files listed in its completion report and removing the listed packages.
 
 ## Next.js MDX integration
 

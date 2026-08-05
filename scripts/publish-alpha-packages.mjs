@@ -51,16 +51,14 @@ export async function publishAlphaPackages({ root = defaultRoot, registry = npmR
     await access(release.tarball);
     process.stdout.write(`Publishing ${release.name}@${release.version} with the alpha dist-tag.\n`);
     await registry.publishTarball(release.name, release.tarball, "alpha");
-  }
 
-  for (const { name } of releases) {
-    const tagsAfter = await registry.distTags(name);
-    const latestBefore = tagsBefore.get(name)?.latest;
+    const tagsAfter = await registry.distTags(release.name);
+    const latestBefore = tagsBefore.get(release.name)?.latest;
     assert(
       tagsAfter.latest === latestBefore,
-      `${name} changed latest from ${String(latestBefore)} to ${String(tagsAfter.latest)}.`
+      `${release.name} changed latest from ${String(latestBefore)} to ${String(tagsAfter.latest)}.`
     );
-    assert(tagsAfter.alpha === version, `${name} has alpha=${String(tagsAfter.alpha)}; expected ${version}.`);
+    assert(tagsAfter.alpha === version, `${release.name} has alpha=${String(tagsAfter.alpha)}; expected ${version}.`);
   }
 
   process.stdout.write(`Verified all public packages at alpha=${version}; latest was unchanged.\n`);

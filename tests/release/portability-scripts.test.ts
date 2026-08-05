@@ -38,7 +38,7 @@ describe("cross-platform release scripts", () => {
     expect(smoke).toContain("\\r\\n");
     expect(smoke).toContain("relative(directory, valid)");
     expect(smoke).toContain("resolve(valid)");
-    expect(smoke).toContain("usage.status === 2");
+    expect(smoke).toContain("usage.status === 0");
     expect(smoke).toContain("rejected.status === 1");
   });
 
