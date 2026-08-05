@@ -366,7 +366,8 @@ it("warns when installed Scribe package versions do not match the running CLI", 
   const plan = await planIntegrate(cwd, undefined, "0.1.0-alpha.8");
   expect(plan.packages).toEqual([]);
   expect(plan.warnings.join("\n")).toContain("Scribe package versions do not match");
-  expect(plan.warnings.join("\n")).toContain("npm update @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8 @scribe-sdk/cli@0.1.0-alpha.8");
+  expect(plan.warnings.join("\n")).toContain("npm install @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
+  expect(plan.warnings.join("\n")).toContain("npm install --save-dev @scribe-sdk/cli@0.1.0-alpha.8");
 });
 
 it("rejects invalid options and unresolved projects with usage status", async () => {

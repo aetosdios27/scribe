@@ -37,7 +37,8 @@ it("uses the detected package manager in the remediation", async () => {
   const root = await project({ cli: "0.1.0-alpha.8", mdx: "0.1.0-alpha.7", react: "0.1.0-alpha.8", styles: "0.1.0-alpha.8" });
   const report = await checkPackageAlignment(root, "0.1.0-alpha.8");
   const npmDiagnostic = formatAlignmentDiagnostic(report, "npm");
-  expect(npmDiagnostic).toContain("npm update @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8 @scribe-sdk/cli@0.1.0-alpha.8");
+  expect(npmDiagnostic).toContain("npm install @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
+  expect(npmDiagnostic).toContain("npm install --save-dev @scribe-sdk/cli@0.1.0-alpha.8");
   expect(npmDiagnostic).not.toContain("yarn");
   const pnpmDiagnostic = formatAlignmentDiagnostic(report, "pnpm");
   expect(pnpmDiagnostic).toContain("pnpm add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");

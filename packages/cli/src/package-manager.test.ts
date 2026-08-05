@@ -56,7 +56,8 @@ it("builds remove and update commands for every package manager", async () => {
     "bun update @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8 @scribe-sdk/cli@0.1.0-alpha.8"
   ]);
   expect(updateCommand("npm", "0.1.0-alpha.8")).toEqual([
-    "npm update @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8 @scribe-sdk/cli@0.1.0-alpha.8"
+    "npm install @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8",
+    "npm install --save-dev @scribe-sdk/cli@0.1.0-alpha.8"
   ]);
   expect(updateCommand("pnpm", "0.1.0-alpha.8")).toEqual([
     "pnpm add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8",

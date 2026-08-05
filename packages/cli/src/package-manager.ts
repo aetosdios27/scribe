@@ -45,7 +45,7 @@ export function updateCommand(manager: PackageManager, expected: string): readon
     .join(" ");
   const cli = `@scribe-sdk/cli@${expected}`;
   if (manager === "bun") return [`bun update ${runtime} ${cli}`];
-  if (manager === "npm") return [`npm update ${runtime} ${cli}`];
+  if (manager === "npm") return [`npm install ${runtime}`, `npm install --save-dev ${cli}`];
   if (manager === "pnpm") return [`pnpm add ${runtime}`, `pnpm add -D ${cli}`];
   return [`yarn add ${runtime}`, `yarn add -D ${cli}`];
 }
