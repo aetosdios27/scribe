@@ -24,11 +24,13 @@ export async function detectPackageManager(root: string, declaration?: string): 
 }
 
 export function installCommand(
-  manager: SupportedPackageManager,
+  manager: PackageManager,
   packages: readonly string[],
   development: boolean
 ): string[] {
   if (manager === "bun") return ["bun", "add", ...(development ? ["--dev"] : []), ...packages];
+  if (manager === "pnpm") return ["pnpm", "add", ...(development ? ["-D"] : []), ...packages];
+  if (manager === "yarn") return ["yarn", "add", ...(development ? ["-D"] : []), ...packages];
   return ["npm", "install", ...(development ? ["--save-dev"] : []), ...packages];
 }
 
@@ -37,9 +39,15 @@ export function removeCommand(manager: SupportedPackageManager, packages: readon
   return ["npm", "uninstall", ...packages];
 }
 
-export function updateCommand(manager: PackageManager): string {
-  const names = "@scribe-sdk/cli @scribe-sdk/mdx @scribe-sdk/react @scribe-sdk/styles";
-  return manager === "bun" ? `bun update ${names}` : `npm update ${names}`;
+export function updateCommand(manager: PackageManager, expected: string): readonly string[] {
+  const runtime = ["@scribe-sdk/react", "@scribe-sdk/styles", "@scribe-sdk/mdx"]
+    .map((name) => `${name}@${expected}`)
+    .join(" ");
+  const cli = `@scribe-sdk/cli@${expected}`;
+  if (manager === "bun") return [`bun update ${runtime} ${cli}`];
+  if (manager === "npm") return [`npm update ${runtime} ${cli}`];
+  if (manager === "pnpm") return [`pnpm add ${runtime}`, `pnpm add -D ${cli}`];
+  return [`yarn add ${runtime}`, `yarn add -D ${cli}`];
 }
 
 async function pathExists(path: string): Promise<boolean> {

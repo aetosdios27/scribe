@@ -194,20 +194,20 @@ it("preserves CRLF files while adding the selected import", async () => {
 
 it("rolls back earlier file changes after a later write fails", async () => {
   const cwd = await project({
-    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, next: "16.2.11", "@next/mdx": "16.2.11" } }),
+    "package.json": JSON.stringify({ private: true, dependencies: { react: "19.2.7", next: "16.2.11", "@next/mdx": "16.2.11" } }),
     "app/globals.css": "body { margin: 0; }\n",
     "next.config.mjs": "import createMDX from '@next/mdx';\nexport default createMDX({})({});\n"
   });
   const stderr = vi.fn();
 
-  expect(await runIntegrate(["--mode", "default"], {
+  expect(await runIntegrate(["--mode", "default", "--yes"], {
     cwd,
     version: "0.1.0-alpha.2",
     stdout: vi.fn(),
     stderr,
-    confirm: async () => {
-      await mkdir(join(cwd, "mdx-components.tsx"));
-      return true;
+    runCommand: async () => {
+      await mkdir(join(cwd, "mdx-components.tsx"), { recursive: true });
+      return 0;
     }
   })).toBe(1);
   expect(await readFile(join(cwd, "app/globals.css"), "utf8")).not.toContain("@scribe-sdk/styles/default.css");
@@ -293,19 +293,63 @@ it("installs missing packages transactionally with --yes and reports the bootstr
   expect(output).toContain("npm install --global @scribe-sdk/cli@alpha");
 });
 
-it("warns and defers package installation for unsupported package managers", async () => {
+it("reports copyable install commands for unsupported package managers", async () => {
+  const pnpmCwd = await project({
+    "package.json": JSON.stringify({ private: true, dependencies: { react: "19.2.7", vite: "8.1.3" } }),
+    "pnpm-lock.yaml": "",
+    "src/index.css": "body { margin: 0; }\n"
+  });
+  const pnpmPlan = await planIntegrate(pnpmCwd, "default", "0.1.0-alpha.8");
+  expect(pnpmPlan.inspection.packageManager).toBe("pnpm");
+  expect(pnpmPlan.commands).toEqual([]);
+  expect(pnpmPlan.packages.map((entry) => entry.name)).toEqual(["@scribe-sdk/react", "@scribe-sdk/styles", "@scribe-sdk/mdx", "@scribe-sdk/cli"]);
+  expect(pnpmPlan.warnings.join("\n")).toContain("not automated for pnpm");
+  expect(pnpmPlan.manualSteps.join("\n")).toContain("pnpm add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
+  expect(pnpmPlan.manualSteps.join("\n")).toContain("pnpm add -D @scribe-sdk/cli@0.1.0-alpha.8");
+
+  const yarnCwd = await project({
+    "package.json": JSON.stringify({ private: true, dependencies: { react: "19.2.7", vite: "8.1.3" } }),
+    "yarn.lock": "",
+    "src/index.css": "body { margin: 0; }\n"
+  });
+  const yarnPlan = await planIntegrate(yarnCwd, "default", "0.1.0-alpha.8");
+  expect(yarnPlan.inspection.packageManager).toBe("yarn");
+  expect(yarnPlan.manualSteps.join("\n")).toContain("yarn add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
+  expect(yarnPlan.manualSteps.join("\n")).toContain("yarn add -D @scribe-sdk/cli@0.1.0-alpha.8");
+  expect(yarnPlan.manualSteps.join("\n")).not.toContain("pnpm");
+});
+
+it("stops before changing files when packages are missing under a manual-only manager", async () => {
   const cwd = await project({
     "package.json": JSON.stringify({ private: true, dependencies: { react: "19.2.7", vite: "8.1.3" } }),
     "pnpm-lock.yaml": "",
     "src/index.css": "body { margin: 0; }\n"
   });
+  const stderr = vi.fn();
 
-  const plan = await planIntegrate(cwd, "default", "0.1.0-alpha.8");
-  expect(plan.inspection.packageManager).toBe("pnpm");
-  expect(plan.commands).toEqual([]);
-  expect(plan.packages.map((entry) => entry.name)).toEqual(["@scribe-sdk/react", "@scribe-sdk/styles", "@scribe-sdk/mdx", "@scribe-sdk/cli"]);
-  expect(plan.warnings.join("\n")).toContain("not automated for pnpm");
-  expect(plan.manualSteps.join("\n")).toContain("Install the reported packages manually with pnpm");
+  expect(await runIntegrate(["--mode", "default", "--yes"], { cwd, version: "0.1.0-alpha.8", stdout: vi.fn(), stderr })).toBe(2);
+  expect(await readFile(join(cwd, "src/index.css"), "utf8")).toBe("body { margin: 0; }\n");
+  expect((await readdir(cwd)).filter((name) => name === ".scribe-integrate.lock")).toEqual([]);
+  const error = stderr.mock.calls.join("\n");
+  expect(error).toContain("pnpm add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
+  expect(error).toContain("pnpm add -D @scribe-sdk/cli@0.1.0-alpha.8");
+});
+
+it("fails and rolls back when the selected stylesheet is missing on a no-command run", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
+    "package-lock.json": "{}",
+    "src/index.css": "body { margin: 0; }\n"
+  });
+  for (const name of ["react", "styles", "mdx", "cli"]) {
+    await mkdir(join(cwd, "node_modules", "@scribe-sdk", name), { recursive: true });
+    await writeFile(join(cwd, "node_modules", "@scribe-sdk", name, "package.json"), JSON.stringify({ name: `@scribe-sdk/${name}`, version: "0.1.0-alpha.8" }));
+  }
+  const stderr = vi.fn();
+
+  expect(await runIntegrate(["--mode", "default", "--yes"], { cwd, version: "0.1.0-alpha.8", stdout: vi.fn(), stderr })).toBe(1);
+  expect(await readFile(join(cwd, "src/index.css"), "utf8")).toBe("body { margin: 0; }\n");
+  expect(stderr.mock.calls.join("\n")).toContain("default.css was not installed");
 });
 
 it("warns when installed Scribe package versions do not match the running CLI", async () => {
@@ -322,7 +366,7 @@ it("warns when installed Scribe package versions do not match the running CLI", 
   const plan = await planIntegrate(cwd, undefined, "0.1.0-alpha.8");
   expect(plan.packages).toEqual([]);
   expect(plan.warnings.join("\n")).toContain("Scribe package versions do not match");
-  expect(plan.warnings.join("\n")).toContain("npm update @scribe-sdk/cli @scribe-sdk/mdx @scribe-sdk/react @scribe-sdk/styles");
+  expect(plan.warnings.join("\n")).toContain("npm update @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8 @scribe-sdk/cli@0.1.0-alpha.8");
 });
 
 it("rejects invalid options and unresolved projects with usage status", async () => {
@@ -332,4 +376,41 @@ it("rejects invalid options and unresolved projects with usage status", async ()
   expect(await runIntegrate(["--dryrun"], { cwd, version: "0.1.0-alpha.2", stderr })).toBe(2);
   expect(stderr.mock.calls.join("\n")).toContain('Did you mean "--dry-run"?');
   expect(await runIntegrate(["--dry-run"], { cwd, version: "0.1.0-alpha.2", stderr: vi.fn() })).toBe(2);
+});
+
+it("ignores a bun global-install cache inside the project when BUN_INSTALL points there", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
+    "src/index.css": "body { margin: 0; }\n",
+    "bun-global/install/cache/@scribe-sdk/react@0.1.0-alpha.8@@@1/README.md":
+      "See createScribeComponents and createScribeMdxOptions for the full integration guide.\n"
+  });
+  const previous = process.env.BUN_INSTALL;
+  process.env.BUN_INSTALL = join(cwd, "bun-global");
+  try {
+    const inspection = await inspectProject(cwd);
+    expect(inspection.hasScribeComponents).toBe(false);
+    expect(inspection.hasScribeCompiler).toBe(false);
+  } finally {
+    if (previous === undefined) delete process.env.BUN_INSTALL;
+    else process.env.BUN_INSTALL = previous;
+  }
+});
+
+it("detects Scribe components from a bun global-install cache inside the project when BUN_INSTALL is unset", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
+    "src/index.css": "body { margin: 0; }\n",
+    "bun-global/install/cache/@scribe-sdk/react@0.1.0-alpha.8@@@1/README.md":
+      "See createScribeComponents for the full integration guide.\n"
+  });
+  const previous = process.env.BUN_INSTALL;
+  delete process.env.BUN_INSTALL;
+  try {
+    const inspection = await inspectProject(cwd);
+    expect(inspection.hasScribeComponents).toBe(true);
+  } finally {
+    if (previous === undefined) delete process.env.BUN_INSTALL;
+    else process.env.BUN_INSTALL = previous;
+  }
 });

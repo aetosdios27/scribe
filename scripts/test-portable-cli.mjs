@@ -207,7 +207,7 @@ async function verifyGlobalInstalls() {
   assert(run(npmAlias, ["--version"], directory).stdout.trim() === version, "Global npm scb alias reported a different version.");
   const npmGlobalBare = run(npmScribe, [], directory, false);
   assert(npmGlobalBare.status === 0, `Global npm scribe without arguments exited ${npmGlobalBare.status}; expected 0.`);
-  assert(npmGlobalBare.stdout.includes("Scribe"), "Global npm scribe did not delegate to print project state.");
+  assert(npmGlobalBare.stdout.includes("Scribe is not integrated here."), "Global npm scribe did not delegate to print the project integration state.");
 
   const bunHome = join(directory, "bun-global");
   const bunEnv = { BUN_INSTALL: bunHome };
@@ -220,7 +220,7 @@ async function verifyGlobalInstalls() {
   assert(run(bunAlias, ["--version"], directory, true, bunEnv).stdout.trim() === version, "Global Bun scb alias reported a different version.");
   const bunGlobalBare = run(bunScribe, [], directory, false, bunEnv);
   assert(bunGlobalBare.status === 0, `Global Bun scribe without arguments exited ${bunGlobalBare.status}; expected 0.`);
-  assert(bunGlobalBare.stdout.includes("Scribe"), "Global Bun scribe did not delegate to print project state.");
+  assert(bunGlobalBare.stdout.includes("Scribe is not integrated here."), "Global Bun scribe did not delegate to print the project integration state.");
 }
 
 async function findExecutable(directory, name) {

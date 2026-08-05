@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 
 import { contentConventions } from "./content-paths.js";
 import { findSupportedProjectRoot } from "./launcher.js";
+import type { ProjectInspection } from "./integrate.js";
 
 export interface BareCommandDependencies {
   readonly cwd: string;
@@ -30,7 +31,7 @@ export async function bareStateOutput(dependencies: BareCommandDependencies): Pr
   const runtimePresent = ["@scribe-sdk/react", "@scribe-sdk/styles", "@scribe-sdk/mdx"]
     .every((name) => inspection.packageNames.has(name));
   if (integrated && runtimePresent) {
-    return integratedOutput(root, version);
+    return integratedOutput(root, version, inspection);
   }
   return unintegratedOutput(root);
 }
@@ -51,10 +52,8 @@ function unintegratedOutput(root: string): string {
   ].join("\n");
 }
 
-async function integratedOutput(root: string, version: string): Promise<string> {
+async function integratedOutput(root: string, version: string, inspection: ProjectInspection): Promise<string> {
   const { recommendStyleMode } = await import("./integrate.js");
-  const { inspectProject } = await import("./integrate.js");
-  const inspection = await inspectProject(root);
   const mode = recommendStyleMode(inspection, undefined).mode;
   const content = await detectedContentDirectory(root);
   const lines = [
@@ -93,7 +92,9 @@ function stackDescription(root: string): string {
 }
 
 function majorOf(specifier: string): string {
-  return specifier.trim().replace(/^[\s<=>~^*]+/u, "").split(/[.-]/u)[0] ?? "unknown";
+  const normalized = specifier.trim().replace(/^[\s<=>~^*]+/u, "");
+  if (normalized === "") return "unknown";
+  return normalized.split(/[.-]/u)[0] ?? "unknown";
 }
 
 async function detectedContentDirectory(root: string): Promise<string | undefined> {

@@ -83,6 +83,27 @@ describe("alpha package publisher", () => {
     })).rejects.toThrow("changed latest");
   });
 
+  it("does not publish later packages when the first package moves latest", async () => {
+    const root = await releaseFixture();
+    const published: string[] = [];
+
+    await expect(publishAlphaPackages({
+      root,
+      registry: {
+        versions: async (name) => published.includes(name) ? ["0.1.0-alpha.8"] : [],
+        distTags: async (name) => ({
+          alpha: published.includes(name) ? "0.1.0-alpha.8" : "0.1.0-alpha.7",
+          latest: name === "@scribe-sdk/styles" && published.includes(name) ? "0.1.0-alpha.8" : "0.1.0-alpha.4"
+        }),
+        publishTarball: async (name) => {
+          published.push(name);
+        }
+      }
+    })).rejects.toThrow("changed latest");
+
+    expect(published).toEqual(["@scribe-sdk/styles"]);
+  });
+
   it("rejects release state that is not an alpha prerelease", async () => {
     const root = await releaseFixture({ mode: "exit", tag: "alpha" });
 

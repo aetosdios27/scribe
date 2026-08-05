@@ -39,7 +39,6 @@ export interface LauncherDependencies {
   readonly packageVersion?: string;
   readonly findProjectRoot?: (cwd: string) => Promise<string | undefined>;
   readonly resolveLocal?: (projectRoot: string) => Promise<LocalCli | undefined>;
-  readonly realpathImpl?: (path: string) => Promise<string>;
   readonly spawnImpl?: (command: string, args: readonly string[], options: DelegationOptions) => Promise<number>;
   readonly workspaceDevelopment?: (cwd: string, packageRoot: string) => Promise<boolean>;
 }
@@ -56,9 +55,7 @@ export async function resolveExecutionContext(dependencies: LauncherDependencies
   const localCli = projectRoot === undefined
     ? undefined
     : await (dependencies.resolveLocal ?? resolveLocalCli)(projectRoot);
-  const samePackageRoot = localCli === undefined
-    ? false
-    : await (dependencies.realpathImpl ?? realpath)(localCli.packageRoot) === packageRoot;
+  const samePackageRoot = localCli !== undefined && localCli.packageRoot === packageRoot;
   const source = await classifyExecutionSource(
     { delegated, samePackageRoot, localCli: localCli !== undefined },
     cwd,
@@ -78,10 +75,7 @@ export async function resolveExecutionContext(dependencies: LauncherDependencies
 }
 
 export async function shouldDelegate(context: ExecutionContext): Promise<boolean> {
-  return !context.delegated
-    && context.projectRoot !== undefined
-    && context.localCli !== undefined
-    && context.localCli.packageRoot !== context.packageRoot;
+  return !context.delegated && context.source === "user-level";
 }
 
 export async function delegateToLocalCli(

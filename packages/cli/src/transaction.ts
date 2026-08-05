@@ -68,7 +68,8 @@ export async function snapshotFiles(root: string, paths: readonly string[]): Pro
     const absolute = resolve(root, relativePath);
     try {
       snapshot.set(relativePath, { existed: true, content: await readFile(absolute, "utf8") });
-    } catch {
+    } catch (error) {
+      if (!isFileSystemError(error, "ENOENT")) throw error;
       snapshot.set(relativePath, { existed: false });
     }
   }

@@ -30,13 +30,21 @@ it("reports mismatched versions with every package listed", async () => {
   const diagnostic = formatAlignmentDiagnostic(report, "bun");
   expect(diagnostic).toContain("CLI       0.4.0-alpha.1");
   expect(diagnostic).toContain("MDX       0.3.0-alpha.4");
-  expect(diagnostic).toContain("bun update @scribe-sdk/cli @scribe-sdk/mdx @scribe-sdk/react @scribe-sdk/styles");
+  expect(diagnostic).toContain("bun update @scribe-sdk/react@0.4.0-alpha.1 @scribe-sdk/styles@0.4.0-alpha.1 @scribe-sdk/mdx@0.4.0-alpha.1 @scribe-sdk/cli@0.4.0-alpha.1");
 });
 
 it("uses the detected package manager in the remediation", async () => {
   const root = await project({ cli: "0.1.0-alpha.8", mdx: "0.1.0-alpha.7", react: "0.1.0-alpha.8", styles: "0.1.0-alpha.8" });
   const report = await checkPackageAlignment(root, "0.1.0-alpha.8");
-  expect(formatAlignmentDiagnostic(report, "npm")).toContain("npm update @scribe-sdk/cli @scribe-sdk/mdx @scribe-sdk/react @scribe-sdk/styles");
+  const npmDiagnostic = formatAlignmentDiagnostic(report, "npm");
+  expect(npmDiagnostic).toContain("npm update @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8 @scribe-sdk/cli@0.1.0-alpha.8");
+  expect(npmDiagnostic).not.toContain("yarn");
+  const pnpmDiagnostic = formatAlignmentDiagnostic(report, "pnpm");
+  expect(pnpmDiagnostic).toContain("pnpm add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
+  expect(pnpmDiagnostic).toContain("pnpm add -D @scribe-sdk/cli@0.1.0-alpha.8");
+  const yarnDiagnostic = formatAlignmentDiagnostic(report, "yarn");
+  expect(yarnDiagnostic).toContain("yarn add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
+  expect(yarnDiagnostic).toContain("yarn add -D @scribe-sdk/cli@0.1.0-alpha.8");
 });
 
 it("is not aligned when a package is missing", async () => {

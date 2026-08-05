@@ -21,14 +21,21 @@ Each installed package includes the same canonical `SKILL.md`. Agents can discov
 
 ## Install
 
-The recommended path bootstraps through the alpha CLI. It installs the four Scribe packages, connects Scribe to the project, and verifies the result as one reviewed transaction:
+The recommended path bootstraps through the alpha CLI. It installs the four Scribe packages, connects Scribe to the project, and verifies the result as one reviewed transaction. With Bun run it through `bunx`, with npm through `npx`; both run the same alpha CLI. Always inspect the proposed plan before applying it:
 
 ```bash
 bunx @scribe-sdk/cli@alpha integrate --dry-run   # inspect the proposed plan
 bunx @scribe-sdk/cli@alpha integrate             # review, confirm, and apply
 ```
 
-`integrate` owns package installation for Bun and npm. With pnpm or yarn it reports the reviewed plan and defers package installation to a precise manual step. Install the four packages explicitly instead if you prefer a separate manifest step:
+With npm:
+
+```bash
+npx @scribe-sdk/cli@alpha integrate --dry-run    # inspect the proposed plan
+npx @scribe-sdk/cli@alpha integrate              # review, confirm, and apply
+```
+
+`integrate` owns package installation for Bun and npm. With pnpm or yarn it reports the reviewed plan and stops before changing files until you install the reported packages manually. Install the four packages explicitly instead if you prefer a separate manifest step:
 
 With Bun:
 
@@ -91,7 +98,7 @@ Bootstrap a new project with `bunx @scribe-sdk/cli@alpha integrate`. If an earli
 
 Update installed prereleases through the package manager rather than a Scribe command: use `bun update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli` or `npm update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli`. Scribe does not mutate its own installation.
 
-Use `scribe <command> --help` for focused option summaries and examples. Running `scribe` with no arguments prints the project's Scribe state and exits `0`. CLI exit codes are consistent: `0` means success or a cancelled integration, `1` means execution, transaction, or article-compilation failure, and `2` means invalid usage or unresolved setup configuration.
+Use `scribe <command> --help` for focused option summaries and examples. Running `scribe` with no arguments prints the project's Scribe state and exits `0`. CLI exit codes are consistent: `0` means success or a cancelled integration, `1` means execution, transaction, or article-compilation failure, and `2` means invalid usage, unresolved setup configuration, or a required manual package install for a package manager `integrate` does not automate.
 
 ## Choose a style mode
 
@@ -176,7 +183,7 @@ npx --no-install scribe integrate
 
 `integrate` inspects React, Next.js or Vite, Tailwind v3/v4, Typography and `.prose`, existing MDX integrations and plugins, syntax highlighters, global CSS, component maps, and current Scribe wiring. It recommends `foundation`, `default`, or `tailwind`, reports every proposed package, command, and file edit, and asks before mutation. Use `--mode foundation|default|tailwind` to override the recommendation or `--yes` for a reviewed non-interactive plan.
 
-Package installation is part of the reviewed plan. For Bun and npm, `integrate` installs `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/mdx`, and the project-local `@scribe-sdk/cli` at the running CLI's exact version. pnpm and yarn are not automated yet: the plan reports a warning, runs no package-manager commands, and lists the exact install command as a manual step. After applying a plan, `integrate` verifies that the installed package versions, the selected stylesheet, and the reported files are present.
+Package installation is part of the reviewed plan. For Bun and npm, `integrate` installs `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/mdx`, and the project-local `@scribe-sdk/cli` at the running CLI's exact version. pnpm and yarn are not automated yet: the plan reports the two copyable install commands (the runtime packages and the development-only CLI) as manual steps, and on apply it stops with exit `2` before changing any files until those packages are installed. After applying a plan, `integrate` verifies the packages that should be present at the running CLI's version — both the ones it installed and the ones already installed — along with the selected stylesheet and the reported files.
 
 Applying a plan is a transaction: Scribe snapshots the manifest, lockfile, and affected source files before changing anything, restores them if an install or file write fails, and reports the rollback instead of leaving a half-applied integration. Integration is minimal and idempotent — re-running after completion reports no further changes. It does not replace existing remark/rehype plugins or remove another highlighter automatically; ambiguous configuration becomes a precise manual step. When installed Scribe packages do not match the running CLI, `integrate` reports the exact `update` command instead of silently upgrading unrelated packages.
 

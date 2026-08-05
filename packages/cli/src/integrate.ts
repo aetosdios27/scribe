@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, readFile, readdir } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { suggestClosest } from "./cli-output.js";
@@ -208,7 +209,9 @@ export async function planIntegrate(root: string, explicitMode: StyleMode | unde
 
   if (!supported && packages.length > 0) {
     warnings.push(`Package installation is not automated for ${inspection.packageManager}; integrate will not run package-manager commands.`);
-    manualSteps.push(`Install the reported packages manually with ${inspection.packageManager}: ${packages.map((entry) => `${entry.name}@${entry.version}`).join(" ")}`);
+    for (const command of deferredInstallCommands(packages, inspection.packageManager)) {
+      manualSteps.push(command);
+    }
   }
   if (inspection.hasSyntaxHighlighter) {
     warnings.push("An existing syntax highlighter was detected. Review the overlap manually; integrate will not remove or replace it.");
@@ -314,6 +317,11 @@ export async function runIntegrate(args: readonly string[], dependencies: Integr
   const installedSomething = plan.commands.length > 0;
   const runCommand = dependencies.runCommand ?? spawnCommand;
 
+  if (!supported && plan.packages.length > 0) {
+    stderr(deferredInstallMessage(plan));
+    return 2;
+  }
+
   let lockPath: string;
   try {
     lockPath = await acquireIntegrationLock(projectRoot);
@@ -340,8 +348,10 @@ export async function runIntegrate(args: readonly string[], dependencies: Integr
       if (status !== 0) throw new Error(`Command failed with status ${status}: ${command.join(" ")}`);
     }
     applied = await applyFileChanges(projectRoot, plan.changes);
+    const targets = await verificationPackageTargets(plan, dependencies.version);
     const problems = await verifyIntegration(projectRoot, {
-      ...(installedSomething ? { packages: plan.packages, stylesheetMode: plan.mode } : {}),
+      ...(targets.length === 0 ? {} : { packages: targets }),
+      ...(plan.mode === undefined ? {} : { stylesheetMode: plan.mode }),
       files: applied.map((change) => ({ path: change.path, created: change.created }))
     });
     if (problems.length > 0) throw new Error(problems.join("\n"));
@@ -502,18 +512,27 @@ function successMessage(plan: IntegratePlan, installedSomething: boolean): strin
 
 async function collectSourceFiles(root: string): Promise<string[]> {
   const files: string[] = [];
+  const bunGlobalInstall = resolveBunGlobalInstall(root);
   async function visit(directory: string, depth: number): Promise<void> {
     if (depth > 7 || files.length >= 1_000) return;
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (entry.name.startsWith(".") && entry.name !== ".prose") continue;
       const path = resolve(directory, entry.name);
       if (entry.isDirectory()) {
+        if (path === bunGlobalInstall) continue;
         if (!ignoredDirectories.has(entry.name)) await visit(path, depth + 1);
       } else if (sourceExtensions.test(entry.name)) files.push(path);
     }
   }
   await visit(root, 0);
   return files;
+}
+
+function resolveBunGlobalInstall(root: string): string | undefined {
+  const configured = process.env.BUN_INSTALL ?? join(homedir(), ".bun");
+  const resolved = resolve(configured);
+  if (resolved === root || resolved.startsWith(root + sep)) return resolved;
+  return undefined;
 }
 
 async function firstExisting(root: string, candidates: readonly string[]): Promise<string | undefined> {
@@ -543,6 +562,46 @@ function verificationCommand(manager: PackageManager): string {
   if (manager === "pnpm") return "pnpm exec scribe validate path/to/article.mdx";
   if (manager === "yarn") return "yarn scribe validate path/to/article.mdx";
   return "npx --no-install scribe validate path/to/article.mdx";
+}
+
+function deferredInstallCommands(packages: readonly PackageChange[], manager: PackageManager): readonly string[] {
+  const runtime = packages.filter((entry) => !entry.development).map((entry) => `${entry.name}@${entry.version}`);
+  const development = packages.filter((entry) => entry.development).map((entry) => `${entry.name}@${entry.version}`);
+  const commands: string[] = [];
+  if (runtime.length > 0) commands.push(installCommand(manager, runtime, false).join(" "));
+  if (development.length > 0) commands.push(installCommand(manager, development, true).join(" "));
+  return commands;
+}
+
+function deferredInstallMessage(plan: IntegratePlan): string {
+  const commands = deferredInstallCommands(plan.packages, plan.inspection.packageManager);
+  return [
+    `This project uses ${plan.inspection.packageManager}, whose package installation is not automated yet.`,
+    "Integrate stopped without changing files. Install the packages with these commands, then re-run it:",
+    "",
+    ...commands.map((command) => `  ${command}`),
+    ""
+  ].join("\n");
+}
+
+async function verificationPackageTargets(plan: IntegratePlan, version: string): Promise<readonly { readonly name: string; readonly version: string }[]> {
+  const targets = new Map(plan.packages.map((entry) => [entry.name, entry.version]));
+  for (const name of scribePackages) {
+    if ((await installedScribePackageVersion(plan.inspection.root, name)) !== undefined) {
+      targets.set(name, version);
+    }
+  }
+  return [...targets.entries()].map(([name, target]) => ({ name, version: target }));
+}
+
+async function installedScribePackageVersion(root: string, name: string): Promise<string | undefined> {
+  try {
+    const segments = name.split("/").filter(Boolean);
+    const manifest = JSON.parse(await readFile(resolve(root, "node_modules", ...segments, "package.json"), "utf8")) as { readonly version?: string };
+    return typeof manifest.version === "string" ? manifest.version : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function insertCssImport(existing: string, importLine: string): string {

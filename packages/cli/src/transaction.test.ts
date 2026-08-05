@@ -57,6 +57,12 @@ it("snapshots existing and missing files and restores both", async () => {
   await expect(readFile(join(root, "mdx-components.tsx"), "utf8")).rejects.toThrow();
 });
 
+it("propagates unreadable snapshot paths instead of treating them as absent", async () => {
+  const root = await project({});
+  await mkdir(join(root, "app", "globals.css"), { recursive: true });
+  await expect(snapshotFiles(root, ["app/globals.css"])).rejects.toThrow();
+});
+
 it("reports failures it could not restore", async () => {
   const root = await project({ "app/globals.css": "original" });
   const snapshot = await snapshotFiles(root, ["app/globals.css"]);

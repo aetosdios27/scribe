@@ -29,6 +29,7 @@ export async function checkPackageAlignment(projectRoot: string, expected: strin
 
 export function formatAlignmentDiagnostic(report: AlignmentReport, manager: PackageManager): string {
   const versions = report.installed.map((entry) => `  ${entry.name.toUpperCase().padEnd(10)}${entry.version ?? "not installed"}`).join("\n");
+  const commands = updateCommand(manager, report.expected).map((command) => `  ${command}`);
   return [
     "Scribe package versions do not match.",
     "",
@@ -36,7 +37,7 @@ export function formatAlignmentDiagnostic(report: AlignmentReport, manager: Pack
     "",
     "Update them together:",
     "",
-    `  ${updateCommand(manager)}`
+    ...commands
   ].join("\n");
 }
 
