@@ -1,6 +1,8 @@
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { randomUUID } from "node:crypto";
 
 import { expect, it, vi } from "vitest";
 
@@ -410,6 +412,27 @@ it("detects Scribe components from a bun global-install cache inside the project
   try {
     const inspection = await inspectProject(cwd);
     expect(inspection.hasScribeComponents).toBe(true);
+  } finally {
+    if (previous === undefined) delete process.env.BUN_INSTALL;
+    else process.env.BUN_INSTALL = previous;
+  }
+});
+
+it("skips the bun global-install cache across a symlinked project root", async () => {
+  const base = await project({
+    "package.json": JSON.stringify({ ...packages, dependencies: { ...packages.dependencies, vite: "8.1.3" } }),
+    "src/index.css": "body { margin: 0; }\n",
+    "bun-global/install/cache/@scribe-sdk/react@0.1.0-alpha.8@@@1/README.md":
+      "See createScribeComponents and createScribeMdxOptions for the full integration guide.\n"
+  });
+  const link = join(tmpdir(), `scribe-symlink-${crypto.randomUUID()}`);
+  await symlink(base, link);
+  const previous = process.env.BUN_INSTALL;
+  process.env.BUN_INSTALL = join(link, "bun-global");
+  try {
+    const inspection = await inspectProject(link);
+    expect(inspection.hasScribeComponents).toBe(false);
+    expect(inspection.hasScribeCompiler).toBe(false);
   } finally {
     if (previous === undefined) delete process.env.BUN_INSTALL;
     else process.env.BUN_INSTALL = previous;

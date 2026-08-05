@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -510,9 +510,10 @@ function successMessage(plan: IntegratePlan, installedSomething: boolean): strin
   return `${lines.join("\n")}\n`;
 }
 
-async function collectSourceFiles(root: string): Promise<string[]> {
+async function collectSourceFiles(inputRoot: string): Promise<string[]> {
   const files: string[] = [];
-  const bunGlobalInstall = resolveBunGlobalInstall(root);
+  const root = await realpath(inputRoot).catch(() => resolve(inputRoot));
+  const bunGlobalInstall = await resolveBunGlobalInstall(root);
   async function visit(directory: string, depth: number): Promise<void> {
     if (depth > 7 || files.length >= 1_000) return;
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -528,9 +529,9 @@ async function collectSourceFiles(root: string): Promise<string[]> {
   return files;
 }
 
-function resolveBunGlobalInstall(root: string): string | undefined {
+async function resolveBunGlobalInstall(root: string): Promise<string | undefined> {
   const configured = process.env.BUN_INSTALL ?? join(homedir(), ".bun");
-  const resolved = resolve(configured);
+  const resolved = await realpath(resolve(configured)).catch(() => resolve(configured));
   if (resolved === root || resolved.startsWith(root + sep)) return resolved;
   return undefined;
 }
