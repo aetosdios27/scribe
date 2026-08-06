@@ -20,6 +20,15 @@ export async function publishAlphaPackages({
   distTagAttempts = 12,
   distTagDelayMs = 500
 } = {}) {
+  assert(
+    Number.isInteger(distTagAttempts) && distTagAttempts > 0,
+    `distTagAttempts must be a positive integer; received ${String(distTagAttempts)}.`
+  );
+  assert(
+    Number.isFinite(distTagDelayMs) && distTagDelayMs >= 0,
+    `distTagDelayMs must be finite and non-negative; received ${String(distTagDelayMs)}.`
+  );
+
   const pre = await readJson(join(root, ".changeset", "pre.json"));
   assert(
     pre.mode === "pre" && pre.tag === "alpha",
@@ -88,10 +97,12 @@ async function assertPublishedAtAlpha(registry, name, expected, latestBefore, { 
     tags = await registry.distTags(name);
     if (latestOk(tags)) {
       if (alphaOk(tags)) return;
-      process.stdout.write(
-        `Waiting for ${name} dist-tag alpha to converge to ${expected} (attempt ${attempt}/${attempts}).\n`
-      );
-      await sleep(delayMs);
+      if (attempt < attempts) {
+        process.stdout.write(
+          `Waiting for ${name} dist-tag alpha to converge to ${expected} (attempt ${attempt}/${attempts}).\n`
+        );
+        await sleep(delayMs);
+      }
       continue;
     }
     throw new Error(
