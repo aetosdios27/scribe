@@ -16,4 +16,6 @@ export function isDirectExecution(moduleUrl: string, entryPath: string | undefin
 export function publishAlphaPackages(options?: {
   root?: string;
   registry?: PackageRegistry;
+  distTagAttempts?: number;
+  distTagDelayMs?: number;
 }): Promise<void>;

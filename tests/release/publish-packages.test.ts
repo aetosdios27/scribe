@@ -64,6 +64,63 @@ describe("alpha package publisher", () => {
     })).resolves.toBeUndefined();
   });
 
+  it("waits for the alpha dist-tag to converge after publishing", async () => {
+    const root = await releaseFixture();
+    const versions = new Map(publicPackages.map(({ name }) => [name, ["0.1.0-alpha.7"]]));
+    const tags = new Map(publicPackages.map(({ name }) => [name, { alpha: "0.1.0-alpha.7", latest: "0.1.0-alpha.4" }]));
+    const published: Array<{ name: string }> = [];
+    const postPublishReads = new Map(publicPackages.map(({ name }) => [name, 0]));
+
+    await publishAlphaPackages({
+      root,
+      distTagAttempts: 3,
+      distTagDelayMs: 0,
+      registry: {
+        versions: async (name) => versions.get(name) ?? [],
+        distTags: async (name) => {
+          const tag = tags.get(name) ?? {};
+          const isPublished = published.some((entry) => entry.name === name);
+          if (isPublished) {
+            const n = (postPublishReads.get(name) ?? 0) + 1;
+            postPublishReads.set(name, n);
+            if (n < 2) return { ...tag, alpha: "0.1.0-alpha.7" };
+          }
+          return tag;
+        },
+        publishTarball: async (name) => {
+          published.push({ name });
+          versions.get(name)?.push("0.1.0-alpha.8");
+          tags.set(name, { alpha: "0.1.0-alpha.8", latest: "0.1.0-alpha.4" });
+        }
+      }
+    });
+    expect(postPublishReads.get("@scribe-sdk/styles")).toBeGreaterThanOrEqual(2);
+    expect(published.map(({ name }) => name)).toEqual([
+      "@scribe-sdk/styles",
+      "@scribe-sdk/react",
+      "@scribe-sdk/mdx",
+      "@scribe-sdk/cli"
+    ]);
+  });
+
+  it("fails closed when the alpha dist-tag never converges", async () => {
+    const root = await releaseFixture();
+    const published: string[] = [];
+
+    await expect(publishAlphaPackages({
+      root,
+      distTagAttempts: 3,
+      distTagDelayMs: 0,
+      registry: {
+        versions: async (name) => published.includes(name) ? ["0.1.0-alpha.8"] : [],
+        distTags: async () => ({ alpha: "0.1.0-alpha.7", latest: "0.1.0-alpha.4" }),
+        publishTarball: async (name) => {
+          published.push(name);
+        }
+      }
+    })).rejects.toThrow("has alpha=0.1.0-alpha.7; expected 0.1.0-alpha.8");
+  });
+
   it("fails closed when publication moves latest", async () => {
     const root = await releaseFixture();
     let published = false;
