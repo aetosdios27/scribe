@@ -1,5 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import { spawnPortableSync } from "./lib/spawn.mjs";
@@ -13,7 +14,12 @@ export const publicPackages = [
 
 const defaultRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-export async function publishAlphaPackages({ root = defaultRoot, registry = npmRegistry } = {}) {
+export async function publishAlphaPackages({
+  root = defaultRoot,
+  registry = npmRegistry,
+  distTagAttempts = 12,
+  distTagDelayMs = 500
+} = {}) {
   const pre = await readJson(join(root, ".changeset", "pre.json"));
   assert(
     pre.mode === "pre" && pre.tag === "alpha",
@@ -51,14 +57,10 @@ export async function publishAlphaPackages({ root = defaultRoot, registry = npmR
     await access(release.tarball);
     process.stdout.write(`Publishing ${release.name}@${release.version} with the alpha dist-tag.\n`);
     await registry.publishTarball(release.name, release.tarball, "alpha");
-
-    const tagsAfter = await registry.distTags(release.name);
-    const latestBefore = tagsBefore.get(release.name)?.latest;
-    assert(
-      tagsAfter.latest === latestBefore,
-      `${release.name} changed latest from ${String(latestBefore)} to ${String(tagsAfter.latest)}.`
-    );
-    assert(tagsAfter.alpha === version, `${release.name} has alpha=${String(tagsAfter.alpha)}; expected ${version}.`);
+    await assertPublishedAtAlpha(registry, release.name, version, tagsBefore.get(release.name)?.latest, {
+      attempts: distTagAttempts,
+      delayMs: distTagDelayMs
+    });
   }
 
   process.stdout.write(`Verified all public packages at alpha=${version}; latest was unchanged.\n`);
@@ -76,6 +78,29 @@ const npmRegistry = {
     runNpm(["publish", tarball, "--tag", tag, "--access", "public"], "inherit");
   }
 };
+
+async function assertPublishedAtAlpha(registry, name, expected, latestBefore, { attempts, delayMs }) {
+  const latestOk = (tags) => tags.latest === latestBefore;
+  const alphaOk = (tags) => tags.alpha === expected;
+  let tags = {};
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    tags = await registry.distTags(name);
+    if (latestOk(tags)) {
+      if (alphaOk(tags)) return;
+      process.stdout.write(
+        `Waiting for ${name} dist-tag alpha to converge to ${expected} (attempt ${attempt}/${attempts}).\n`
+      );
+      await sleep(delayMs);
+      continue;
+    }
+    throw new Error(
+      `${name} changed latest from ${String(latestBefore)} to ${String(tags.latest)}.`
+    );
+  }
+
+  throw new Error(`${name} has alpha=${String(tags.alpha)}; expected ${expected}.`);
+}
 
 function runNpmJson(args) {
   const output = runNpm(args, "pipe");
