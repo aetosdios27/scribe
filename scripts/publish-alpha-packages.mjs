@@ -52,27 +52,26 @@ export async function publishAlphaPackages({
   const versions = new Set(releases.map(({ version }) => version));
   assert(versions.size === 1, `Public package versions are not synchronized: ${[...versions].join(", ")}.`);
   const [version] = versions;
-  const tagsBefore = new Map();
-
-  for (const { name } of releases) tagsBefore.set(name, await registry.distTags(name));
 
   for (const release of releases) {
     const publishedVersions = await registry.versions(release.name);
-    if (publishedVersions.includes(release.version)) {
+    const isFresh = !publishedVersions.includes(release.version);
+
+    if (isFresh) {
+      await access(release.tarball);
+      process.stdout.write(`Publishing ${release.name}@${release.version} with the alpha dist-tag.\n`);
+      await registry.publishTarball(release.name, release.tarball, "alpha");
+    } else {
       process.stdout.write(`Skipping ${release.name}@${release.version}; it is already published.\n`);
-      continue;
     }
 
-    await access(release.tarball);
-    process.stdout.write(`Publishing ${release.name}@${release.version} with the alpha dist-tag.\n`);
-    await registry.publishTarball(release.name, release.tarball, "alpha");
-    await assertPublishedAtAlpha(registry, release.name, version, tagsBefore.get(release.name)?.latest, {
-      attempts: distTagAttempts,
-      delayMs: distTagDelayMs
-    });
+    await assertTagConverged(registry, release.name, "alpha", version, { attempts: distTagAttempts, delayMs: distTagDelayMs });
+    process.stdout.write(`Pointing ${release.name} latest=${version}.\n`);
+    await registry.setDistTag(release.name, version, "latest");
+    await assertTagConverged(registry, release.name, "latest", version, { attempts: distTagAttempts, delayMs: distTagDelayMs });
   }
 
-  process.stdout.write(`Verified all public packages at alpha=${version}; latest was unchanged.\n`);
+  process.stdout.write(`Verified all public packages at alpha=${version} and latest=${version}.\n`);
 }
 
 const npmRegistry = {
@@ -85,32 +84,27 @@ const npmRegistry = {
   },
   async publishTarball(_name, tarball, tag) {
     runNpm(["publish", tarball, "--tag", tag, "--access", "public"], "inherit");
+  },
+  async setDistTag(name, version, tag) {
+    runNpm(["dist-tag", "add", `${name}@${version}`, tag], "inherit");
   }
 };
 
-async function assertPublishedAtAlpha(registry, name, expected, latestBefore, { attempts, delayMs }) {
-  const latestOk = (tags) => tags.latest === latestBefore;
-  const alphaOk = (tags) => tags.alpha === expected;
+async function assertTagConverged(registry, name, tag, expected, { attempts, delayMs }) {
   let tags = {};
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     tags = await registry.distTags(name);
-    if (latestOk(tags)) {
-      if (alphaOk(tags)) return;
-      if (attempt < attempts) {
-        process.stdout.write(
-          `Waiting for ${name} dist-tag alpha to converge to ${expected} (attempt ${attempt}/${attempts}).\n`
-        );
-        await sleep(delayMs);
-      }
-      continue;
+    if (tags[tag] === expected) return;
+    if (attempt < attempts) {
+      process.stdout.write(
+        `Waiting for ${name} dist-tag ${tag} to converge to ${expected} (attempt ${attempt}/${attempts}).\n`
+      );
+      await sleep(delayMs);
     }
-    throw new Error(
-      `${name} changed latest from ${String(latestBefore)} to ${String(tags.latest)}.`
-    );
   }
 
-  throw new Error(`${name} has alpha=${String(tags.alpha)}; expected ${expected}.`);
+  throw new Error(`${name} has ${tag}=${String(tags[tag])}; expected ${expected}.`);
 }
 
 function runNpmJson(args) {

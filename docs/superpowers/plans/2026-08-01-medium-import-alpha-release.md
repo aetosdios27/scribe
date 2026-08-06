@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - All four public packages remain synchronized in the `0.1.0-alpha.N` fixed group.
-- Publication uses the `alpha` dist-tag and never changes `latest`.
+- Publication uses the `alpha` dist-tag and repoints `latest` at the newest published version.
 - The packed CLI must expose `scribe import` and import a Medium ZIP in a fresh consumer.
 - Root workspace overrides must not hide the dependency graph received by npm consumers.
 - Windows, Linux, macOS, Chromium, Firefox, and the Linux release gates must pass before merge.
@@ -115,4 +115,4 @@ Wait for the automated `changeset-release/main` PR, confirm synchronized `0.1.0-
 
 - [ ] **Step 5: Verify registry publication**
 
-Confirm all four npm `alpha` tags resolve to the same new version while `latest` remains unchanged. Install the registry packages in a fresh consumer and run `scribe --version`, `scribe import --help`, a Medium ZIP import, and article validation.
+Confirm all four npm `alpha` tags resolve to the same new version and `latest` is repointed at that version. Install the registry packages in a fresh consumer and run `scribe --version`, `scribe import --help`, a Medium ZIP import, and article validation.

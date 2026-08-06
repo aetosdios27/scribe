@@ -7,6 +7,7 @@ export interface PackageRegistry {
   versions(name: PublicPackage["name"]): Promise<string[]>;
   distTags(name: PublicPackage["name"]): Promise<Record<string, string | undefined>>;
   publishTarball(name: PublicPackage["name"], tarball: string, tag: "alpha"): Promise<void>;
+  setDistTag(name: PublicPackage["name"], version: string, tag: "latest"): Promise<void>;
 }
 
 export const publicPackages: readonly PublicPackage[];
