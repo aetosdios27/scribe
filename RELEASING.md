@@ -192,7 +192,7 @@ bun run release:packages
 
 The publisher verifies `.changeset/pre.json`, synchronized `0.1.0-alpha.N` manifests, and the npm dist-tags. It publishes only missing `.scribe-release/*.tgz` artifacts, explicitly passes `npm publish --tag alpha --access public`, waits for the `alpha` dist-tag to converge, then repoints `latest` at the published version and waits for that to converge too. npm authenticates the commands from the workflow's OIDC identity.
 
-Do not execute this command manually during ordinary release preparation. Manual publication remains an emergency fallback after diagnosing a failed automated release. Run it from an interactive terminal so npm can open its browser/passkey challenge; never paste a credential into the repository or CI logs. Publish tarballs in the documented order—styles, React, MDX, then CLI—and always include `--tag alpha --access public`.
+Do not execute this command manually during ordinary release preparation. Manual publication remains an emergency fallback after diagnosing a failed automated release. Run it from an interactive terminal so npm can open its browser/passkey challenge; never paste a credential into the repository or CI logs. Publish tarballs in the documented order—styles, React, MDX, then CLI—and always include `--tag alpha --access public`. For each package, verify the `alpha` dist-tag resolves to the published version, then explicitly repoint `latest` with `npm dist-tag add @scribe-sdk/<name>@<version> latest` and verify `latest` resolves to that version before continuing, matching the publisher's convergence checks.
 
 ## Post-publication smoke tests
 
