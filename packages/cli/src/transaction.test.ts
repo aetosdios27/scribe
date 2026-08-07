@@ -191,7 +191,7 @@ it("rejects transaction paths that escape the project root", async () => {
   );
 
   await expect(
-    captureExpectedFileState(root, "/tmp/absolute.txt")
+    captureExpectedFileState(root, join(tmpdir(), "absolute.txt"))
   ).rejects.toThrow(/project-relative/u);
 });
 
