@@ -202,10 +202,7 @@ function runJson(directory, command, args) {
 
   if (result.status !== 0) {
     process.stderr.write(result.stderr);
-
-    throw new Error(
-      `${command} ${args.join(" ")} exited with code ${result.status ?? 1}.`
-    );
+    throw new Error(`${command} ${args.join(" ")} exited with code ${result.status ?? 1}.`);
   }
 
   return JSON.parse(result.stdout);
@@ -251,9 +248,7 @@ function run(directory, command, args) {
   }
 
   if (result.status !== 0) {
-    throw new Error(
-      `${command} ${args.join(" ")} exited with code ${result.status ?? 1}.`
-    );
+    throw new Error(`${command} ${args.join(" ")} exited with code ${result.status ?? 1}.`);
   }
 }
 
