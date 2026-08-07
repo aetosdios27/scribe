@@ -1,4 +1,10 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,7 +13,11 @@ import { expect, it } from "vitest";
 import {
   acquireIntegrationLock,
   applyFileChanges,
+  captureExpectedFileState,
+  FileStateConflictError,
+  hashContent,
   IntegrationLockError,
+  IntegrationLockOwnershipError,
   manifestAndLockfilePaths,
   releaseIntegrationLock,
   restoreSnapshot,
@@ -15,113 +25,222 @@ import {
   verifyIntegration
 } from "./transaction.js";
 
-async function project(files: Record<string, string>): Promise<string> {
+async function project(
+  files: Record<string, string | Buffer>
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "scribe-transaction-"));
   for (const [name, value] of Object.entries(files)) {
-    await mkdir(join(root, name, ".."), { recursive: true });
-    await writeFile(join(root, name), value);
+    const path = join(root, name);
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, value);
   }
   return root;
 }
 
-it("acquires and releases a repository-scoped integration lock", async () => {
+it("acquires a repository lock and only its owner can release it", async () => {
   const root = await project({ "package.json": "{}" });
-  const lock = await acquireIntegrationLock(root);
-  await expect(acquireIntegrationLock(root)).rejects.toBeInstanceOf(IntegrationLockError);
-  await releaseIntegrationLock(lock);
-  const second = await acquireIntegrationLock(root);
-  expect(second).toBe(lock);
-  await releaseIntegrationLock(second);
+  const first = await acquireIntegrationLock(root);
+
+  await expect(acquireIntegrationLock(root)).rejects.toBeInstanceOf(
+    IntegrationLockError
+  );
+
+  await writeFile(
+    first.path,
+    JSON.stringify({
+      pid: process.pid,
+      startedAt: Date.now(),
+      token: "different-owner"
+    })
+  );
+
+  await expect(releaseIntegrationLock(first)).rejects.toBeInstanceOf(
+    IntegrationLockOwnershipError
+  );
+
+  await rm(first.path, { force: true });
 });
 
-it("recovers a stale lock left by a dead process", async () => {
-  const root = await project({});
-  const lock = join(root, ".scribe-integrate.lock");
-  await writeFile(lock, JSON.stringify({ pid: 999_999_999, startedAt: Date.now() }));
-  await acquireIntegrationLock(root);
-  await releaseIntegrationLock(lock);
+it("refuses to delete a malformed lock as if it were stale", async () => {
+  const root = await project({
+    ".scribe-integrate.lock": "{ definitely-not-json"
+  });
+
+  await expect(acquireIntegrationLock(root)).rejects.toMatchObject({
+    name: "IntegrationLockError"
+  });
+
+  expect(await readFile(join(root, ".scribe-integrate.lock"), "utf8")).toBe(
+    "{ definitely-not-json"
+  );
 });
 
-it("snapshots existing and missing files and restores both", async () => {
-  const root = await project({ "app/globals.css": "body { margin: 0; }", "package.json": "{}" });
-  const snapshot = await snapshotFiles(root, ["app/globals.css", "mdx-components.tsx", "package.json"]);
+it("recovers a well-formed stale lock whose process is dead", async () => {
+  const root = await project({
+    ".scribe-integrate.lock": JSON.stringify({
+      pid: 999_999_999,
+      startedAt: Date.now(),
+      token: "dead-owner"
+    })
+  });
 
-  await applyFileChanges(root, [
-    { path: "app/globals.css", content: "body { margin: 0; }\n@import \"x\";\n" },
-    { path: "mdx-components.tsx", content: "export const C = 1;\n" }
+  const handle = await acquireIntegrationLock(root);
+  expect(handle.token).not.toBe("dead-owner");
+  await releaseIntegrationLock(handle);
+});
+
+it("snapshots and restores binary files byte-for-byte", async () => {
+  const original = Buffer.from([
+    0x00, 0xff, 0xfe, 0x80, 0x62, 0x75, 0x6e, 0x00, 0x01
   ]);
+  const root = await project({ "bun.lockb": original });
 
-  const failures = await restoreSnapshot(root, snapshot, ["mdx-components.tsx"]);
-  expect(failures).toEqual([]);
-  expect(await readFile(join(root, "app/globals.css"), "utf8")).toBe("body { margin: 0; }");
-  await expect(readFile(join(root, "mdx-components.tsx"), "utf8")).rejects.toThrow();
+  const snapshot = await snapshotFiles(root, ["bun.lockb"]);
+  await writeFile(join(root, "bun.lockb"), Buffer.from([1, 2, 3, 4]));
+
+  expect(await restoreSnapshot(root, snapshot)).toEqual([]);
+  expect(await readFile(join(root, "bun.lockb"))).toEqual(original);
 });
 
-it("propagates unreadable snapshot paths instead of treating them as absent", async () => {
-  const root = await project({});
-  await mkdir(join(root, "app", "globals.css"), { recursive: true });
-  await expect(snapshotFiles(root, ["app/globals.css"])).rejects.toThrow();
+it("aborts when an existing file changed after planning", async () => {
+  const root = await project({ "app/globals.css": "original\n" });
+  const expected = await captureExpectedFileState(
+    root,
+    "app/globals.css"
+  );
+
+  await writeFile(join(root, "app/globals.css"), "user edit\n");
+
+  await expect(
+    applyFileChanges(root, [
+      {
+        path: "app/globals.css",
+        content: "scribe edit\n",
+        expected
+      }
+    ])
+  ).rejects.toBeInstanceOf(FileStateConflictError);
+
+  expect(await readFile(join(root, "app/globals.css"), "utf8")).toBe(
+    "user edit\n"
+  );
 });
 
-it("reports failures it could not restore", async () => {
-  const root = await project({ "app/globals.css": "original" });
+it("aborts when a planned-new file appears before apply", async () => {
+  const root = await project({ "package.json": "{}" });
+  const expected = await captureExpectedFileState(
+    root,
+    "mdx-components.tsx"
+  );
+  expect(expected).toEqual({ kind: "missing" });
+
+  await writeFile(
+    join(root, "mdx-components.tsx"),
+    "export const UserFile = true;\n"
+  );
+
+  await expect(
+    applyFileChanges(root, [
+      {
+        path: "mdx-components.tsx",
+        content: "export const ScribeFile = true;\n",
+        expected
+      }
+    ])
+  ).rejects.toBeInstanceOf(FileStateConflictError);
+
+  expect(
+    await readFile(join(root, "mdx-components.tsx"), "utf8")
+  ).toContain("UserFile");
+});
+
+it("rollback refuses to overwrite a file edited after Scribe wrote it", async () => {
+  const root = await project({ "app/globals.css": "original\n" });
   const snapshot = await snapshotFiles(root, ["app/globals.css"]);
-  await applyFileChanges(root, [{ path: "app/globals.css", content: "changed" }]);
-  await rm(join(root, "app/globals.css"));
-  await mkdir(join(root, "app/globals.css"));
-  await writeFile(join(root, "app/globals.css", "blocked.tmp"), "blocked");
-  const failures = await restoreSnapshot(root, snapshot, []);
-  expect(failures).toEqual(["app/globals.css"]);
-});
+  const expected = await captureExpectedFileState(
+    root,
+    "app/globals.css"
+  );
 
-it("tracks created files during apply for later removal", async () => {
-  const root = await project({ "package.json": "{}" });
   const applied = await applyFileChanges(root, [
-    { path: "mdx-components.tsx", content: "export const C = 1;\n" }
+    {
+      path: "app/globals.css",
+      content: "scribe wrote this\n",
+      expected
+    }
   ]);
-  expect(applied).toEqual([{ path: "mdx-components.tsx", created: true }]);
-});
 
-it("returns the manifest and manager lockfiles to snapshot", async () => {
-  const root = await project({});
-  const paths = manifestAndLockfilePaths(root, "bun");
-  expect(paths).toContain(join(root, "package.json"));
-  expect(paths).toContain(join(root, "bun.lock"));
-  expect(manifestAndLockfilePaths(root, "npm")).toContain(join(root, "package-lock.json"));
-});
+  await writeFile(
+    join(root, "app/globals.css"),
+    "user changed it afterwards\n"
+  );
 
-it("verifies installed packages, the selected stylesheet, and written files", async () => {
-  const root = await project({ "package.json": "{}" });
-  await mkdir(join(root, "node_modules", "@scribe-sdk", "react"), { recursive: true });
-  await writeFile(join(root, "node_modules", "@scribe-sdk", "react", "package.json"), JSON.stringify({ version: "0.1.0-alpha.8" }));
-  await mkdir(join(root, "node_modules", "@scribe-sdk", "styles"), { recursive: true });
-  await writeFile(join(root, "node_modules", "@scribe-sdk", "styles", "package.json"), JSON.stringify({ version: "0.1.0-alpha.8" }));
-  await writeFile(join(root, "node_modules", "@scribe-sdk", "styles", "foundation.css"), "/* stylesheet */\n");
-  await applyFileChanges(root, [{ path: "mdx-components.tsx", content: "export const C = 1;\n" }]);
-
-  const clean = await verifyIntegration(root, {
-    packages: [{ name: "@scribe-sdk/react", version: "0.1.0-alpha.8" }],
-    stylesheetMode: "foundation",
-    files: [{ path: "mdx-components.tsx", created: true }]
-  });
-  expect(clean).toEqual([]);
-
-  const broken = await verifyIntegration(root, {
-    packages: [{ name: "@scribe-sdk/react", version: "0.9.9" }],
-    stylesheetMode: "tailwind",
-    files: [{ path: "missing.tsx", created: true }]
-  });
-  expect(broken.join("\n")).toContain("expected 0.9.9");
-  expect(broken.join("\n")).toContain("tailwind.css was not installed");
-  expect(broken.join("\n")).toContain("missing.tsx was not written");
-});
-
-it("removes its temporary files and leaves only intended artifacts", async () => {
-  const root = await project({ "package.json": "{}" });
-  const applied = await applyFileChanges(root, [
-    { path: "mdx-components.tsx", content: "export const C = 1;\n" }
+  expect(await restoreSnapshot(root, snapshot, applied)).toEqual([
+    "app/globals.css"
   ]);
-  await restoreSnapshot(root, await snapshotFiles(root, ["mdx-components.tsx"]), applied.filter((change) => change.created).map((change) => change.path));
-  const entries = await readdir(root);
-  expect(entries.filter((name) => name.includes(".scribe-") && name.endsWith(".tmp"))).toEqual([]);
+  expect(await readFile(join(root, "app/globals.css"), "utf8")).toBe(
+    "user changed it afterwards\n"
+  );
+});
+
+it("rejects transaction paths that escape the project root", async () => {
+  const root = await project({ "package.json": "{}" });
+
+  await expect(snapshotFiles(root, ["../outside.txt"])).rejects.toThrow(
+    /escapes the project root|project-relative/u
+  );
+
+  await expect(
+    captureExpectedFileState(root, "/tmp/absolute.txt")
+  ).rejects.toThrow(/project-relative/u);
+});
+
+it("verifies written content rather than merely checking file existence", async () => {
+  const root = await project({
+    "result.txt": "wrong contents",
+    "node_modules/@scribe-sdk/react/package.json": JSON.stringify({
+      name: "@scribe-sdk/react",
+      version: "1.2.3"
+    }),
+    "node_modules/@scribe-sdk/styles/default.css": "/* styles */"
+  });
+
+  const problems = await verifyIntegration(root, {
+    packages: [
+      {
+        name: "@scribe-sdk/react",
+        version: "1.2.3",
+        manifestPath: "node_modules/@scribe-sdk/react/package.json"
+      }
+    ],
+    stylesheet: {
+      packageDirectory: "node_modules/@scribe-sdk/styles",
+      mode: "default"
+    },
+    files: [
+      {
+        path: "result.txt",
+        expectedHash: hashContent("expected contents")
+      }
+    ]
+  });
+
+  expect(problems).toHaveLength(1);
+  expect(problems[0]).toContain(
+    "does not contain the content Scribe wrote"
+  );
+});
+
+it("returns root-relative manifest and lockfile paths for transaction snapshots", () => {
+  expect(manifestAndLockfilePaths("apps/site/package.json", "bun")).toEqual([
+    "apps/site/package.json",
+    "bun.lock",
+    "bun.lockb"
+  ]);
+
+  expect(manifestAndLockfilePaths("package.json", "npm")).toEqual([
+    "package.json",
+    "package-lock.json",
+    "npm-shrinkwrap.json"
+  ]);
 });
