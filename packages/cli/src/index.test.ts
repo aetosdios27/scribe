@@ -322,7 +322,7 @@ it("delegates the full invocation from the global entry to the project-local CLI
     'import { resolve } from "node:path";',
     'writeFileSync(resolve(process.cwd(), "delegated.json"), JSON.stringify({',
     "  args: process.argv.slice(2),",
-    "  marker: process.env.SCRIBE_DELEGATED ?? null",
+    "  marker: process.env.SCRIBE_DELEGATED_TO ?? null",
     "}));",
     ""
   ].join("\n"));
@@ -331,7 +331,7 @@ it("delegates the full invocation from the global entry to the project-local CLI
   expect(result).toBe(0);
   const record = JSON.parse(await readFile(join(cwd, "delegated.json"), "utf8")) as { args: string[]; marker: string | null };
   expect(record.args).toEqual(["--version"]);
-  expect(record.marker).toBe("1");
+  expect(record.marker).toBe(localDirectory);
 });
 
 async function fixture(source: string): Promise<string> {

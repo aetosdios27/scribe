@@ -1,56 +1,133 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { expect, it } from "vitest";
 
-import { checkPackageAlignment, formatAlignmentDiagnostic } from "./version-alignment.js";
+import {
+  checkPackageAlignment,
+  formatAlignmentDiagnostic,
+  scribePackageDefinitions
+} from "./version-alignment.js";
 
-async function project(versions: Partial<Record<"cli" | "mdx" | "react" | "styles", string>>): Promise<string> {
+async function project(
+  files: Record<string, string>
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "scribe-alignment-"));
-  for (const [name, version] of Object.entries(versions)) {
-    if (version === undefined) continue;
-    const directory = join(root, "node_modules", "@scribe-sdk", name);
-    await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "package.json"), JSON.stringify({ name: `@scribe-sdk/${name}`, version }));
+  for (const [name, value] of Object.entries(files)) {
+    const path = join(root, name);
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, value);
   }
   return root;
 }
 
-it("reports aligned lockstep versions", async () => {
-  const root = await project({ cli: "0.1.0-alpha.8", mdx: "0.1.0-alpha.8", react: "0.1.0-alpha.8", styles: "0.1.0-alpha.8" });
-  const report = await checkPackageAlignment(root, "0.1.0-alpha.8");
+async function installScribeSet(
+  root: string,
+  version: string
+): Promise<void> {
+  for (const definition of scribePackageDefinitions) {
+    const manifest = join(
+      root,
+      "node_modules",
+      ...definition.name.split("/"),
+      "package.json"
+    );
+    await mkdir(join(manifest, ".."), { recursive: true });
+    await writeFile(
+      manifest,
+      JSON.stringify({
+        name: definition.name,
+        version
+      })
+    );
+  }
+}
+
+it("resolves hoisted Scribe packages up to the package-manager root", async () => {
+  const root = await project({
+    "package.json": "{}",
+    "apps/site/package.json": "{}"
+  });
+  await installScribeSet(root, "1.2.3");
+
+  const report = await checkPackageAlignment(
+    join(root, "apps", "site"),
+    "1.2.3",
+    root
+  );
+
+  expect(report.inspectable).toBe(true);
   expect(report.aligned).toBe(true);
+  expect(
+    report.installed.every((entry) => entry.status === "resolved")
+  ).toBe(true);
 });
 
-it("reports mismatched versions with every package listed", async () => {
-  const root = await project({ cli: "0.4.0-alpha.1", mdx: "0.3.0-alpha.4", react: "0.3.0-alpha.4", styles: "0.3.0-alpha.4" });
-  const report = await checkPackageAlignment(root, "0.4.0-alpha.1");
+it("distinguishes a missing package from an inspection failure", async () => {
+  const root = await project({ "package.json": "{}" });
+
+  const missing = await checkPackageAlignment(root, "1.2.3", root);
+  expect(missing.inspectable).toBe(true);
+  expect(missing.aligned).toBe(false);
+  expect(
+    missing.installed.every((entry) => entry.status === "missing")
+  ).toBe(true);
+
+  const brokenManifest = join(
+    root,
+    "node_modules",
+    "@scribe-sdk",
+    "react",
+    "package.json"
+  );
+  await mkdir(join(brokenManifest, ".."), { recursive: true });
+  await writeFile(brokenManifest, "{ nope");
+
+  const broken = await checkPackageAlignment(root, "1.2.3", root);
+  expect(broken.inspectable).toBe(false);
+  expect(
+    broken.installed.find(
+      (entry) => entry.packageName === "@scribe-sdk/react"
+    )?.status
+  ).toBe("error");
+});
+
+it("does not recommend blind package mutation when inspection failed", async () => {
+  const root = await project({
+    "node_modules/@scribe-sdk/react/package.json": "{ nope"
+  });
+
+  const report = await checkPackageAlignment(root, "1.2.3", root);
+  const diagnostic = formatAlignmentDiagnostic(report, "npm");
+
+  expect(diagnostic).toContain("could not be verified");
+  expect(diagnostic).toContain("inspection failed");
+  expect(diagnostic).not.toContain("npm install");
+});
+
+it("reports exact version skew as unaligned", async () => {
+  const root = await project({ "package.json": "{}" });
+  await installScribeSet(root, "1.2.2");
+
+  const report = await checkPackageAlignment(root, "1.2.3", root);
+
+  expect(report.inspectable).toBe(true);
   expect(report.aligned).toBe(false);
-  const diagnostic = formatAlignmentDiagnostic(report, "bun");
-  expect(diagnostic).toContain("CLI       0.4.0-alpha.1");
-  expect(diagnostic).toContain("MDX       0.3.0-alpha.4");
-  expect(diagnostic).toContain("bun update @scribe-sdk/react@0.4.0-alpha.1 @scribe-sdk/styles@0.4.0-alpha.1 @scribe-sdk/mdx@0.4.0-alpha.1 @scribe-sdk/cli@0.4.0-alpha.1");
+  expect(formatAlignmentDiagnostic(report, "npm")).toContain(
+    "Expected every Scribe package to resolve at 1.2.3"
+  );
 });
 
-it("uses the detected package manager in the remediation", async () => {
-  const root = await project({ cli: "0.1.0-alpha.8", mdx: "0.1.0-alpha.7", react: "0.1.0-alpha.8", styles: "0.1.0-alpha.8" });
-  const report = await checkPackageAlignment(root, "0.1.0-alpha.8");
-  const npmDiagnostic = formatAlignmentDiagnostic(report, "npm");
-  expect(npmDiagnostic).toContain("npm install @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
-  expect(npmDiagnostic).toContain("npm install --save-dev @scribe-sdk/cli@0.1.0-alpha.8");
-  expect(npmDiagnostic).not.toContain("yarn");
-  const pnpmDiagnostic = formatAlignmentDiagnostic(report, "pnpm");
-  expect(pnpmDiagnostic).toContain("pnpm add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
-  expect(pnpmDiagnostic).toContain("pnpm add -D @scribe-sdk/cli@0.1.0-alpha.8");
-  const yarnDiagnostic = formatAlignmentDiagnostic(report, "yarn");
-  expect(yarnDiagnostic).toContain("yarn add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8");
-  expect(yarnDiagnostic).toContain("yarn add -D @scribe-sdk/cli@0.1.0-alpha.8");
-});
+it("refuses a package-manager root that is not an ancestor", async () => {
+  const app = await project({ "package.json": "{}" });
+  const unrelated = await project({ "package.json": "{}" });
 
-it("is not aligned when a package is missing", async () => {
-  const root = await project({ cli: "0.1.0-alpha.8", mdx: "0.1.0-alpha.8", react: "0.1.0-alpha.8" });
-  const report = await checkPackageAlignment(root, "0.1.0-alpha.8");
-  expect(report.aligned).toBe(false);
-  expect(report.installed.find((entry) => entry.name === "styles")?.version).toBeUndefined();
+  await expect(
+    checkPackageAlignment(app, "1.2.3", unrelated)
+  ).rejects.toThrow(/outside package-manager root/u);
 });

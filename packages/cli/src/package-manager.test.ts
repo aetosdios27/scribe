@@ -1,4 +1,9 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,72 +11,204 @@ import { expect, it } from "vitest";
 
 import {
   detectPackageManager,
+  detectPackageManagerContext,
+  formatPackageCommand,
   installCommand,
-  isSupportedPackageManager,
-  removeCommand,
-  updateCommand
+  isAutomatedPackageManager,
+  PackageManagerDetectionError,
+  scribeConvergenceCommands
 } from "./package-manager.js";
 
-async function project(files: Record<string, string>): Promise<string> {
+async function project(
+  files: Record<string, string>
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "scribe-package-manager-"));
   for (const [name, value] of Object.entries(files)) {
-    await writeFile(join(root, name), value);
+    const path = join(root, name);
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, value);
   }
   return root;
 }
 
-it("detects bun from either lockfile before npm", async () => {
-  expect(await detectPackageManager(await project({ "bun.lock": "", "package-lock.json": "{}" }))).toBe("bun");
-  expect(await detectPackageManager(await project({ "bun.lockb": "" }))).toBe("bun");
+it("refuses conflicting lockfiles instead of picking one by precedence", async () => {
+  const root = await project({
+    "package.json": "{}",
+    "bun.lock": "",
+    "package-lock.json": "{}"
+  });
+
+  await expect(detectPackageManagerContext(root)).rejects.toMatchObject({
+    name: "PackageManagerDetectionError",
+    code: "conflicting-package-manager-signals"
+  });
 });
 
-it("detects npm, pnpm, and yarn from their lockfiles", async () => {
-  expect(await detectPackageManager(await project({ "package-lock.json": "{}" }))).toBe("npm");
-  expect(await detectPackageManager(await project({ "pnpm-lock.yaml": "" }))).toBe("pnpm");
-  expect(await detectPackageManager(await project({ "yarn.lock": "" }))).toBe("yarn");
+it("refuses a packageManager declaration that disagrees with the lockfile", async () => {
+  const root = await project({
+    "package.json": JSON.stringify({
+      packageManager: "pnpm@10.15.0"
+    }),
+    "bun.lock": ""
+  });
+
+  await expect(detectPackageManagerContext(root)).rejects.toMatchObject({
+    code: "conflicting-package-manager-signals"
+  });
 });
 
-it("falls back to the declared packageManager field or npm", async () => {
-  expect(await detectPackageManager(await project({}), "bun@1.3.13")).toBe("bun");
-  expect(await detectPackageManager(await project({}), "npm@10.0.0")).toBe("npm");
-  expect(await detectPackageManager(await project({}))).toBe("npm");
+it("does not default to npm when there is no package-manager evidence", async () => {
+  const root = await project({ "package.json": "{}" });
+
+  await expect(detectPackageManager(root)).rejects.toMatchObject({
+    name: "PackageManagerDetectionError",
+    code: "unknown-package-manager"
+  });
 });
 
-it("builds manager-native install commands with the dev flag split", async () => {
-  const packages = ["@scribe-sdk/react@0.1.0-alpha.8", "@scribe-sdk/styles@0.1.0-alpha.8"];
-  expect(installCommand("bun", packages, false)).toEqual(["bun", "add", ...packages]);
-  expect(installCommand("bun", packages, true)).toEqual(["bun", "add", "--dev", ...packages]);
-  expect(installCommand("npm", packages, false)).toEqual(["npm", "install", ...packages]);
-  expect(installCommand("npm", packages, true)).toEqual(["npm", "install", "--save-dev", ...packages]);
-  expect(installCommand("pnpm", packages, false)).toEqual(["pnpm", "add", ...packages]);
-  expect(installCommand("pnpm", packages, true)).toEqual(["pnpm", "add", "-D", ...packages]);
-  expect(installCommand("yarn", packages, false)).toEqual(["yarn", "add", ...packages]);
-  expect(installCommand("yarn", packages, true)).toEqual(["yarn", "add", "-D", ...packages]);
+it("uses a containing workspace root as the package-manager root", async () => {
+  const root = await project({
+    "package.json": JSON.stringify({
+      private: true,
+      workspaces: ["apps/*"],
+      packageManager: "bun@1.3.13"
+    }),
+    "bun.lock": "",
+    "apps/site/package.json": JSON.stringify({
+      private: true
+    })
+  });
+
+  const context = await detectPackageManagerContext(
+    join(root, "apps", "site")
+  );
+
+  const canonicalRoot = await realpath(root);
+  const canonicalApplicationRoot = await realpath(
+    join(root, "apps", "site")
+  );
+  expect(context.manager).toBe("bun");
+  expect(context.applicationRoot).toBe(canonicalApplicationRoot);
+  expect(context.packageManagerRoot).toBe(canonicalRoot);
+  expect(context.lockfiles.map((entry) => entry.filename)).toContain(
+    "bun.lock"
+  );
 });
 
-it("builds remove and update commands for every package manager", async () => {
-  expect(removeCommand("bun", ["@scribe-sdk/cli"])).toEqual(["bun", "remove", "@scribe-sdk/cli"]);
-  expect(removeCommand("npm", ["@scribe-sdk/cli"])).toEqual(["npm", "uninstall", "@scribe-sdk/cli"]);
-  expect(updateCommand("bun", "0.1.0-alpha.8")).toEqual([
-    "bun update @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8 @scribe-sdk/cli@0.1.0-alpha.8"
-  ]);
-  expect(updateCommand("npm", "0.1.0-alpha.8")).toEqual([
-    "npm install @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8",
-    "npm install --save-dev @scribe-sdk/cli@0.1.0-alpha.8"
-  ]);
-  expect(updateCommand("pnpm", "0.1.0-alpha.8")).toEqual([
-    "pnpm add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8",
-    "pnpm add -D @scribe-sdk/cli@0.1.0-alpha.8"
-  ]);
-  expect(updateCommand("yarn", "0.1.0-alpha.8")).toEqual([
-    "yarn add @scribe-sdk/react@0.1.0-alpha.8 @scribe-sdk/styles@0.1.0-alpha.8 @scribe-sdk/mdx@0.1.0-alpha.8",
-    "yarn add -D @scribe-sdk/cli@0.1.0-alpha.8"
-  ]);
+it("skips malformed intermediate ancestors while keeping the selected workspace root strict", async () => {
+  const root = await project({
+    "package.json": JSON.stringify({
+      private: true,
+      workspaces: ["apps/*"],
+      packageManager: "bun@1.3.13"
+    }),
+    "bun.lock": "",
+    "apps/package.json": "{ malformed",
+    "apps/site/package.json": JSON.stringify({ private: true })
+  });
+
+  const context = await detectPackageManagerContext(
+    join(root, "apps", "site")
+  );
+
+  expect(context.manager).toBe("bun");
+  expect(context.packageManagerRoot).toBe(await realpath(root));
 });
 
-it("treats only bun and npm as supported for automated installs", () => {
-  expect(isSupportedPackageManager("bun")).toBe(true);
-  expect(isSupportedPackageManager("npm")).toBe(true);
-  expect(isSupportedPackageManager("pnpm")).toBe(false);
-  expect(isSupportedPackageManager("yarn")).toBe(false);
+it("does not inherit a random parent lockfile without a workspace boundary", async () => {
+  const root = await project({
+    "bun.lock": "",
+    "child/package.json": "{}"
+  });
+
+  await expect(
+    detectPackageManagerContext(join(root, "child"))
+  ).rejects.toMatchObject({
+    code: "unknown-package-manager"
+  });
+});
+
+it("parses an explicit packageManager declaration when no lockfile exists", async () => {
+  const root = await project({
+    "package.json": JSON.stringify({
+      packageManager: "pnpm@10.15.0"
+    })
+  });
+
+  const context = await detectPackageManagerContext(root);
+  expect(context.manager).toBe("pnpm");
+  expect(context.declarations[0]).toMatchObject({
+    manager: "pnpm",
+    version: "10.15.0"
+  });
+});
+
+it("rejects malformed packageManager declarations", async () => {
+  const root = await project({
+    "package.json": JSON.stringify({
+      packageManager: "volta@whatever"
+    })
+  });
+
+  await expect(detectPackageManagerContext(root)).rejects.toBeInstanceOf(
+    PackageManagerDetectionError
+  );
+  await expect(detectPackageManagerContext(root)).rejects.toMatchObject({
+    code: "invalid-package-manager-declaration"
+  });
+});
+
+it("builds exact, argv-structured install commands", () => {
+  expect(
+    installCommand(
+      "bun",
+      ["@scribe-sdk/react@1.2.3"],
+      false
+    )
+  ).toEqual({
+    executable: "bun",
+    args: ["add", "--exact", "@scribe-sdk/react@1.2.3"]
+  });
+
+  expect(
+    installCommand(
+      "npm",
+      ["@scribe-sdk/cli@1.2.3"],
+      true
+    )
+  ).toEqual({
+    executable: "npm",
+    args: [
+      "install",
+      "--save-exact",
+      "--save-dev",
+      "@scribe-sdk/cli@1.2.3"
+    ]
+  });
+});
+
+it("refuses to construct an empty install command", () => {
+  expect(() => installCommand("npm", [], false)).toThrow();
+});
+
+it("converges every Scribe package to one exact release", () => {
+  const commands = scribeConvergenceCommands("pnpm", "1.2.3");
+
+  expect(commands).toHaveLength(2);
+  expect(formatPackageCommand(commands[0]!)).toContain(
+    "pnpm add --save-exact"
+  );
+  expect(formatPackageCommand(commands[0]!)).toContain(
+    "@scribe-sdk/react@1.2.3"
+  );
+  expect(formatPackageCommand(commands[1]!)).toContain(
+    "@scribe-sdk/cli@1.2.3"
+  );
+});
+
+it("only marks bun and npm as automated mutation managers", () => {
+  expect(isAutomatedPackageManager("bun")).toBe(true);
+  expect(isAutomatedPackageManager("npm")).toBe(true);
+  expect(isAutomatedPackageManager("pnpm")).toBe(false);
+  expect(isAutomatedPackageManager("yarn")).toBe(false);
 });

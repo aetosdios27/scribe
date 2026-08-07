@@ -462,17 +462,34 @@ export async function runStudio(
 
   let mode: StyleMode;
   let modeReason: string;
-  try {
-    const resolution = await resolveProjectStyleMode(dependencies.cwd ?? process.cwd(), parsed.mode);
-    if (resolution.mode === undefined || resolution.ambiguities.length > 0) {
-      stderr(`${resolution.ambiguities.join("\n")}\n`);
+
+  if (parsed.mode !== undefined) {
+    mode = parsed.mode;
+    modeReason = `Selected explicitly with --mode ${parsed.mode}.`;
+  } else {
+    try {
+      const resolution = await resolveProjectStyleMode(
+        dependencies.cwd ?? process.cwd()
+      );
+
+      if (
+        resolution.mode === undefined ||
+        resolution.ambiguities.length > 0
+      ) {
+        stderr(`${resolution.ambiguities.join("\n")}\n`);
+        return 2;
+      }
+
+      mode = resolution.mode;
+      modeReason = resolution.reason;
+    } catch (error) {
+      stderr(
+        `Could not detect the Studio style mode: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`
+      );
       return 2;
     }
-    mode = resolution.mode;
-    modeReason = resolution.reason;
-  } catch (error) {
-    stderr(`Could not detect the Studio style mode: ${error instanceof Error ? error.message : String(error)}\n`);
-    return 2;
   }
 
   let handle: StudioHandle;
