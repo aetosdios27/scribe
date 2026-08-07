@@ -1,6 +1,7 @@
 import {
   mkdir,
   mkdtemp,
+  realpath,
   writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -82,12 +83,36 @@ it("uses a containing workspace root as the package-manager root", async () => {
     join(root, "apps", "site")
   );
 
+  const canonicalRoot = await realpath(root);
+  const canonicalApplicationRoot = await realpath(
+    join(root, "apps", "site")
+  );
   expect(context.manager).toBe("bun");
-  expect(context.applicationRoot).toBe(join(root, "apps", "site"));
-  expect(context.packageManagerRoot).toBe(root);
+  expect(context.applicationRoot).toBe(canonicalApplicationRoot);
+  expect(context.packageManagerRoot).toBe(canonicalRoot);
   expect(context.lockfiles.map((entry) => entry.filename)).toContain(
     "bun.lock"
   );
+});
+
+it("skips malformed intermediate ancestors while keeping the selected workspace root strict", async () => {
+  const root = await project({
+    "package.json": JSON.stringify({
+      private: true,
+      workspaces: ["apps/*"],
+      packageManager: "bun@1.3.13"
+    }),
+    "bun.lock": "",
+    "apps/package.json": "{ malformed",
+    "apps/site/package.json": JSON.stringify({ private: true })
+  });
+
+  const context = await detectPackageManagerContext(
+    join(root, "apps", "site")
+  );
+
+  expect(context.manager).toBe("bun");
+  expect(context.packageManagerRoot).toBe(await realpath(root));
 });
 
 it("does not inherit a random parent lockfile without a workspace boundary", async () => {

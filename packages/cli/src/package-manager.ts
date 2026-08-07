@@ -257,7 +257,25 @@ async function inspectChain(
   let current = applicationRoot;
 
   for (;;) {
-    chain.push(await inspectDirectory(current, current === applicationRoot ? suppliedApplicationDeclaration : undefined));
+    const strictBoundary =
+      current === applicationRoot || current === packageManagerRoot;
+    try {
+      chain.push(
+        await inspectDirectory(
+          current,
+          current === applicationRoot
+            ? suppliedApplicationDeclaration
+            : undefined
+        )
+      );
+    } catch (error) {
+      if (
+        strictBoundary ||
+        !(error instanceof PackageManagerDetectionError)
+      ) {
+        throw error;
+      }
+    }
     if (current === packageManagerRoot) return chain;
     const parent = dirname(current);
     if (parent === current) {
@@ -279,15 +297,23 @@ async function findNearestWorkspaceEvidence(
   let current = dirname(applicationRoot);
 
   for (;;) {
-    const inspection = await inspectDirectory(current);
-    const hasRequestedEvidence = kind === "lockfile"
-      ? inspection.lockfiles.length > 0
-      : inspection.declaration !== undefined;
+    let inspection: DirectoryInspection | undefined;
+    try {
+      inspection = await inspectDirectory(current);
+    } catch (error) {
+      if (!(error instanceof PackageManagerDetectionError)) throw error;
+    }
+
+    const hasRequestedEvidence = inspection === undefined
+      ? false
+      : kind === "lockfile"
+        ? inspection.lockfiles.length > 0
+        : inspection.declaration !== undefined;
 
     // An ancestor may own dependency mutations only when it explicitly looks
     // like a workspace boundary. This prevents inheriting random lockfiles
     // from unrelated parent directories such as the user's home directory.
-    if (inspection.workspaceMarker && hasRequestedEvidence) return inspection;
+    if (inspection?.workspaceMarker && hasRequestedEvidence) return inspection;
 
     if (current === boundary) return undefined;
     const parent = dirname(current);
@@ -300,7 +326,13 @@ async function findSearchBoundary(applicationRoot: string): Promise<string> {
   let current = applicationRoot;
 
   for (;;) {
-    if (await pathExistsStrict(resolve(current, ".git"), applicationRoot)) return current;
+    try {
+      if (await pathExistsStrict(resolve(current, ".git"), applicationRoot)) {
+        return current;
+      }
+    } catch (error) {
+      if (!(error instanceof PackageManagerDetectionError)) throw error;
+    }
     const parent = dirname(current);
     if (parent === current) break;
     current = parent;
@@ -308,8 +340,12 @@ async function findSearchBoundary(applicationRoot: string): Promise<string> {
 
   current = dirname(applicationRoot);
   for (;;) {
-    const inspection = await inspectDirectory(current);
-    if (inspection.workspaceMarker) return current;
+    try {
+      const inspection = await inspectDirectory(current);
+      if (inspection.workspaceMarker) return current;
+    } catch (error) {
+      if (!(error instanceof PackageManagerDetectionError)) throw error;
+    }
     const parent = dirname(current);
     if (parent === current) return applicationRoot;
     current = parent;

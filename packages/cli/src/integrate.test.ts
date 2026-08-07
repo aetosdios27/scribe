@@ -3,6 +3,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -106,10 +107,10 @@ async function alignedViteProject(
   return root;
 }
 
-it("does not treat a README mention as proof that Scribe components are wired", async () => {
+it("does not treat an unrelated source mention as proof that Scribe components are wired", async () => {
   const root = await alignedViteProject({
-    "bun-global/install/cache/readme/README.md":
-      "See createScribeComponents for documentation.\n"
+    "src/unrelated.ts":
+      'export const note = "See createScribeComponents for documentation.";\n'
   });
 
   const inspection = await inspectProject(root);
@@ -208,8 +209,9 @@ it("uses the workspace root as the transaction/package-manager root", async () =
     version
   );
 
+  const canonicalRoot = await realpath(root);
   expect(plan.inspection.packageManager).toBe("bun");
-  expect(plan.inspection.packageManagerRoot).toBe(root);
+  expect(plan.inspection.packageManagerRoot).toBe(canonicalRoot);
   expect(plan.guards.map((guard) => guard.path)).toContain(
     "apps/site/package.json"
   );
@@ -431,6 +433,78 @@ it("restores tracked manifest and lockfile contents when the second package comm
     await readFile(join(root, "package-lock.json"), "utf8")
   ).toBe('{"lockfileVersion":3}\n');
   expect(await readdir(root)).not.toContain(".scribe-integrate.lock");
+});
+
+it("restores package state when successful commands are followed by a file-state conflict", async () => {
+  const originalManifest = JSON.stringify({
+    packageManager: "npm@11.0.0",
+    dependencies: {
+      react: "19.2.7",
+      vite: "8.1.3"
+    }
+  });
+  const originalLockfile = '{"lockfileVersion":3}\n';
+  const originalStylesheet = "body { margin: 0; }\n";
+  const root = await project({
+    "package.json": originalManifest,
+    "package-lock.json": originalLockfile,
+    "src/index.css": originalStylesheet
+  });
+
+  let commandIndex = 0;
+  const runCommand = vi.fn(async (_command: PackageCommand) => {
+    commandIndex += 1;
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({
+        packageManager: "npm@11.0.0",
+        dependencies: {
+          react: "19.2.7",
+          vite: "8.1.3",
+          "@scribe-sdk/react": version,
+          "@scribe-sdk/styles": version,
+          "@scribe-sdk/mdx": version
+        },
+        ...(commandIndex === 2
+          ? { devDependencies: { "@scribe-sdk/cli": version } }
+          : {})
+      })
+    );
+    await writeFile(
+      join(root, "package-lock.json"),
+      JSON.stringify({ lockfileVersion: 3, commandIndex })
+    );
+    if (commandIndex === 2) {
+      await writeFile(
+        join(root, "src", "index.css"),
+        "/* package command touched stylesheet */\n"
+      );
+    }
+    return 0;
+  });
+
+  const status = await runIntegrate(
+    ["--mode", "default", "--yes"],
+    {
+      cwd: root,
+      version,
+      stdout: vi.fn(),
+      stderr: vi.fn(),
+      runCommand
+    }
+  );
+
+  expect(status).toBe(2);
+  expect(runCommand).toHaveBeenCalledTimes(2);
+  expect(await readFile(join(root, "package.json"), "utf8")).toBe(
+    originalManifest
+  );
+  expect(await readFile(join(root, "package-lock.json"), "utf8")).toBe(
+    originalLockfile
+  );
+  expect(await readFile(join(root, "src", "index.css"), "utf8")).toBe(
+    originalStylesheet
+  );
 });
 
 it("blocks conflicting package-manager signals before any mutation", async () => {

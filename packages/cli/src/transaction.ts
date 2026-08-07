@@ -121,6 +121,9 @@ export async function acquireIntegrationLock(root: string): Promise<IntegrationL
     }
 
     const existing = await readLockRecord(lockPath);
+    if (existing.record === undefined && !existing.malformed) {
+      continue;
+    }
     if (existing.malformed || existing.record === undefined) {
       throw new IntegrationLockError(
         undefined,
@@ -379,16 +382,41 @@ async function recoverStaleLock(root: string, lockPath: string, stale: LockRecor
   const cleanupPath = resolve(root, integrationLockCleanupFilename);
   let cleanupHandle: Awaited<ReturnType<typeof open>> | undefined;
 
-  try {
-    cleanupHandle = await open(cleanupPath, "wx", 0o600);
-  } catch (error) {
-    if (isFileSystemError(error, "EEXIST")) {
+  for (;;) {
+    try {
+      cleanupHandle = await open(cleanupPath, "wx", 0o600);
+      await cleanupHandle.writeFile(`${process.pid}\n`, "utf8");
+      await cleanupHandle.sync();
+      break;
+    } catch (error) {
+      if (cleanupHandle !== undefined) {
+        await cleanupHandle.close().catch(() => undefined);
+        cleanupHandle = undefined;
+        await unlink(cleanupPath).catch(() => undefined);
+      }
+      if (!isFileSystemError(error, "EEXIST")) throw error;
+
+      let ownerPid: number | undefined;
+      try {
+        const raw = (await readFile(cleanupPath, "utf8")).trim();
+        const parsed = Number(raw);
+        if (Number.isInteger(parsed) && parsed > 0) ownerPid = parsed;
+      } catch (readError) {
+        if (isFileSystemError(readError, "ENOENT")) continue;
+      }
+
+      if (ownerPid !== undefined && !isProcessAlive(ownerPid)) {
+        await unlink(cleanupPath).catch((unlinkError) => {
+          if (!isFileSystemError(unlinkError, "ENOENT")) throw unlinkError;
+        });
+        continue;
+      }
+
       throw new IntegrationLockError(
-        undefined,
+        ownerPid,
         "A Scribe stale-lock recovery is already in progress. If no Scribe process is running and this persists, remove .scribe-integrate.lock.cleanup manually and retry."
       );
     }
-    throw error;
   }
 
   try {

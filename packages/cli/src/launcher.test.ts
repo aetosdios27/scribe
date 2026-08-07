@@ -235,6 +235,22 @@ it("refuses a local CLI with no declared executable instead of guessing dist/ind
   );
 });
 
+it("rejects a local CLI whose declared executable escapes its package root", async () => {
+  const root = await project({
+    "package.json": "{}",
+    "outside.mjs": "console.log('outside');\n",
+    "node_modules/@scribe-sdk/cli/package.json": JSON.stringify({
+      name: "@scribe-sdk/cli",
+      version: "1.2.3",
+      bin: { scribe: "../../../outside.mjs" }
+    })
+  });
+
+  await expect(resolveLocalCli(root, root)).rejects.toThrow(
+    /escapes its package root/u
+  );
+});
+
 it("does not walk above a repository boundary looking for a React project", async () => {
   const outer = await project({
     "package.json": JSON.stringify({

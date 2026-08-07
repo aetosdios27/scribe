@@ -89,6 +89,21 @@ it("recovers a well-formed stale lock whose process is dead", async () => {
   await releaseIntegrationLock(handle);
 });
 
+it("recovers a stale cleanup marker whose owner process is dead", async () => {
+  const root = await project({
+    ".scribe-integrate.lock": JSON.stringify({
+      pid: 999_999_999,
+      startedAt: Date.now(),
+      token: "dead-owner"
+    }),
+    ".scribe-integrate.lock.cleanup": "999999999\n"
+  });
+
+  const handle = await acquireIntegrationLock(root);
+  expect(handle.token).not.toBe("dead-owner");
+  await releaseIntegrationLock(handle);
+});
+
 it("snapshots and restores binary files byte-for-byte", async () => {
   const original = Buffer.from([
     0x00, 0xff, 0xfe, 0x80, 0x62, 0x75, 0x6e, 0x00, 0x01

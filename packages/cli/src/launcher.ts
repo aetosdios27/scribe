@@ -418,10 +418,7 @@ async function findLocalResolutionRoot(
       packageManagerRoot: context.packageManagerRoot
     };
   } catch (error) {
-    if (
-      error instanceof PackageManagerDetectionError &&
-      error.code === "unknown-package-manager"
-    ) {
+    if (error instanceof PackageManagerDetectionError) {
       return { root: await findProjectSearchBoundary(projectRoot) };
     }
     throw error;
@@ -563,9 +560,13 @@ async function findProjectSearchBoundary(
 ): Promise<string> {
   const start = await canonicalOrResolved(input);
 
-  const gitBoundary = await findNearestAncestor(start, async (directory) =>
-    pathExistsStrict(resolve(directory, ".git"))
-  );
+  const gitBoundary = await findNearestAncestor(start, async (directory) => {
+    try {
+      return await pathExistsStrict(resolve(directory, ".git"));
+    } catch {
+      return false;
+    }
+  });
   if (gitBoundary !== undefined) return gitBoundary;
 
   const workspaceBoundary = await findNearestAncestor(
@@ -574,9 +575,13 @@ async function findProjectSearchBoundary(
   );
   if (workspaceBoundary !== undefined) return workspaceBoundary;
 
-  const packageBoundary = await findNearestAncestor(start, async (directory) =>
-    pathExistsStrict(resolve(directory, "package.json"))
-  );
+  const packageBoundary = await findNearestAncestor(start, async (directory) => {
+    try {
+      return await pathExistsStrict(resolve(directory, "package.json"));
+    } catch {
+      return false;
+    }
+  });
   return packageBoundary ?? start;
 }
 
@@ -595,8 +600,12 @@ async function findNearestAncestor(
 }
 
 async function isWorkspaceBoundary(directory: string): Promise<boolean> {
-  if (await pathExistsStrict(resolve(directory, "pnpm-workspace.yaml"))) {
-    return true;
+  try {
+    if (await pathExistsStrict(resolve(directory, "pnpm-workspace.yaml"))) {
+      return true;
+    }
+  } catch {
+    // Ancestor probing is best-effort; the application root is validated separately.
   }
 
   const manifestPath = resolve(directory, "package.json");
@@ -604,24 +613,15 @@ async function isWorkspaceBoundary(directory: string): Promise<boolean> {
 
   try {
     source = await readFile(manifestPath, "utf8");
-  } catch (error) {
-    if (isFileSystemError(error, "ENOENT")) return false;
-    throw new Error(
-      `Could not inspect ${manifestPath}: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
+  } catch {
+    return false;
   }
 
   let manifest: ProjectManifest;
   try {
     manifest = JSON.parse(source) as ProjectManifest;
-  } catch (error) {
-    throw new Error(
-      `Could not parse ${manifestPath}: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
+  } catch {
+    return false;
   }
 
   const value = manifest.workspaces;

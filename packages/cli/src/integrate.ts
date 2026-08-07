@@ -509,7 +509,8 @@ export async function planIntegrate(
             inspection.root,
             inspection.globalStyle,
             `Add the ${recommendation.mode} stylesheet import`,
-            insertCssImport(existing, importLine)
+            insertCssImport(existing, importLine),
+            { kind: "file", hash: hashContent(existing) }
           )
         );
       }
@@ -819,10 +820,7 @@ export async function runIntegrate(
       );
     }
   } catch (error) {
-    if (
-      snapshot === undefined ||
-      error instanceof FileStateConflictError
-    ) {
+    if (snapshot === undefined) {
       exitCode = error instanceof FileStateConflictError ? 2 : 1;
       failureOutput = `${
         error instanceof Error ? error.message : String(error)
@@ -839,7 +837,7 @@ export async function runIntegrate(
         mergeAppliedChanges(packageObserved, fileApplied)
       );
 
-      exitCode = 1;
+      exitCode = error instanceof FileStateConflictError ? 2 : 1;
       failureOutput = failureMessage(
         error,
         failures,
@@ -848,6 +846,7 @@ export async function runIntegrate(
     }
   }
 
+  const failedBeforeLockRelease = failureOutput !== "";
   try {
     await releaseIntegrationLock(lock);
   } catch (error) {
@@ -858,8 +857,10 @@ export async function runIntegrate(
       }\n`;
   }
 
+  if (completionOutput !== "" && !failedBeforeLockRelease) {
+    stdout(completionOutput);
+  }
   if (failureOutput !== "") stderr(failureOutput);
-  if (completionOutput !== "" && exitCode !== 1) stdout(completionOutput);
   return exitCode;
 }
 
@@ -1317,6 +1318,10 @@ function addMdxIntegrationActions(
             expected: { kind: "missing" },
             new: true
           });
+        } else if (inspection.componentMap === undefined) {
+          manualSteps.push(
+            "Create the Next.js MDX component map and connect createScribeComponents() while preserving any application-owned component overrides."
+          );
         } else {
           manualSteps.push(
             "Connect createScribeComponents() in the existing Next.js MDX component map while preserving every current component override."
@@ -1375,16 +1380,16 @@ async function plannedFileChange(
   applicationRoot: string,
   absolutePath: string,
   description: string,
-  content: string
+  content: string,
+  capturedExpected?: ExpectedFileState
 ): Promise<FileChange> {
   const path = transactionRelativePath(
     transactionRoot,
     absolutePath
   );
-  const expected = await captureExpectedFileState(
-    transactionRoot,
-    path
-  );
+  const expected =
+    capturedExpected ??
+    (await captureExpectedFileState(transactionRoot, path));
 
   return {
     path,
@@ -1484,7 +1489,11 @@ async function collectSourceFiles(
 
     const entries = await readdir(directory, {
       withFileTypes: true
-    });
+    }).catch(() => undefined);
+    if (entries === undefined) {
+      truncated = true;
+      return;
+    }
 
     for (const entry of entries) {
       if (files.length >= maxFiles) {
