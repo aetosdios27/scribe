@@ -126,7 +126,7 @@ opaque value
     await expect(
       compileScribeMdx('<Callout variant="warnng">Mind the typo.</Callout>')
     ).rejects.toMatchObject({
-      reason: 'Unknown Callout variant "warnng". Expected one of: note, insight, warning.',
+      reason: 'Unknown Callout variant "warnng". Expected one of: note, insight, warning, success, error.',
       ruleId: "SCB1101",
       source: "scribe"
     });

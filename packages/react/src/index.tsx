@@ -1,4 +1,4 @@
-import { Banner, Callout, CodeFrame, Figure, Publication, ScribeImage } from "./components.js";
+import { Banner, Callout, CodeFrame, Figure, Publication, ScribeImage, Video } from "./components.js";
 import {
   Anchor,
   Blockquote,
@@ -22,14 +22,15 @@ import {
   UnorderedList
 } from "./elements.js";
 
-export { Banner, Callout, CodeFrame, Figure, Publication, ScribeImage } from "./components.js";
+export { Banner, Callout, CodeFrame, Figure, Publication, ScribeImage, Video } from "./components.js";
 export type {
   BannerProps,
   CalloutProps,
   CalloutVariant,
   CodeFrameProps,
   FigureProps,
-  PublicationProps
+  PublicationProps,
+  VideoProps
 } from "./components.js";
 
 /** A framework-neutral MDX component map accepted by MDX 3 renderers. */
@@ -61,7 +62,8 @@ const defaults: ScribeComponents = {
   hr: HorizontalRule,
   Banner,
   Callout,
-  Figure
+  Figure,
+  Video
 };
 
 export interface CreateScribeComponentsOptions {

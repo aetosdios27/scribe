@@ -5,7 +5,7 @@ import { parseCodeMetadata } from "./code-meta.js";
 describe("parseCodeMetadata", () => {
   it("parses the explicit phase-one metadata surface", () => {
     const result = parseCodeMetadata(
-      'filename="peer.rs" lineNumbers highlight="2-4,6" focus="3" add="5" remove="1"',
+      'filename="peer.rs" lineNumbers wrap highlight="2-4,6" focus="3" add="5" remove="1"',
       6
     );
 
@@ -13,6 +13,7 @@ describe("parseCodeMetadata", () => {
     expect(result.value).toEqual({
       filename: "peer.rs",
       lineNumbers: true,
+      wrap: true,
       highlight: [
         { start: 2, end: 4 },
         { start: 6, end: 6 }
@@ -21,6 +22,13 @@ describe("parseCodeMetadata", () => {
       add: [{ start: 5, end: 5 }],
       remove: [{ start: 1, end: 1 }]
     });
+  });
+
+  it("rejects a value on the `wrap` flag", () => {
+    const result = parseCodeMetadata('wrap="true"', 1);
+
+    expect(result.issues.map(({ code }) => code)).toEqual(["SCB1001"]);
+    expect(result.value.wrap).toBe(true);
   });
 
   it("reports unknown, duplicate, and malformed fields with stable codes", () => {
@@ -35,7 +43,7 @@ describe("parseCodeMetadata", () => {
       "SCB1002"
     ]);
     expect(result.issues[1]?.message).toContain(
-      'Expected: filename="...", lineNumbers, highlight="1,3-5", focus="1,3-5", add="1,3-5", remove="1,3-5".'
+      'Expected: filename="...", lineNumbers, wrap, highlight="1,3-5", focus="1,3-5", add="1,3-5", remove="1,3-5".'
     );
   });
 });

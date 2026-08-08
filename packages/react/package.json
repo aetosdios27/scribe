@@ -27,11 +27,18 @@
   },
   "sideEffects": false,
   "peerDependencies": {
+    "mermaid": "^11.0.0",
     "react": "19.2.7"
+  },
+  "peerDependenciesMeta": {
+    "mermaid": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
+    "mermaid": "11.16.1",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
