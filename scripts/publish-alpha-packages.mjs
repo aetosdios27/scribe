@@ -17,8 +17,8 @@ const defaultRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 export async function publishAlphaPackages({
   root = defaultRoot,
   registry = npmRegistry,
-  distTagAttempts = 12,
-  distTagDelayMs = 500
+  distTagAttempts = 60,
+  distTagDelayMs = 1_000
 } = {}) {
   assert(
     Number.isInteger(distTagAttempts) && distTagAttempts > 0,

@@ -89,7 +89,6 @@ describe("alpha package publisher", () => {
 
     await publishAlphaPackages({
       root,
-      distTagAttempts: 3,
       distTagDelayMs: 0,
       registry: {
         versions: async (name) => versions.get(name) ?? [],
@@ -99,7 +98,7 @@ describe("alpha package publisher", () => {
           if (isPublished && tag.alpha === "0.1.0-alpha.8") {
             const n = (alphaReads.get(name) ?? 0) + 1;
             alphaReads.set(name, n);
-            if (n < 2) return { ...tag, alpha: "0.1.0-alpha.7" };
+            if (n < 13) return { ...tag, alpha: "0.1.0-alpha.7" };
             return tag;
           }
           return tag;
@@ -111,7 +110,7 @@ describe("alpha package publisher", () => {
         }
       }
     });
-    expect(alphaReads.get("@scribe-sdk/styles")).toBeGreaterThanOrEqual(2);
+    expect(alphaReads.get("@scribe-sdk/styles")).toBeGreaterThanOrEqual(13);
     expect(published.map(({ name }) => name)).toEqual([
       "@scribe-sdk/styles",
       "@scribe-sdk/react",
