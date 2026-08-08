@@ -61,7 +61,7 @@ describe("publishable package manifests", () => {
 
     await expect(access(join(root, "RELEASE_NOTES.md"))).rejects.toThrow();
     expect(releasing).toContain("bun run release:packages");
-    expect(releasing).toContain("points `latest` at the newest published version");
+    expect(releasing).toContain("The automated publisher does not mutate `latest`");
     expect(releasing).toContain("Post-publication smoke tests");
     expect(releasing).toContain("npm view @scribe-sdk/react dist-tags");
     expect(releasing).not.toMatch(/\/home\/|\\Users\\|_authToken|npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}/u);
