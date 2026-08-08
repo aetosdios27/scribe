@@ -72,14 +72,14 @@ The one-time command used to enter this cycle is:
 bunx changeset pre enter alpha
 ```
 
-Do not repeat it for each alpha. Add normal Changeset fragments during the cycle. `bunx changeset version` consumes new fragments and advances all fixed packages to the next `0.1.0-alpha.N` version. The prerelease tag for new versions is `alpha`, and `latest` is repointed at the newest published alpha after each publication so the public package pages and tagless installs reflect the current build.
+Do not repeat it for each alpha. Add normal Changeset fragments during the cycle. `bunx changeset version` consumes new fragments and advances all fixed packages to the next `0.1.0-alpha.N` version. The prerelease tag for new versions is `alpha`. After every package in a synchronized release is published and verified, an owner may promote `latest` manually so the public package pages and tagless installs reflect that build.
 
 ## Automated release path
 
 The `Release` GitHub Actions workflow runs only after the complete `CI` workflow succeeds for a push to `main`. It never runs for pull requests, failed CI, cancelled CI, or manually dispatched CI. The workflow has two deterministic outcomes:
 
 1. When unreleased Changeset fragments exist, it creates or updates the ready `changeset-release/main` version pull request, synchronizes package versions and changelogs, refreshes `bun.lock`, and dispatches CI for that exact release branch.
-2. When a verified version pull request has been merged and no unreleased fragments remain, it rebuilds and inspects the packages, then runs Scribe's guarded publisher. The publisher requires alpha prerelease mode, publishes each inspected tarball with an explicit `--tag alpha`, skips versions already on npm, publishes the CLI last, waits for each dist-tag to converge, and points `latest` at the newest published version.
+2. When a verified version pull request has been merged and no unreleased fragments remain, it rebuilds and inspects the packages, then runs Scribe's guarded publisher. The publisher requires alpha prerelease mode, publishes each inspected tarball with an explicit `--tag alpha`, skips versions already on npm, publishes the CLI last, and waits for each `alpha` dist-tag to converge.
 
 Publishing uses npm trusted publishing through GitHub OIDC. No npm write token, OTP, or `NODE_AUTH_TOKEN` belongs in GitHub secrets.
 
@@ -190,9 +190,9 @@ Changesets owns versioning and changelogs; it does not publish Scribe packages. 
 bun run release:packages
 ```
 
-The publisher verifies `.changeset/pre.json`, synchronized `0.1.0-alpha.N` manifests, and the npm dist-tags. It publishes only missing `.scribe-release/*.tgz` artifacts, explicitly passes `npm publish --tag alpha --access public`, waits for the `alpha` dist-tag to converge, then repoints `latest` at the published version and waits for that to converge too. npm authenticates the commands from the workflow's OIDC identity.
+The publisher verifies `.changeset/pre.json`, synchronized `0.1.0-alpha.N` manifests, and the npm dist-tags. It publishes only missing `.scribe-release/*.tgz` artifacts, explicitly passes `npm publish --tag alpha --access public`, and waits for the `alpha` dist-tag to converge. npm authenticates publication from the workflow's OIDC identity. The automated publisher does not mutate `latest`.
 
-Do not execute this command manually during ordinary release preparation. Manual publication remains an emergency fallback after diagnosing a failed automated release. Run it from an interactive terminal so npm can open its browser/passkey challenge; never paste a credential into the repository or CI logs. Publish tarballs in the documented order—styles, React, MDX, then CLI—and always include `--tag alpha --access public`. For each package, verify the `alpha` dist-tag resolves to the published version, then explicitly repoint `latest` with `npm dist-tag add @scribe-sdk/<name>@<version> latest` and verify `latest` resolves to that version before continuing, matching the publisher's convergence checks.
+Do not execute this command manually during ordinary release preparation. Manual publication remains an emergency fallback after diagnosing a failed automated release. Run it from an interactive terminal so npm can open its browser/passkey challenge; never paste a credential into the repository or CI logs. Publish tarballs in the documented order—styles, React, MDX, then CLI—and always include `--tag alpha --access public`. Verify every package's `alpha` dist-tag resolves to the synchronized release version before manually promoting `latest` for all four packages and verifying the promoted tags.
 
 ## Post-publication smoke tests
 

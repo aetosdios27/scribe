@@ -66,12 +66,9 @@ export async function publishAlphaPackages({
     }
 
     await assertTagConverged(registry, release.name, "alpha", version, { attempts: distTagAttempts, delayMs: distTagDelayMs });
-    process.stdout.write(`Pointing ${release.name} latest=${version}.\n`);
-    await registry.setDistTag(release.name, version, "latest");
-    await assertTagConverged(registry, release.name, "latest", version, { attempts: distTagAttempts, delayMs: distTagDelayMs });
   }
 
-  process.stdout.write(`Verified all public packages at alpha=${version} and latest=${version}.\n`);
+  process.stdout.write(`Verified all public packages at alpha=${version}.\n`);
 }
 
 const npmRegistry = {
@@ -84,9 +81,6 @@ const npmRegistry = {
   },
   async publishTarball(_name, tarball, tag) {
     runNpm(["publish", tarball, "--tag", tag, "--access", "public"], "inherit");
-  },
-  async setDistTag(name, version, tag) {
-    runNpm(["dist-tag", "add", `${name}@${version}`, tag], "inherit");
   }
 };
 
