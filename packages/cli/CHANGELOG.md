@@ -1,5 +1,14 @@
 # @scribe-sdk/cli
 
+## 0.1.0-alpha.10
+
+### Patch Changes
+
+- f089df6: Harden CLI integration, rollback safety, package-manager detection, local delegation, and Studio startup behavior.
+  - @scribe-sdk/react@0.1.0-alpha.10
+  - @scribe-sdk/styles@0.1.0-alpha.10
+  - @scribe-sdk/mdx@0.1.0-alpha.10
+
 ## 0.1.0-alpha.9
 
 ### Minor Changes
