@@ -19,6 +19,7 @@ describe("published runtime exports", () => {
       "Figure",
       "Publication",
       "ScribeImage",
+      "Video",
       "createScribeComponents"
     ]);
   });
@@ -42,7 +43,8 @@ describe("published type exports", () => {
       "CreateScribeComponentsOptions",
       "FigureProps",
       "PublicationProps",
-      "ScribeComponents"
+      "ScribeComponents",
+      "VideoProps"
     ]);
   });
 

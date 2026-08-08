@@ -69,7 +69,7 @@ describe("publishable package manifests", () => {
 
   it("keeps React singular and peer-owned", async () => {
     const manifest = await readJson(join(root, "packages/react/package.json"));
-    expect(manifest.peerDependencies).toEqual({ react: "19.2.7" });
+    expect(manifest.peerDependencies).toEqual({ mermaid: "^11.0.0", react: "19.2.7" });
     expect(manifest.dependencies?.react).toBeUndefined();
     expect(manifest.sideEffects).toBe(false);
   });

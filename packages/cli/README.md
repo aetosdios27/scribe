@@ -356,7 +356,7 @@ Leading YAML frontmatter is metadata, not article prose. When it contains `title
 </Callout>
 ```
 
-Supported variants are `note`, `insight`, and `warning`. Unknown static variants fail MDX validation with an actionable diagnostic.
+Supported variants are `note`, `insight`, `warning`, `success`, and `error`. Unknown static variants fail MDX validation with an actionable diagnostic.
 
 ### Figure and responsive images
 
@@ -375,6 +375,16 @@ const components = createScribeComponents({
   }
 });
 ```
+
+Images render as a zoomable trigger by default: clicking opens a native `<dialog>` with a larger view and the `alt` text as a caption. Opt out with a `#nozoom` URL fragment (`![diagram](/diagram.svg#nozoom)`) or `zoom={false}` on `<img>`.
+
+### Video
+
+```mdx
+<Video src="/demo.webm" poster="/demo-poster.jpg" caption="A local sync running end to end." />
+```
+
+`src` is required; `poster`, `caption`, and `wide` are optional. The MIME type is inferred from the file extension (`.webm` or `.mp4`). Video renders inside the same `Figure` markup, so it inherits Figure's layout and caption styling.
 
 ### Code fences
 
@@ -395,6 +405,7 @@ Supported metadata is explicit:
 | --- | --- | --- |
 | filename | `filename="src/peer.rs"` | Displays a filename in the code frame |
 | line numbers | `lineNumbers` | Displays line numbers |
+| wrap | `wrap` | Wraps long lines by default |
 | highlight | `highlight="2,4-6"` | Emphasizes lines |
 | focus | `focus="2,4-6"` | Focuses lines and de-emphasizes others |
 | additions | `add="4-6"` | Marks added lines |
@@ -402,7 +413,22 @@ Supported metadata is explicit:
 
 Ranges are one-based, comma-separated, and inclusive. Unknown or malformed fields fail compilation. Unsupported languages warn and fall back to plaintext by default. Enable strict behavior with `createScribeMdxOptions({ strict: true })`, `createScribeNextMdxOptions({ strict: true })`, or `scribe validate article.mdx --strict`.
 
+Every code frame includes a wrap toggle next to the copy button, letting readers switch a block between scrolling and wrapping regardless of the `wrap` flag.
+
 Inline backticks remain visually distinct from framed code blocks.
+
+### Mermaid diagrams
+
+````mdx
+```mermaid
+graph TD
+  A[Peer connects] --> B{Handshake ok?}
+  B -->|yes| C[Exchange bitfield]
+  B -->|no| D[Drop connection]
+```
+````
+
+A fenced block labeled `mermaid` renders as a diagram instead of highlighted code. Diagrams render client-side via a lazily loaded `mermaid` peer dependency; install it in the host app to enable rendering (`mermaid` is an optional peer dependency of `@scribe-sdk/react`).
 
 ## Customize Scribe to the host
 
