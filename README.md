@@ -428,7 +428,7 @@ graph TD
 ```
 ````
 
-A fenced block labeled `mermaid` renders as a diagram instead of highlighted code. Diagrams render client-side via a lazily loaded `mermaid` peer dependency; install it in the host app to enable rendering (`mermaid` is an optional peer dependency of `@scribe-sdk/react`).
+A fenced block labeled `mermaid` renders as a diagram instead of highlighted code. Diagrams render client-side, and `mermaid` is loaded lazily so it only enters the bundle for pages that use a diagram. The raw source shows as a fallback until the diagram renders.
 
 ## Customize Scribe to the host
 

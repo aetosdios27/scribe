@@ -17,7 +17,7 @@ export function MermaidDiagram({ source }: MermaidDiagramProps) {
 
     import("mermaid")
       .then(async (mod) => {
-        const mermaid = mod.default ?? mod;
+        const mermaid = mod.default;
         mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
         const { svg: rendered } = await mermaid.render(id, source);
         if (!cancelled) setSvg(rendered);
