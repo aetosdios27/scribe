@@ -117,7 +117,7 @@ createRoot(root).render(<Article components={createScribeComponents()} />);
   run("bun", ["run", "typecheck"], directory);
   run("bun", ["run", "build"], directory);
   run("bun", ["run", "build:foundation"], directory);
-  run("node", ["--input-type=module", "-e", "import('@scribe-sdk/react').then((api) => { const expected = ['Banner','Callout','CodeFrame','Figure','Publication','ScribeImage','createScribeComponents']; if (JSON.stringify(Object.keys(api).sort()) !== JSON.stringify(expected)) process.exit(1) })"], directory);
+  run("node", ["--input-type=module", "-e", "import('@scribe-sdk/react').then((api) => { const expected = ['Banner','Callout','CodeFrame','Figure','Publication','ScribeImage','Video','createScribeComponents']; if (JSON.stringify(Object.keys(api).sort()) !== JSON.stringify(expected)) process.exit(1) })"], directory);
   run("node", ["--input-type=module", "-e", "import('@scribe-sdk/react/components').then(() => process.exit(1)).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') process.exit(1) })"], directory);
   await assertPackagedSkill(directory);
   const cliVersion = run(bin(directory, "scribe"), ["--version"], directory);
