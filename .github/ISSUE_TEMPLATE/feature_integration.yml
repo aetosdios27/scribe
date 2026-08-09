@@ -1,0 +1,81 @@
+name: Feature / integration proposal
+description: Describe a concrete publishing or integration limitation before proposing machinery.
+title: "[Proposal]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the publishing problem. Scribe prioritizes demonstrated integration needs over speculative feature lists.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to publish or build?
+      description: Describe the real site, article, workflow, or integration. Links and reduced examples are useful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: limitation
+    attributes:
+      label: What concrete limitation did you hit?
+      description: Show where the current behavior or API stops you.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: How are you solving it today?
+      description: Include workarounds, custom components, CSS bridges, compiler plugins, or manual steps.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-api
+    attributes:
+      label: Why can the current Scribe API not solve it?
+      description: Name the API, style mode, compiler adapter, or boundary you tried.
+    validations:
+      required: true
+
+  - type: textarea
+    id: smallest-solution
+    attributes:
+      label: What would the smallest useful solution look like?
+      description: Describe the contract, not a generalized system. It is fine to identify uncertainty.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: surfaces
+    attributes:
+      label: Affected surfaces
+      description: Select every area the proposal may change.
+      options:
+        - label: Public API or package exports
+        - label: Framework integration or Server/Client Component behavior
+        - label: Styling or visual contract
+        - label: MDX syntax or compiler behavior
+        - label: CLI behavior
+        - label: Source safety, trust, filesystem, or network boundaries
+        - label: None of these / not sure
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Add a reduced integration, screenshots, repeated cases, measurements, or links that show the need.
+
+  - type: dropdown
+    id: implementation
+    attributes:
+      label: Would you be interested in implementing it?
+      options:
+        - "Yes"
+        - "Maybe, with design guidance"
+        - "No"
+    validations:
+      required: true

@@ -1,0 +1,111 @@
+name: Bug report
+description: Report a reproducible problem in Scribe.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to isolate the problem. A small reproduction is the fastest route to a useful answer and a durable regression test.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What is the smallest clear statement of the problem?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect Scribe to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Link a small repository or provide the smallest source/configuration and exact steps that reproduce the problem. Remove unrelated application code and secrets.
+      placeholder: |
+        1. Install ...
+        2. Compile or open ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: input
+    id: package-version
+    attributes:
+      label: Scribe package and version
+      description: For example, @scribe-sdk/mdx 0.1.0-alpha.10. Include every affected package if versions differ.
+      placeholder: "@scribe-sdk/... 0.1.0-alpha..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: framework-runtime
+    attributes:
+      label: Framework and runtime
+      description: Include relevant versions of React, Next.js/Vite, MDX, Bun/Node/npm, and the browser when applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Operating environment
+      description: Include operating system, architecture, package manager, and anything else relevant to filesystem or browser behavior.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and diagnostics
+      description: Paste the complete relevant error and SCB diagnostic codes. Remove secrets and personal paths when needed.
+      render: shell
+
+  - type: dropdown
+    id: public-package
+    attributes:
+      label: Current public or packed package
+      description: Does this reproduce with a current public or locally packed Scribe package rather than only workspace source?
+      options:
+        - "Yes — current public package"
+        - "Yes — locally packed package"
+        - "No"
+        - "Not tested"
+    validations:
+      required: true
+
+  - type: textarea
+    id: integration-details
+    attributes:
+      label: Integration details
+      description: Which style mode, compiler adapter, host styling system, route/rendering mode, or Studio workflow is involved?
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Visual evidence
+      description: If appearance is involved, attach screenshots and identify the style mode and viewport.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched open and closed issues for this behavior.
+          required: true
+        - label: I removed credentials, private source, and personal data from the reproduction and logs.
+          required: true
