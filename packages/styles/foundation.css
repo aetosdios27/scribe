@@ -267,6 +267,31 @@
     user-select: none;
   }
 
+  :where(.scribe .scribe-code-frame__pre[data-scribe-wrap]) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  :where(.scribe .scribe-code-frame__pre[data-scribe-wrap] code) {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  :where(.scribe .scribe-code-frame__pre[data-scribe-wrap] .line) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  :where(.scribe .scribe-mermaid) {
+    display: flex;
+    justify-content: center;
+  }
+
+  :where(.scribe .scribe-mermaid svg) {
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+
   :where(.scribe .scribe-code-frame__pre .line.highlighted) {
     background: color-mix(in oklab, var(--scribe-accent) 10%, transparent);
     box-shadow: inset 2px 0 color-mix(in oklab, var(--scribe-accent) 74%, transparent);
@@ -342,9 +367,26 @@
     margin-inline: 0;
   }
 
-  :where(.scribe .scribe-figure > :is(img, picture, video, svg), .scribe > p > .scribe-image) {
+  :where(.scribe .scribe-figure > :is(img, picture, video, svg), .scribe .scribe-image) {
     inline-size: 100%;
     block-size: auto;
+  }
+
+  :where(.scribe .scribe-image-zoom-trigger) {
+    display: block;
+    inline-size: 100%;
+  }
+
+  :where(.scribe .scribe-image-dialog) {
+    max-inline-size: min(92vw, 60rem);
+    max-block-size: 90vh;
+  }
+
+  :where(.scribe .scribe-image-dialog__image) {
+    display: block;
+    max-inline-size: 100%;
+    block-size: auto;
+    margin-inline: auto;
   }
 
   @media (prefers-color-scheme: dark) {
