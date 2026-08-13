@@ -9,76 +9,160 @@ import {
   writeFile
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import {
+  dirname,
+  join,
+  relative,
+  resolve
+} from "node:path";
 import { createRequire } from "node:module";
 
-import { executable, packageBin } from "./lib/platform.mjs";
-import { spawnPortableSync } from "./lib/spawn.mjs";
+import {
+  executable,
+  packageBin
+} from "./lib/platform.mjs";
+import {
+  spawnPortableSync
+} from "./lib/spawn.mjs";
 
 const requireCliDependency = createRequire(
-  new URL("../packages/cli/package.json", import.meta.url)
+  new URL(
+    "../packages/cli/package.json",
+    import.meta.url
+  )
 );
-const { strToU8, zipSync } = requireCliDependency("fflate");
+
+const {
+  strToU8,
+  zipSync
+} = requireCliDependency("fflate");
 
 const commandTimeoutMilliseconds = 300_000;
 const packageManagerInstallTimeoutMilliseconds = 600_000;
 
 const root = process.cwd();
-const release = join(root, ".scribe-release");
-const manifest = JSON.parse(
-  await readFile(join(root, "packages", "cli", "package.json"), "utf8")
+const release = join(
+  root,
+  ".scribe-release"
 );
+
+const manifest = JSON.parse(
+  await readFile(
+    join(
+      root,
+      "packages",
+      "cli",
+      "package.json"
+    ),
+    "utf8"
+  )
+);
+
 const version = manifest.version;
-const expectedVersionOutput = `scribe ${version}`;
+const expectedVersionOutput =
+  `scribe ${version}`;
 
-const nativePackage = currentNativePackage();
+const nativePackage =
+  currentNativePackage();
+
 const nativeTarballName =
-  `${nativePackage.replace("@scribe-sdk/", "scribe-sdk-")}-${version}.tgz`;
+  `${nativePackage.replace(
+    "@scribe-sdk/",
+    "scribe-sdk-"
+  )}-${version}.tgz`;
 
-const directory = await mkdtemp(join(tmpdir(), "scribe portability "));
-const tarballDirectory = join(directory, "tarballs");
+const directory = await mkdtemp(
+  join(
+    tmpdir(),
+    "scribe portability "
+  )
+);
+
+const tarballDirectory = join(
+  directory,
+  "tarballs"
+);
+
 const articleDirectory = join(
   directory,
   "articles with spaces",
   "unicode-記事"
 );
+
 const results = [];
 
 try {
-  await mkdir(tarballDirectory, { recursive: true });
-  await mkdir(articleDirectory, { recursive: true });
+  await mkdir(
+    tarballDirectory,
+    {
+      recursive: true
+    }
+  );
+
+  await mkdir(
+    articleDirectory,
+    {
+      recursive: true
+    }
+  );
 
   const dependencies = {};
 
-  for (const name of ["mdx", "react", "styles", "cli"]) {
-    const filename = `scribe-sdk-${name}-${version}.tgz`;
+  for (
+    const name of [
+      "mdx",
+      "react",
+      "styles",
+      "cli"
+    ]
+  ) {
+    const filename =
+      `scribe-sdk-${name}-${version}.tgz`;
 
     await copyFile(
-      join(release, filename),
-      join(tarballDirectory, filename)
+      join(
+        release,
+        filename
+      ),
+      join(
+        tarballDirectory,
+        filename
+      )
     );
 
-    dependencies[`@scribe-sdk/${name}`] =
+    dependencies[
+      `@scribe-sdk/${name}`
+    ] =
       `file:./tarballs/${filename}`;
   }
 
   await copyFile(
-    join(release, nativeTarballName),
-    join(tarballDirectory, nativeTarballName)
+    join(
+      release,
+      nativeTarballName
+    ),
+    join(
+      tarballDirectory,
+      nativeTarballName
+    )
   );
 
   dependencies[nativePackage] =
     `file:./tarballs/${nativeTarballName}`;
 
   await write(
-    join(directory, "package.json"),
+    join(
+      directory,
+      "package.json"
+    ),
     JSON.stringify(
       {
         name: "scribe-portability-smoke",
         private: true,
         type: "module",
         scripts: {
-          "scribe:version": "scribe --version"
+          "scribe:version":
+            "scribe --version"
         },
         dependencies: {
           ...dependencies,
@@ -92,8 +176,15 @@ try {
     )
   );
 
-  const valid = join(articleDirectory, "valid article.mdx");
-  const invalid = join(articleDirectory, "invalid article.mdx");
+  const valid = join(
+    articleDirectory,
+    "valid article.mdx"
+  );
+
+  const invalid = join(
+    articleDirectory,
+    "invalid article.mdx"
+  );
 
   await write(
     valid,
@@ -105,14 +196,21 @@ try {
     '<Callout variant="warnng">Typo</Callout>\r\n'
   );
 
-  const globalStyle = join(directory, "src", "index.css");
+  const globalStyle = join(
+    directory,
+    "src",
+    "index.css"
+  );
 
   await write(
     globalStyle,
     "body { margin: 0; }\r\n"
   );
 
-  const mediumExport = join(directory, "medium export.zip");
+  const mediumExport = join(
+    directory,
+    "medium export.zip"
+  );
 
   await writeFile(
     mediumExport,
@@ -132,97 +230,209 @@ try {
 
   run(
     executable("bun"),
-    ["install", "--frozen-lockfile"],
+    [
+      "install",
+      "--frozen-lockfile"
+    ],
     directory
   );
 
   /*
-   * Exercise the actual installed package-manager shims directly.
+   * Exercise the actual installed package-bin launchers.
    *
-   * Do not route these through `bun x`. The JS bootstrap intentionally
-   * launches the native Rust process with inherited stdio so interactive
-   * terminal behavior remains correct. Nesting that under `bun x` makes
-   * captured stdout belong to the wrong process boundary.
+   * This intentionally tests the JS bootstrap rather than bypassing it:
+   * package-manager shims are part of the public CLI contract.
    */
-  for (const command of ["scribe", "scb"]) {
+  for (
+    const command of [
+      "scribe",
+      "scb"
+    ]
+  ) {
     const reportedVersion =
-      runCli(command, ["--version"]).stdout.trim();
+      runCli(
+        command,
+        ["--version"]
+      ).stdout.trim();
 
     assert(
-      reportedVersion === expectedVersionOutput,
-      `${command} reported ${reportedVersion}; expected ${expectedVersionOutput}.`
+      reportedVersion ===
+        expectedVersionOutput,
+      `${command} reported '${reportedVersion}'; expected '${expectedVersionOutput}'.`
     );
 
-    runCli(command, ["--help"]);
-    runCli(command, ["validate", "--help"]);
+    runCli(
+      command,
+      ["--help"]
+    );
+
+    runCli(
+      command,
+      [
+        "validate",
+        "--help"
+      ]
+    );
   }
 
-  runCli("scribe", ["init", "--help"]);
-  runCli("scribe", ["integrate", "--help"]);
-  runCli("scribe", ["import", "--help"]);
-  runCli("scribe", ["studio", "--help"]);
-  runCli("scribe", ["studio", "init", "--help"]);
-  runCli("scribe", ["update", "--help"]);
+  runCli(
+    "scribe",
+    [
+      "init",
+      "--help"
+    ]
+  );
+
+  runCli(
+    "scribe",
+    [
+      "integrate",
+      "--help"
+    ]
+  );
+
+  runCli(
+    "scribe",
+    [
+      "import",
+      "--help"
+    ]
+  );
+
+  runCli(
+    "scribe",
+    [
+      "studio",
+      "--help"
+    ]
+  );
+
+  runCli(
+    "scribe",
+    [
+      "studio",
+      "init",
+      "--help"
+    ]
+  );
+
+  runCli(
+    "scribe",
+    [
+      "update",
+      "--help"
+    ]
+  );
 
   run(
     executable("bun"),
-    ["run", "scribe:version"],
+    [
+      "run",
+      "scribe:version"
+    ],
     directory
   );
 
   const beforeInitDryRun =
-    await snapshotFixtureTree(directory);
+    await snapshotFixtureTree(
+      directory
+    );
 
-  const dryRun =
-    runCli("scribe", ["init", "--dry-run"]);
+  const dryRun = runCli(
+    "scribe",
+    [
+      "init",
+      "--dry-run"
+    ]
+  );
 
   assert(
-    dryRun.stdout.includes("content/blog") &&
-      dryRun.stdout.includes("No files will be generated."),
+    dryRun.stdout.includes(
+      "content/blog"
+    ) &&
+      dryRun.stdout.includes(
+        "No files will be generated."
+      ),
     "Init dry run did not describe the empty content launchpad."
   );
 
   assert(
-    JSON.stringify(await snapshotFixtureTree(directory)) ===
-      JSON.stringify(beforeInitDryRun),
+    JSON.stringify(
+      await snapshotFixtureTree(
+        directory
+      )
+    ) ===
+      JSON.stringify(
+        beforeInitDryRun
+      ),
     "Init dry run modified the fixture."
   );
 
   const beforeInit =
     await snapshotFixtureTree(
       directory,
-      new Set(["content"])
+      new Set([
+        "content"
+      ])
     );
 
-  runCli("scribe", ["init", "--yes"]);
+  runCli(
+    "scribe",
+    [
+      "init",
+      "--yes"
+    ]
+  );
 
   assert(
     JSON.stringify(
       await snapshotFixtureTree(
         directory,
-        new Set(["content"])
+        new Set([
+          "content"
+        ])
       )
-    ) === JSON.stringify(beforeInit),
+    ) ===
+      JSON.stringify(
+        beforeInit
+      ),
     "Init changed host files while creating the content launchpad."
   );
 
   assert(
-    (await readdir(
-      join(directory, "content", "blog")
-    )).length === 0,
+    (
+      await readdir(
+        join(
+          directory,
+          "content",
+          "blog"
+        )
+      )
+    ).length === 0,
     "Init generated content instead of leaving the launchpad empty."
   );
 
-  runCli("scribe", ["init", "--yes"]);
+  runCli(
+    "scribe",
+    [
+      "init",
+      "--yes"
+    ]
+  );
 
   const beforeImportDryRun =
-    await snapshotFixtureTree(directory);
+    await snapshotFixtureTree(
+      directory
+    );
 
   runCli(
     "scribe",
     [
       "import",
-      relative(directory, mediumExport),
+      relative(
+        directory,
+        mediumExport
+      ),
       "--into",
       "imported",
       "--dry-run"
@@ -230,8 +440,14 @@ try {
   );
 
   assert(
-    JSON.stringify(await snapshotFixtureTree(directory)) ===
-      JSON.stringify(beforeImportDryRun),
+    JSON.stringify(
+      await snapshotFixtureTree(
+        directory
+      )
+    ) ===
+      JSON.stringify(
+        beforeImportDryRun
+      ),
     "Medium import dry run modified the fixture."
   );
 
@@ -239,7 +455,10 @@ try {
     "scribe",
     [
       "import",
-      relative(directory, mediumExport),
+      relative(
+        directory,
+        mediumExport
+      ),
       "--into",
       "imported",
       "--no-download-assets",
@@ -254,7 +473,12 @@ try {
   );
 
   assert(
-    (await readFile(importedArticle, "utf8")).includes(
+    (
+      await readFile(
+        importedArticle,
+        "utf8"
+      )
+    ).includes(
       "Imported through the packed CLI."
     ),
     "Packed CLI did not import the Medium fixture."
@@ -264,33 +488,54 @@ try {
     "scribe",
     [
       "validate",
-      relative(directory, importedArticle)
+      relative(
+        directory,
+        importedArticle
+      )
     ]
   );
 
   const beforeIntegrateDryRun =
-    await snapshotFixtureTree(directory);
+    await snapshotFixtureTree(
+      directory
+    );
 
   const integrateDryRun =
     runCli(
       "scribe",
-      ["integrate", "--dry-run"]
+      [
+        "integrate",
+        "--dry-run"
+      ]
     );
 
   assert(
-    integrateDryRun.stdout.includes("Recommendation") &&
-      integrateDryRun.stdout.includes("Mode    default"),
+    integrateDryRun.stdout.includes(
+      "Recommendation"
+    ) &&
+      integrateDryRun.stdout.includes(
+        "Mode    default"
+      ),
     "Integrate dry run did not recommend default mode for the raw Vite fixture."
   );
 
   assert(
-    JSON.stringify(await snapshotFixtureTree(directory)) ===
-      JSON.stringify(beforeIntegrateDryRun),
+    JSON.stringify(
+      await snapshotFixtureTree(
+        directory
+      )
+    ) ===
+      JSON.stringify(
+        beforeIntegrateDryRun
+      ),
     "Integrate dry run modified the fixture."
   );
 
-  const usage =
-    runCli("scribe", [], false);
+  const usage = runCli(
+    "scribe",
+    [],
+    false
+  );
 
   assert(
     usage.status === 0,
@@ -322,14 +567,20 @@ try {
 
   runCli(
     "scribe",
-    ["validate", resolve(valid)]
+    [
+      "validate",
+      resolve(valid)
+    ]
   );
 
   runCli(
     "scb",
     [
       "validate",
-      relative(directory, valid)
+      relative(
+        directory,
+        valid
+      )
     ]
   );
 
@@ -358,7 +609,10 @@ try {
       "scribe",
       [
         "validate",
-        relative(directory, invalid)
+        relative(
+          directory,
+          invalid
+        )
       ],
       false
     );
@@ -369,21 +623,27 @@ try {
   );
 
   assert(
-    rejected.stderr.includes("SCB1101"),
+    rejected.stderr.includes(
+      "SCB1101"
+    ),
     "Invalid article did not report SCB1101."
   );
 
   assert(
-    !/\n\s+at\s/u.test(rejected.stderr),
+    !/\n\s+at\s/u.test(
+      rejected.stderr
+    ),
     "Invalid article exposed an internal stack trace."
   );
 
-  for (const name of [
-    "mdx",
-    "react",
-    "styles",
-    "cli"
-  ]) {
+  for (
+    const name of [
+      "mdx",
+      "react",
+      "styles",
+      "cli"
+    ]
+  ) {
     const installed =
       JSON.parse(
         await readFile(
@@ -399,7 +659,8 @@ try {
       );
 
     assert(
-      installed.version === version,
+      installed.version ===
+        version,
       `@scribe-sdk/${name} installed at ${installed.version}; expected ${version}.`
     );
   }
@@ -410,7 +671,9 @@ try {
         join(
           directory,
           "node_modules",
-          ...nativePackage.split("/"),
+          ...nativePackage.split(
+            "/"
+          ),
           "package.json"
         ),
         "utf8"
@@ -418,14 +681,20 @@ try {
     );
 
   assert(
-    installedNative.version === version,
+    installedNative.version ===
+      version,
     `${nativePackage} installed at ${installedNative.version}; expected ${version}.`
   );
 
   await verifyLocalNpmInstall();
   await verifyGlobalInstalls();
 } finally {
-  await mkdir(release, { recursive: true });
+  await mkdir(
+    release,
+    {
+      recursive: true
+    }
+  );
 
   await writeFile(
     join(
@@ -434,10 +703,13 @@ try {
     ),
     `${JSON.stringify(
       {
-        platform: process.platform,
-        architecture: process.arch,
+        platform:
+          process.platform,
+        architecture:
+          process.arch,
         version,
-        temporaryConsumer: "removed",
+        temporaryConsumer:
+          "removed",
         results
       },
       null,
@@ -465,7 +737,10 @@ function runCli(
   env = {}
 ) {
   return run(
-    packageBin(directory, command),
+    packageBin(
+      directory,
+      command
+    ),
     args,
     directory,
     requireSuccess,
@@ -482,7 +757,10 @@ function run(
   timeoutMilliseconds = commandTimeoutMilliseconds
 ) {
   const renderedCommand =
-    [command, ...args].join(" ");
+    [
+      command,
+      ...args
+    ].join(" ");
 
   process.stdout.write(
     `Running portability command: ${renderedCommand}\n`
@@ -497,22 +775,27 @@ function run(
         encoding: "utf8",
         env: {
           ...process.env,
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1",
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD:
+            "1",
           ...env
         },
         timeout: timeoutMilliseconds
       }
     );
 
-  if (result.error) {
-    throw result.error;
-  }
+  if (result.error) throw result.error;
 
   results.push({
-    command: renderedCommand,
-    status: result.status,
-    stdout: result.stdout?.trim() ?? "",
-    stderr: result.stderr?.trim() ?? ""
+    command:
+      renderedCommand,
+    status:
+      result.status,
+    stdout:
+      result.stdout?.trim() ??
+      "",
+    stderr:
+      result.stderr?.trim() ??
+      ""
   });
 
   if (
@@ -528,8 +811,10 @@ function run(
 }
 
 async function verifyLocalNpmInstall() {
-  const npmDirectory =
-    join(directory, "npm-local");
+  const npmDirectory = join(
+    directory,
+    "npm-local"
+  );
 
   await mkdir(
     npmDirectory,
@@ -539,10 +824,14 @@ async function verifyLocalNpmInstall() {
   );
 
   await write(
-    join(npmDirectory, "package.json"),
+    join(
+      npmDirectory,
+      "package.json"
+    ),
     JSON.stringify(
       {
-        name: "scribe-portability-npm-smoke",
+        name:
+          "scribe-portability-npm-smoke",
         private: true,
         dependencies: {
           "@scribe-sdk/cli":
@@ -569,8 +858,11 @@ async function verifyLocalNpmInstall() {
             "file:../tarballs/" +
             nativeTarballName,
 
-          react: "19.2.7",
-          "react-dom": "19.2.7"
+          react:
+            "19.2.7",
+
+          "react-dom":
+            "19.2.7"
         }
       },
       null,
@@ -586,9 +878,20 @@ async function verifyLocalNpmInstall() {
       "--no-fund"
     ],
     npmDirectory,
-    true,
-    {},
-    packageManagerInstallTimeoutMilliseconds
+    true, {}, packageManagerInstallTimeoutMilliseconds
+  );
+
+  const npxVersion =
+    run(
+      executable("npx"),
+      ["--no-install", "scribe", "--version"],
+      npmDirectory
+    ).stdout.trim();
+
+  assert(
+    npxVersion ===
+      expectedVersionOutput,
+    `npx scribe reported ${npxVersion}; expected ${expectedVersionOutput}.`
   );
 
   const npmVersion =
@@ -602,7 +905,8 @@ async function verifyLocalNpmInstall() {
     ).stdout.trim();
 
   assert(
-    npmVersion === expectedVersionOutput,
+    npmVersion ===
+      expectedVersionOutput,
     `Local npm scribe reported ${npmVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -617,7 +921,8 @@ async function verifyLocalNpmInstall() {
     ).stdout.trim();
 
   assert(
-    npmAliasVersion === expectedVersionOutput,
+    npmAliasVersion ===
+      expectedVersionOutput,
     `Local npm scb reported ${npmAliasVersion}; expected ${expectedVersionOutput}.`
   );
 }
@@ -645,7 +950,10 @@ async function verifyGlobalInstalls() {
   );
 
   const npmPrefix =
-    join(directory, "npm-global");
+    join(
+      directory,
+      "npm-global"
+    );
 
   run(
     executable("npm"),
@@ -659,16 +967,18 @@ async function verifyGlobalInstalls() {
       ...packageTarballs
     ],
     directory,
-    true,
-    {},
-    packageManagerInstallTimeoutMilliseconds
+    true, {}, packageManagerInstallTimeoutMilliseconds
   );
 
   const npmScribe =
     await findExecutable(
-      process.platform === "win32"
+      process.platform ===
+        "win32"
         ? npmPrefix
-        : join(npmPrefix, "bin"),
+        : join(
+            npmPrefix,
+            "bin"
+          ),
       "scribe"
     );
 
@@ -680,15 +990,20 @@ async function verifyGlobalInstalls() {
     ).stdout.trim();
 
   assert(
-    npmVersion === expectedVersionOutput,
+    npmVersion ===
+      expectedVersionOutput,
     `Global npm scribe reported ${npmVersion}; expected ${expectedVersionOutput}.`
   );
 
   const npmAlias =
     await findExecutable(
-      process.platform === "win32"
+      process.platform ===
+        "win32"
         ? npmPrefix
-        : join(npmPrefix, "bin"),
+        : join(
+            npmPrefix,
+            "bin"
+          ),
       "scb"
     );
 
@@ -700,7 +1015,8 @@ async function verifyGlobalInstalls() {
     ).stdout.trim();
 
   assert(
-    npmAliasVersion === expectedVersionOutput,
+    npmAliasVersion ===
+      expectedVersionOutput,
     `Global npm scb reported ${npmAliasVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -724,11 +1040,14 @@ async function verifyGlobalInstalls() {
     "Global npm scribe did not delegate to print the project integration state."
   );
 
-  const bunHome =
-    join(directory, "bun-global");
+  const bunHome = join(
+    directory,
+    "bun-global"
+  );
 
   const bunEnv = {
-    BUN_INSTALL: bunHome
+    BUN_INSTALL:
+      bunHome
   };
 
   run(
@@ -772,7 +1091,8 @@ async function verifyGlobalInstalls() {
     ).stdout.trim();
 
   assert(
-    bunVersion === expectedVersionOutput,
+    bunVersion ===
+      expectedVersionOutput,
     `Global Bun scribe reported ${bunVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -792,7 +1112,8 @@ async function verifyGlobalInstalls() {
     ).stdout.trim();
 
   assert(
-    bunAliasVersion === expectedVersionOutput,
+    bunAliasVersion ===
+      expectedVersionOutput,
     `Global Bun scb reported ${bunAliasVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -824,16 +1145,21 @@ async function findExecutable(
 ) {
   for (
     const candidate of
-      process.platform === "win32"
+      process.platform ===
+      "win32"
         ? [
             `${name}.exe`,
             `${name}.cmd`,
             name
           ]
-        : [name]
+        : [
+            name
+          ]
   ) {
-    const path =
-      join(directory, candidate);
+    const path = join(
+      directory,
+      candidate
+    );
 
     try {
       await access(path);
@@ -887,20 +1213,28 @@ async function snapshotFixtureTree(
         await readdir(
           current,
           {
-            withFileTypes: true
+            withFileTypes:
+              true
           }
         )
       ).sort(
-        (left, right) =>
+        (
+          left,
+          right
+        ) =>
           left.name.localeCompare(
             right.name
           )
       );
 
-    for (const entry of entries) {
+    for (
+      const entry of entries
+    ) {
       if (
         prefix === "" &&
-        excluded.has(entry.name)
+        excluded.has(
+          entry.name
+        )
       ) {
         continue;
       }
@@ -910,13 +1244,14 @@ async function snapshotFixtureTree(
           ? entry.name
           : `${prefix}/${entry.name}`;
 
-      const path =
-        join(
-          current,
-          entry.name
-        );
+      const path = join(
+        current,
+        entry.name
+      );
 
-      if (entry.isDirectory()) {
+      if (
+        entry.isDirectory()
+      ) {
         snapshot.push(
           `directory:${relativePath}`
         );
@@ -929,7 +1264,9 @@ async function snapshotFixtureTree(
         snapshot.push(
           `file:${relativePath}:${(
             await readFile(path)
-          ).toString("base64")}`
+          ).toString(
+            "base64"
+          )}`
         );
       }
     }
@@ -942,30 +1279,39 @@ async function snapshotFixtureTree(
 
 function currentNativePackage() {
   if (
-    process.platform === "darwin" &&
+    process.platform ===
+      "darwin" &&
     (
-      process.arch === "x64" ||
-      process.arch === "arm64"
+      process.arch ===
+        "x64" ||
+      process.arch ===
+        "arm64"
     )
   ) {
     return `@scribe-sdk/cli-darwin-${process.arch}`;
   }
 
   if (
-    process.platform === "win32" &&
+    process.platform ===
+      "win32" &&
     (
-      process.arch === "x64" ||
-      process.arch === "arm64"
+      process.arch ===
+        "x64" ||
+      process.arch ===
+        "arm64"
     )
   ) {
     return `@scribe-sdk/cli-win32-${process.arch}-msvc`;
   }
 
   if (
-    process.platform === "linux" &&
+    process.platform ===
+      "linux" &&
     (
-      process.arch === "x64" ||
-      process.arch === "arm64"
+      process.arch ===
+        "x64" ||
+      process.arch ===
+        "arm64"
     )
   ) {
     const report =
@@ -974,9 +1320,11 @@ function currentNativePackage() {
     const gnu =
       report !== undefined &&
       "header" in report &&
-      typeof report.header === "object" &&
+      typeof report.header ===
+        "object" &&
       report.header !== null &&
-      "glibcVersionRuntime" in report.header;
+      "glibcVersionRuntime" in
+        report.header;
 
     return `@scribe-sdk/cli-linux-${process.arch}-${gnu ? "gnu" : "musl"}`;
   }
@@ -991,6 +1339,8 @@ function assert(
   message
 ) {
   if (!condition) {
-    throw new Error(message);
+    throw new Error(
+      message
+    );
   }
 }
