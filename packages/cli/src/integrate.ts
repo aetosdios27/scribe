@@ -1,7 +1,6 @@
 import { constants } from "node:fs";
 import { access, readFile, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { createInterface } from "node:readline/promises";
 
 import { suggestClosest } from "./cli-output.js";
 import { integrateHelp } from "./command-help.js";
@@ -42,6 +41,11 @@ import {
   type AlignmentReport,
   type InstalledPackageVersion
 } from "./version-alignment.js";
+import {
+  promptConfirm,
+  renderReport,
+  renderTask
+} from "./terminal-ui.js";
 
 export type StyleMode = "foundation" | "default" | "tailwind";
 export type { PackageManager };
@@ -132,7 +136,7 @@ export interface IntegrateDependencies {
   readonly version: string;
   readonly stdout?: (value: string) => void;
   readonly stderr?: (value: string) => void;
-  readonly confirm?: (question: string) => Promise<boolean>;
+  readonly confirm?: (question: string) => Promise<boolean | null>;
   readonly runCommand?: (command: PackageCommand, cwd: string) => Promise<number>;
 }
 
@@ -718,8 +722,9 @@ export async function runIntegrate(
       "Apply this Scribe integration plan?"
     );
   } else {
-    confirmed = await confirmInteractively(
-      "Apply this Scribe integration plan?"
+    confirmed = await promptConfirm(
+      "Apply this Scribe integration plan?",
+      false
     );
   }
 
@@ -754,14 +759,17 @@ export async function runIntegrate(
   let failureOutput = "";
 
   try {
+    stdout(renderTask("active", "Snapshot project files"));
     await assertExpectedFileStates(transactionRoot, plan.guards);
 
     snapshot = await snapshotFiles(
       transactionRoot,
       plan.guards.map((guard) => guard.path)
     );
+    stdout(renderTask("success", "Snapshot project files"));
 
     for (const command of plan.commands) {
+      stdout(renderTask("active", "Install aligned Scribe packages", formatPackageCommand(command)));
       let status: number;
       try {
         status = await runCommand(command, projectRoot);
@@ -783,9 +791,13 @@ export async function runIntegrate(
           )}`
         );
       }
+      stdout(renderTask("success", "Install aligned Scribe packages"));
     }
 
+    stdout(renderTask("active", "Apply source changes"));
     applied = await applyFileChanges(transactionRoot, plan.changes);
+    stdout(renderTask("success", "Apply source changes"));
+    stdout(renderTask("active", "Verify integration"));
 
     const alignment = await checkPackageAlignment(
       projectRoot,
@@ -811,6 +823,7 @@ export async function runIntegrate(
     if (problems.length > 0) {
       throw new Error(problems.join("\n"));
     }
+    stdout(renderTask("success", "Verify integration"));
 
     if (plan.manualSteps.length > 0) {
       exitCode = 3;
@@ -939,114 +952,89 @@ function formatIntegratePlan(
     plan.inspection.tailwindMajor === undefined
       ? undefined
       : `Tailwind ${plan.inspection.tailwindMajor}`,
-    plan.inspection.hasTypographyPlugin
-      ? "Tailwind Typography"
-      : undefined,
-    plan.inspection.hasNextMdxRemote
-      ? "next-mdx-remote/rsc"
-      : undefined,
+    plan.inspection.hasTypographyPlugin ? "Tailwind Typography" : undefined,
+    plan.inspection.hasNextMdxRemote ? "next-mdx-remote/rsc" : undefined,
     plan.inspection.hasNextMdx ? "@next/mdx" : undefined,
     plan.inspection.hasViteMdx ? "Vite MDX" : undefined
-  ]
-    .filter(Boolean)
-    .join(", ");
+  ].filter(Boolean).join(", ");
+  const packageManager = plan.inspection.packageManager ?? "unresolved";
+  const packageRoot = plan.inspection.packageManagerRoot === undefined
+    ? "unresolved"
+    : displayPath(plan.inspection.root, plan.inspection.packageManagerRoot);
+  const blocked = plan.ambiguities.length > 0
+    || plan.mode === undefined
+    || plan.inspection.packageManager === undefined;
+  const next = blocked
+    ? "Resolve the blocking issues, then rerun `scribe integrate --dry-run`."
+    : dryRun
+      ? plan.manualSteps.length > 0
+        ? "Review the automated plan and manual actions, then run `scribe integrate`."
+        : "Review this plan, then run `scribe integrate`."
+      : plan.manualSteps.length > 0
+        ? "Confirm only if you will complete the manual actions afterward."
+        : "Confirm only after the detected stack and proposed changes are correct.";
 
-  const packageManager =
-    plan.inspection.packageManager ?? "unresolved";
-  const packageRoot =
-    plan.inspection.packageManagerRoot === undefined
-      ? "unresolved"
-      : displayPath(
-          plan.inspection.root,
-          plan.inspection.packageManagerRoot
-        );
-
-  const lines = [
-    `Scribe integrate — ${
-      dryRun ? "dry run" : "reviewed plan"
-    }`,
-    dryRun
+  return renderReport({
+    title: `Scribe Integrate${dryRun ? " · Dry run" : ""}`,
+    description: dryRun
       ? "No files or packages will be changed."
       : "Review this plan before confirming changes.",
-    "",
-    "Detected",
-    "  Project               .",
-    `  Stack                 ${detected}`,
-    `  Package manager       ${packageManager}`,
-    `  Package-manager root  ${packageRoot}`,
-    "",
-    "Recommendation",
-    `  Mode    ${plan.mode ?? "unresolved"}`,
-    ...(plan.reason === ""
-      ? []
-      : [`  Reason  ${plan.reason}`]),
-    "",
-    "Commands",
-    ...(plan.commands.length === 0
-      ? ["  none"]
-      : plan.commands.map(
-          (command) => `  ${formatPackageCommand(command)}`
-        )),
-    "",
-    "Packages",
-    ...(plan.packages.length === 0
-      ? ["  none"]
-      : packageLines(plan.packages)),
-    "",
-    "File changes",
-    ...(plan.changes.length === 0
-      ? ["  none"]
-      : plan.changes.map(
-          (change) =>
-            `  ${change.new ? "+" : "~"} ${
-              change.applicationPath
-            } — ${change.description}`
-        )),
-    "",
-    "Warnings",
-    ...(plan.warnings.length === 0
-      ? ["  none"]
-      : plan.warnings.flatMap((warning) =>
-          warning
-            .split("\n")
-            .map((line) => `  ${line}`)
-        )),
-    "",
-    "Required manual actions",
-    ...(plan.manualSteps.length === 0
-      ? ["  none"]
-      : plan.manualSteps.map((step) => `  ${step}`))
-  ];
-
-  if (plan.ambiguities.length > 0) {
-    lines.push(
-      "",
-      "Blocking ambiguities",
-      ...plan.ambiguities.flatMap((value) =>
-        value
-          .split("\n")
-          .map((line) => `  ${line}`)
-      )
-    );
-  }
-
-  lines.push(
-    "",
-    "Next",
-    plan.ambiguities.length > 0 ||
-      plan.mode === undefined ||
-      plan.inspection.packageManager === undefined
-      ? "  Resolve the blocking issues above, then rerun `scribe integrate --dry-run`."
-      : dryRun
-        ? plan.manualSteps.length > 0
-          ? "  Review the automated plan and required manual actions, then run `scribe integrate`."
-          : "  Review this plan, then run `scribe integrate` to confirm and apply it."
-        : plan.manualSteps.length > 0
-          ? "  Confirm the automated portion only if you will complete the required manual actions afterward."
-          : "  Confirm only after the detected stack and proposed changes are correct."
-  );
-
-  return `${lines.join("\n")}\n`;
+    sections: [
+      {
+        title: "Detected",
+        lines: [
+          "Project               .",
+          `Stack                 ${detected}`,
+          `Package manager       ${packageManager}`,
+          `Package-manager root  ${packageRoot}`
+        ]
+      },
+      {
+        title: "Recommendation",
+        lines: [
+          `Mode    ${plan.mode ?? "unresolved"}`,
+          ...(plan.reason === "" ? [] : [`Reason  ${plan.reason}`])
+        ]
+      },
+      {
+        title: "Commands",
+        lines: plan.commands.length === 0
+          ? ["none"]
+          : plan.commands.map(formatPackageCommand)
+      },
+      {
+        title: "Packages",
+        lines: plan.packages.length === 0 ? ["none"] : packageLines(plan.packages)
+      },
+      {
+        title: "File changes",
+        lines: plan.changes.length === 0
+          ? ["none"]
+          : plan.changes.map((change) =>
+            `${change.new ? "+" : "~"} ${change.applicationPath} — ${change.description}`)
+      },
+      {
+        title: "Warnings",
+        tone: plan.warnings.length === 0 ? "default" : "warning",
+        lines: plan.warnings.length === 0
+          ? ["none"]
+          : plan.warnings.flatMap((warning) => warning.split("\n"))
+      },
+      {
+        title: "Required manual actions",
+        tone: plan.manualSteps.length === 0 ? "default" : "warning",
+        lines: plan.manualSteps.length === 0 ? ["none"] : plan.manualSteps
+      },
+      ...(plan.ambiguities.length === 0
+        ? []
+        : [{
+            title: "Blocking ambiguities",
+            tone: "error" as const,
+            lines: plan.ambiguities.flatMap((value) => value.split("\n"))
+          }])
+    ],
+    footer: next
+  });
 }
 
 function packageLines(
@@ -1085,136 +1073,130 @@ function failureMessage(
   failures: readonly string[],
   packageCommandsRan: boolean
 ): string {
-  const lines = [
-    `Could not complete the Scribe integration: ${
-      error instanceof Error ? error.message : String(error)
-    }`,
-    "",
-    "Rollback",
-    failures.length > 0
-      ? `  Could not safely restore: ${failures.join(
-          ", "
-        )}. Review these paths manually before continuing.`
-      : "  Restored the tracked manifest, lockfiles, and source files to their previous contents."
-  ];
-
-  if (packageCommandsRan) {
-    lines.push(
-      "",
-      "Package-manager state",
-      "  Scribe restored the tracked manifest/lockfiles, but package managers can also mutate node_modules, caches, and lifecycle-script state. If the install was interrupted or failed partway through, run your package manager's normal install command after reviewing the project."
-    );
-  }
-
-  return `${lines.join("\n")}\n`;
+  return renderReport({
+    title: "Scribe Integrate · Failed",
+    description: error instanceof Error ? error.message : String(error),
+    sections: [
+      {
+        title: "Rollback",
+        tone: failures.length > 0 ? "error" : "success",
+        lines: failures.length > 0
+          ? [`Could not safely restore: ${failures.join(", ")}. Review these paths manually before continuing.`]
+          : ["Restored the tracked manifest, lockfiles, and source files to their previous contents."]
+      },
+      ...(packageCommandsRan
+        ? [{
+            title: "Package-manager state",
+            tone: "warning" as const,
+            lines: [
+              "Manifest and lockfiles were restored. node_modules, caches, or lifecycle-script state may still require the package manager's normal install command."
+            ]
+          }]
+        : [])
+    ],
+    footer: "Scribe did not report the project as integrated."
+  });
 }
 
 function successMessage(
   plan: IntegratePlan,
   installedSomething: boolean
 ): string {
-  const lines = [
-    "Success  Scribe integrated",
-    `  Mode           ${plan.mode}`,
-    "",
-    "Packages",
-    plan.packages.length === 0
-      ? "  already aligned"
-      : plan.packages
-          .map(
-            (entry) =>
-              `  = ${entry.name}@${entry.version}${
-                entry.development ? " (dev)" : ""
-              }`
-          )
-          .join("\n"),
-    "",
-    "Changed files",
-    plan.changes.length === 0
-      ? "  none"
-      : plan.changes
-          .map(
-            (change) =>
-              `  ${change.new ? "+" : "~"} ${
-                change.applicationPath
-              }`
-          )
-          .join("\n"),
-    "",
-    "Warnings",
-    plan.warnings.length === 0
-      ? "  none"
-      : plan.warnings
-          .flatMap((warning) =>
-            warning
-              .split("\n")
-              .map((line) => `  ${line}`)
-          )
-          .join("\n"),
-    "",
-    "Next",
-    "  Run `scribe validate path/to/article.mdx`."
-  ];
-
-  if (installedSomething) {
-    lines.push(
-      "",
-      "Scribe packages are pinned to the running CLI version.",
-      "",
-      "Daily commands",
-      "  scribe studio <article>",
-      "  scribe validate <article>"
-    );
-  }
-
-  return `${lines.join("\n")}\n`;
+  return renderReport({
+    title: "Scribe Integrate · Ready",
+    description: "Integration verified successfully.",
+    sections: [
+      { title: "Mode", lines: [String(plan.mode)] },
+      {
+        title: "Packages",
+        tone: "success",
+        lines: plan.packages.length === 0
+          ? ["already aligned"]
+          : plan.packages.map((entry) =>
+            `${entry.name}@${entry.version}${entry.development ? " (dev)" : ""}`)
+      },
+      {
+        title: "Changed files",
+        lines: plan.changes.length === 0
+          ? ["none"]
+          : plan.changes.map((change) =>
+            `${change.new ? "+" : "~"} ${change.applicationPath}`)
+      },
+      {
+        title: "Warnings",
+        tone: plan.warnings.length === 0 ? "default" : "warning",
+        lines: plan.warnings.length === 0
+          ? ["none"]
+          : plan.warnings.flatMap((warning) => warning.split("\n"))
+      },
+      {
+        title: "Next",
+        lines: [
+          "scribe studio init",
+          "scribe studio <article>",
+          "scribe validate <article>"
+        ]
+      }
+    ],
+    footer: installedSomething
+      ? "Scribe packages are pinned to the running CLI version."
+      : "No package installation was required."
+  });
 }
 
 function partialSuccessMessage(plan: IntegratePlan): string {
-  return [
-    "Action required  Automated Scribe changes applied",
-    `  Mode           ${plan.mode}`,
-    "",
-    "The automated portion verified successfully, but Scribe is not fully integrated yet.",
-    "",
-    "Required manual actions",
-    ...plan.manualSteps.map((step) => `  ${step}`),
-    "",
-    "After completing them, run `scribe validate path/to/article.mdx`."
-  ].join("\n") + "\n";
+  return renderReport({
+    title: "Action required · Automated changes applied",
+    description: "The automated portion verified, but Scribe is not fully integrated yet.",
+    sections: [
+      { title: "Mode", lines: [String(plan.mode)] },
+      {
+        title: "Required manual actions",
+        tone: "warning",
+        lines: plan.manualSteps
+      }
+    ],
+    footer: "After completing them, run `scribe validate path/to/article.mdx`."
+  });
 }
 
 function actionRequiredMessage(plan: IntegratePlan): string {
-  return [
-    "Action required  No automated changes were necessary",
-    "",
-    "Scribe cannot honestly report a complete integration until these actions are finished:",
-    "",
-    ...plan.manualSteps.map((step) => `  ${step}`),
-    ""
-  ].join("\n");
+  return renderReport({
+    title: "Action required · No automated changes",
+    description: "Scribe cannot report a complete integration until these actions are finished.",
+    sections: [{
+      title: "Required manual actions",
+      tone: "warning",
+      lines: plan.manualSteps
+    }],
+    footer: "No project files were changed."
+  });
 }
 
 function deferredInstallMessage(plan: IntegratePlan): string {
   const manager = plan.inspection.packageManager;
   if (manager === undefined) {
-    return "Could not determine the package manager; no changes were made.\n";
+    return renderReport({
+      title: "Scribe Integrate · Stopped",
+      description: "Could not determine the package manager.",
+      sections: [],
+      footer: "No project files were changed."
+    });
   }
 
   const commands = scribeConvergenceCommands(
     manager,
     plan.packages[0]?.version ?? ""
   );
-
-  return [
-    `This project uses ${manager}, whose package installation is not automated yet.`,
-    "Integrate stopped without changing files. Converge the Scribe packages with these commands, then re-run it:",
-    "",
-    ...commands.map(
-      (command) => `  ${formatPackageCommand(command)}`
-    ),
-    ""
-  ].join("\n");
+  return renderReport({
+    title: "Scribe Integrate · Manual package update",
+    description: `This project uses ${manager}, whose package installation is not automated yet.`,
+    sections: [{
+      title: "Commands",
+      lines: commands.map(formatPackageCommand)
+    }],
+    footer: "No files changed. Run the commands, then rerun `scribe integrate`."
+  });
 }
 
 async function verificationOptions(
@@ -1698,26 +1680,7 @@ function transactionRelativePath(
   return value.replaceAll("\\", "/");
 }
 
-async function confirmInteractively(
-  question: string
-): Promise<boolean | null> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    return null;
-  }
 
-  const prompt = createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  try {
-    return /^(?:y|yes)$/iu.test(
-      (await prompt.question(`${question} [y/N] `)).trim()
-    );
-  } finally {
-    prompt.close();
-  }
-}
 
 
 async function canonicalDirectory(

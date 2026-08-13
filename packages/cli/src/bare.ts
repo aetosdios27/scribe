@@ -8,6 +8,7 @@ import { findSupportedProjectRoot } from "./launcher.js";
 import { detectPackageManagerContext } from "./package-manager.js";
 import { checkPackageAlignment } from "./version-alignment.js";
 import type { ProjectInspection } from "./integrate.js";
+import { renderPanel, type UiRow } from "./terminal-ui.js";
 
 export interface BareCommandDependencies {
   readonly cwd: string;
@@ -18,7 +19,15 @@ export async function bareStateOutput(dependencies: BareCommandDependencies): Pr
   const { cwd, version } = dependencies;
   const root = await findSupportedProjectRoot(cwd);
   if (root === undefined) {
-    return "No supported React project was found.\n\nRun Scribe from a Next.js or Vite project,\nor use `scribe --help`.\n";
+    return renderPanel({
+      title: "Scribe · Project status",
+      description: "No supported React project was found.",
+      rows: [
+        { label: "Expected", value: "Next.js or Vite" },
+        { label: "Help", value: "scribe --help" }
+      ],
+      footer: "Run Scribe from the project you want to inspect."
+    });
   }
 
   let inspection;
@@ -26,7 +35,12 @@ export async function bareStateOutput(dependencies: BareCommandDependencies): Pr
     const { inspectProject } = await import("./integrate.js");
     inspection = await inspectProject(root);
   } catch {
-    return "Scribe could not inspect the project at this location.\nRun `scribe integrate --dry-run` for diagnostics.\n";
+    return renderPanel({
+      title: "Scribe · Project status",
+      description: "Project inspection failed.",
+      rows: [{ label: "Diagnose", value: "scribe integrate --dry-run" }],
+      footer: "No project files were changed."
+    });
   }
 
   const integrated = inspection.hasScribeCompiler || inspection.hasScribeComponents;
@@ -39,56 +53,65 @@ export async function bareStateOutput(dependencies: BareCommandDependencies): Pr
 }
 
 function unintegratedOutput(root: string): string {
-  const stack = stackDescription(root);
-  return [
-    "Detected",
-    `  Stack  ${stack}`,
-    "",
-    "Scribe is not integrated here.",
-    "",
-    "Inspect the integration plan:",
-    "  scribe integrate --dry-run",
-    ""
-  ].join("\n");
+  return renderPanel({
+    title: "Scribe · Project status",
+    description: "Scribe is not integrated here.",
+    rows: [
+      { label: "Project", value: stackDescription(root) },
+      { label: "Next", value: "scribe integrate --dry-run", tone: "brand" }
+    ],
+    footer: "Review the integration plan before changing the project."
+  });
 }
 
 async function integratedOutput(root: string, version: string, inspection: ProjectInspection): Promise<string> {
   const { recommendStyleMode } = await import("./integrate.js");
   const mode = recommendStyleMode(inspection, undefined).mode;
   const content = await detectedContentDirectory(root);
-  const packageLines = await packageVersionLines(root, version);
-  const lines = [
-    "Project",
-    ...(mode === undefined ? [] : [`  Mode       ${mode}`]),
-    ...(content === undefined ? [] : [`  Content    ${content}`]),
-    `  CLI        ${version}`,
-    ...packageLines,
-    "",
-    "Commands",
-    "  scribe studio <article>",
-    "  scribe validate <article>",
-    "  scribe studio init",
-    "  scribe update",
-    "  scribe import <medium-export.zip>",
-    ""
-  ];
-  return lines.join("\n");
+  const packageRows = await packageVersionRows(root, version);
+  return renderPanel({
+    title: "Scribe · Project status",
+    description: stackDescription(root),
+    rows: [
+      ...(mode === undefined ? [] : [{ label: "Mode", value: mode }]),
+      ...(content === undefined ? [] : [{ label: "Content", value: content }]),
+      { label: "CLI", value: version },
+      { label: "Open", value: "scribe studio <article>" },
+      { label: "Check", value: "scribe validate <article>" },
+      { label: "Create", value: "scribe studio init" },
+      ...packageRows
+    ],
+    footer: "Run `scribe update` to align the complete installation."
+  });
 }
 
-async function packageVersionLines(root: string, version: string): Promise<string[]> {
+async function packageVersionRows(root: string, version: string): Promise<UiRow[]> {
   try {
     const context = await detectPackageManagerContext(root);
     const report = await checkPackageAlignment(root, version, context.packageManagerRoot);
-    if (report.aligned) return [`  Packages   ${version} (aligned)`];
+    if (report.aligned) {
+      return [
+        { label: "Manager", value: context.manager },
+        { label: "Packages", value: `${version} (aligned)`, tone: "success" }
+      ];
+    }
     return [
-      "  Packages   version mismatch",
-      ...report.installed.map((entry) =>
-        `    ${entry.packageName}  ${entry.status === "resolved" ? entry.version : entry.status}`
-      ),
-      "  Repair     scribe update"
+      { label: "Packages", value: "version mismatch", tone: "error" },
+      ...report.installed.map((entry) => ({
+        label: entry.packageName,
+        value: entry.status === "resolved" ? entry.version ?? "unknown" : entry.status,
+        tone: entry.status === "resolved" && entry.version === version
+          ? "default" as const
+          : "warning" as const
+      })),
+      { label: "Repair", value: "scribe update", tone: "brand" }
     ];
   } catch (error) {
-    return [`  Packages   inspection failed — ${error instanceof Error ? error.message : String(error)}`];
+    return [{
+      label: "Packages",
+      value: `inspection failed — ${error instanceof Error ? error.message : String(error)}`,
+      tone: "error"
+    }];
   }
 }
 

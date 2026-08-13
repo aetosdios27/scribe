@@ -99,7 +99,12 @@ export async function main(
     return 0;
   }
 
-  if (isTTY && (args[0] === "studio" || args[0] === "update")) stdout(logo());
+  if (
+    isTTY
+    && ["studio", "update", "init", "integrate", "import"].includes(args[0] ?? "")
+    && !args.includes("--help")
+    && !args.includes("-h")
+  ) stdout(logo());
 
   const [command, ...rest] = args;
   if (command === "init") {

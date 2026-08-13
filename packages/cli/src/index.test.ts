@@ -47,7 +47,8 @@ it("opens interactive Scribe surfaces with the inline {S} logo", async () => {
     isTTY: true,
     env: { TERM: "xterm-256color" }
   })).toBe(0);
-  expect(stdout.mock.calls.join("")).toContain("\u001B[94m│   {S}    │\u001B[0m  Publishing SDK");
+  expect(stdout.mock.calls.join("")).not.toContain("Publishing SDK");
+  expect(stdout.mock.calls.join("")).toContain("scribe studio <article.mdx>");
 });
 
 it("contains unexpected command failures without exposing an internal stack", async () => {

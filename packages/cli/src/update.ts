@@ -1,5 +1,4 @@
 import { relative, resolve, sep } from "node:path";
-import { createInterface } from "node:readline/promises";
 
 import { updateHelp } from "./command-help.js";
 import { findSupportedProjectRoot } from "./launcher.js";
@@ -32,6 +31,12 @@ import {
   scribePackageDefinitions,
   type AlignmentReport
 } from "./version-alignment.js";
+import {
+  promptConfirm,
+  renderPanel,
+  renderReceipt,
+  renderTask
+} from "./terminal-ui.js";
 
 export const scribePrereleaseChannel = "beta";
 
@@ -114,14 +119,20 @@ export async function runUpdate(
     }
     target = await (dependencies.resolveTarget ?? resolveScribePrereleaseTarget)();
   } catch (error) {
-    stderr(`Scribe update could not inspect the installation: ${error instanceof Error ? error.message : String(error)}\n`);
+    stderr(renderReceipt(
+      "error",
+      `Scribe update could not inspect the installation: ${error instanceof Error ? error.message : String(error)}`
+    ));
     return 1;
   }
 
   const commands = scribeConvergenceCommands(context.manager, target);
   stdout(formatUpdatePlan(before, target, context.manager, commands, parsed.dryRun));
   if (before.installed.every((entry) => entry.status === "resolved" && entry.version === target)) {
-    stdout(`Already current. All four Scribe packages resolve at ${target}.\n`);
+    stdout(renderReceipt(
+      "success",
+      `Already current. All four Scribe packages resolve at ${target}.`
+    ));
     return 0;
   }
   if (parsed.dryRun) return 0;
@@ -132,13 +143,13 @@ export async function runUpdate(
 
   const confirmed = parsed.yes
     ? true
-    : await (dependencies.confirm ?? confirmInteractively)("Apply update?");
+    : await (dependencies.confirm ?? promptConfirm)("Apply update?");
   if (confirmed === null) {
     stderr("The terminal is non-interactive. Re-run with --yes to apply the reviewed update.\n");
     return 2;
   }
   if (!confirmed) {
-    stdout("Cancelled. No package-manager commands were run.\n");
+    stdout(renderReceipt("cancelled", "No package-manager commands were run."));
     return 0;
   }
 
@@ -162,9 +173,13 @@ export async function runUpdate(
   let observed: readonly AppliedChange[] = [];
   let failure = "";
   try {
+    stdout(renderTask("active", "Snapshot package files"));
     await assertExpectedFileStates(context.packageManagerRoot, guards);
     snapshot = await snapshotFiles(context.packageManagerRoot, trackedPaths);
-    for (const command of commands) {
+    stdout(renderTask("success", "Snapshot package files"));
+    for (const [index, command] of commands.entries()) {
+      const label = index === 0 ? "Update runtime packages" : "Update project CLI";
+      stdout(renderTask("active", label, formatPackageCommand(command)));
       let status: number;
       try {
         status = await runCommand(command, projectRoot);
@@ -177,14 +192,17 @@ export async function runUpdate(
       if (status !== 0) {
         throw new Error(`Command failed with status ${status}: ${formatPackageCommand(command)}`);
       }
+      stdout(renderTask("success", label));
     }
 
+    stdout(renderTask("active", "Verify package alignment"));
     const after = await (dependencies.inspectAlignment ?? checkPackageAlignment)(
       projectRoot,
       target,
       context.packageManagerRoot
     );
     if (!after.aligned) throw new Error(formatAlignmentDiagnostic(after, context.manager));
+    stdout(renderTask("success", "Verify package alignment"));
   } catch (error) {
     const restored = snapshot === undefined
       ? []
@@ -207,10 +225,13 @@ export async function runUpdate(
   }
 
   if (failure !== "") {
-    stderr(`${failure}\n`);
+    stderr(renderReceipt("error", "Scribe update failed", failure.split("\n")));
     return 1;
   }
-  stdout(`Updated. All four Scribe packages now resolve at ${target}.\n`);
+  stdout(renderReceipt(
+    "success",
+    `Updated. All four Scribe packages now resolve at ${target}.`
+  ));
   return 0;
 }
 
@@ -239,29 +260,27 @@ function formatUpdatePlan(
   const current = resolved.length === scribePackageDefinitions.length && versions.size === 1
     ? resolved[0]?.version
     : "mixed";
-  return [
-    `Scribe update${dryRun ? " — dry run" : ""}`,
-    "",
-    `${current ?? "unknown"} → ${target}`,
-    "",
-    ...report.installed.map((entry) => `  ${entry.packageName}  ${entry.status === "resolved" ? entry.version : entry.status}`),
-    "",
-    `Package manager: ${manager}`,
-    "",
-    "Operation",
-    ...commands.map((command) => `  ${formatPackageCommand(command)}`),
-    ""
-  ].join("\n");
+  return renderPanel({
+    title: `Scribe Update${dryRun ? " · Dry run" : ""}`,
+    description: `${current ?? "unknown"} → ${target}`,
+    rows: [
+      { label: "Channel", value: scribePrereleaseChannel },
+      { label: "Manager", value: manager },
+      ...report.installed.map((entry) => ({
+        label: entry.packageName,
+        value: entry.status === "resolved" ? entry.version ?? "unknown" : entry.status,
+        ...(entry.status === "resolved" ? {} : { tone: "warning" as const })
+      })),
+      ...commands.map((command, index) => ({
+        label: `Command ${index + 1}`,
+        value: formatPackageCommand(command)
+      }))
+    ],
+    footer: dryRun
+      ? "No package files will be changed."
+      : "Scribe snapshots the manifest and lockfile before updating."
+  });
 }
 
-async function confirmInteractively(question: string): Promise<boolean | null> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
-  const prompt = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = (await prompt.question(`${question} [Y/n] `)).trim();
-    return !/^(?:n|no)$/iu.test(answer);
-  } finally {
-    prompt.close();
-  }
-}
+
 

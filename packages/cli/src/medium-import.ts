@@ -1,7 +1,6 @@
 import { link, mkdir, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { createInterface } from "node:readline/promises";
 
 import { compileScribeMdx } from "@scribe-sdk/mdx";
 
@@ -26,6 +25,7 @@ import {
   type ConvertedMediumPost,
   type ImportWarning
 } from "./medium-convert.js";
+import { promptConfirm } from "./terminal-ui.js";
 
 export type MediumImportOptions = {
   readonly into?: string;
@@ -489,14 +489,5 @@ function errorMessage(error: unknown): string {
 }
 
 async function confirmInteractively(question: string, defaultValue: boolean): Promise<boolean> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
-  const prompt = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const suffix = defaultValue ? "[Y/n]" : "[y/N]";
-    const answer = (await prompt.question(`${question} ${suffix} `)).trim();
-    if (answer.length === 0) return defaultValue;
-    return /^(?:y|yes)$/iu.test(answer);
-  } finally {
-    prompt.close();
-  }
+  return await promptConfirm(question, defaultValue) ?? false;
 }

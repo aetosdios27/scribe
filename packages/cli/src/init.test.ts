@@ -63,8 +63,8 @@ it("creates only requested directories and remains idempotent", async () => {
   expect((await readdir(join(cwd, "content", "blog"))).sort()).toEqual([]);
   expect((await readdir(join(cwd, "content", "assets"))).sort()).toEqual([]);
   const output = stdout.mock.calls.join("\n");
-  expect(output).toContain("scribe studio content/blog/your-article.mdx");
-  expect(output).not.toContain("<article>");
+  expect(output).toContain("scribe studio init --content-dir content/blog");
+  expect(output).not.toContain("your-article.mdx");
 });
 
 it("supports an explicit repository-relative content directory", async () => {

@@ -1,6 +1,5 @@
 import { mkdir, stat } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
 
 import { suggestClosest } from "./cli-output.js";
 import { initHelp } from "./command-help.js";
@@ -8,6 +7,7 @@ import {
   ContentPathUsageError,
   chooseContentDirectory
 } from "./content-paths.js";
+import { promptConfirm, renderPanel, renderReceipt } from "./terminal-ui.js";
 
 export interface InitOptions {
   readonly contentDirectory?: string;
@@ -26,7 +26,7 @@ export interface InitDependencies {
   readonly cwd?: string;
   readonly stdout?: (value: string) => void;
   readonly stderr?: (value: string) => void;
-  readonly confirm?: (question: string) => Promise<boolean>;
+  readonly confirm?: (question: string) => Promise<boolean | null>;
 }
 
 export async function planInit(rootInput: string, options: InitOptions): Promise<InitPlan> {
@@ -65,41 +65,53 @@ export async function runInit(args: readonly string[], dependencies: InitDepende
       withAssets: parsed.withAssets
     });
   } catch (error) {
-    stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+    stderr(renderReceipt("error", error instanceof Error ? error.message : String(error)));
     return error instanceof ContentPathUsageError ? 2 : 1;
   }
 
   stdout(formatInitPlan(plan, parsed.dryRun));
   if (parsed.dryRun) return 0;
 
-  const confirmed = parsed.yes || await (dependencies.confirm ?? confirmInteractively)("Create these Scribe content directories?");
+  const confirmed = parsed.yes || await (dependencies.confirm ?? promptConfirm)("Create these Scribe content directories?", false);
+  if (confirmed === null) {
+    stderr("The terminal is non-interactive. Re-run with --yes after reviewing the plan.\n");
+    return 2;
+  }
   if (!confirmed) {
-    stdout("No directories were created.\n");
+    stdout(renderReceipt("cancelled", "No directories were created."));
     return 0;
   }
 
   try {
     for (const directory of plan.directories) await mkdir(directory, { recursive: true });
   } catch (error) {
-    stderr(`Could not create the Scribe content launchpad: ${error instanceof Error ? error.message : String(error)}\n`);
+    stderr(renderReceipt(
+      "error",
+      `Could not create the Scribe content launchpad: ${error instanceof Error ? error.message : String(error)}`
+    ));
     return 1;
   }
 
-  stdout([
-    "Ready  Scribe content launchpad",
-    `  Content  ${displayPath(plan.root, plan.contentDirectory)}`,
-    `  Assets   ${plan.assetDirectory === undefined ? "not created" : displayPath(plan.root, plan.assetDirectory)}`,
-    "",
-    "No article, metadata, or framework files were generated.",
-    "",
-    "Next",
-    "  Write an article in the content directory, then run:",
-    `  scribe studio ${displayPath(plan.root, resolve(plan.contentDirectory, "your-article.mdx"))}`,
-    "",
-    "  To connect Scribe to the host website:",
-    "  scribe integrate --dry-run",
-    ""
-  ].join("\n"));
+  stdout(renderPanel({
+    title: "Scribe Init · Ready",
+    description: "The content launchpad is ready.",
+    rows: [
+      { label: "Content", value: displayPath(plan.root, plan.contentDirectory) },
+      {
+        label: "Assets",
+        value: plan.assetDirectory === undefined
+          ? "not created"
+          : displayPath(plan.root, plan.assetDirectory)
+      },
+      {
+        label: "Create",
+        value: `scribe studio init --content-dir ${displayPath(plan.root, plan.contentDirectory)}`,
+        tone: "brand"
+      },
+      { label: "Connect", value: "scribe integrate --dry-run" }
+    ],
+    footer: "No article, metadata, or framework files were generated."
+  }));
   return 0;
 }
 
@@ -152,27 +164,28 @@ function parseInitArguments(args: readonly string[]): ParsedInitArguments | stri
 }
 
 function formatInitPlan(plan: InitPlan, dryRun: boolean): string {
-  return [
-    `Scribe init — ${dryRun ? "dry run" : "content launchpad"}`,
-    dryRun ? "No directories will be changed." : "Review the content launchpad before confirming.",
-    "",
-    "Content",
-    `  ${displayPath(plan.root, plan.contentDirectory)}${plan.existingDirectories.includes(plan.contentDirectory) ? " (existing)" : " (create)"}`,
-    "",
-    "Assets",
-    plan.assetDirectory === undefined
-      ? "  not requested"
-      : `  ${displayPath(plan.root, plan.assetDirectory)}${plan.existingDirectories.includes(plan.assetDirectory) ? " (existing)" : " (create)"}`,
-    "",
-    "Generated content",
-    "  none — No files will be generated.",
-    "",
-    "Next",
-    dryRun
-      ? "  Review this plan, then run `scribe init` with the same options."
-      : "  Confirm to create only the directories listed above.",
-    ""
-  ].join("\n");
+  return renderPanel({
+    title: `Scribe Init${dryRun ? " · Dry run" : ""}`,
+    description: dryRun
+      ? "No directories will be changed."
+      : "Review the content launchpad before confirming.",
+    rows: [
+      {
+        label: "Content",
+        value: `${displayPath(plan.root, plan.contentDirectory)}${plan.existingDirectories.includes(plan.contentDirectory) ? " (existing)" : " (create)"}`
+      },
+      {
+        label: "Assets",
+        value: plan.assetDirectory === undefined
+          ? "not requested"
+          : `${displayPath(plan.root, plan.assetDirectory)}${plan.existingDirectories.includes(plan.assetDirectory) ? " (existing)" : " (create)"}`
+      },
+      { label: "Files", value: "none — No files will be generated." }
+    ],
+    footer: dryRun
+      ? "Review this plan, then run `scribe init` with the same options."
+      : "Only the listed directories will be created."
+  });
 }
 
 async function existingAbsoluteDirectories(root: string, candidates: readonly string[]): Promise<string[]> {
@@ -202,12 +215,4 @@ function displayPath(root: string, path: string): string {
   return shown === "" ? "." : shown.replaceAll("\\", "/");
 }
 
-async function confirmInteractively(question: string): Promise<boolean> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
-  const prompt = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    return /^(?:y|yes)$/iu.test((await prompt.question(`${question} [y/N] `)).trim());
-  } finally {
-    prompt.close();
-  }
-}
+

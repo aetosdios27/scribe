@@ -1,6 +1,5 @@
 import { open, mkdir, lstat, rm, type FileHandle } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
 
 import { suggestClosest } from "./cli-output.js";
 import { studioInitHelp } from "./command-help.js";
@@ -13,6 +12,7 @@ import {
 } from "./content-paths.js";
 import { findSupportedProjectRoot } from "./launcher.js";
 import { runStudio } from "./studio.js";
+import { promptConfirm, promptText, renderPanel, renderReceipt } from "./terminal-ui.js";
 
 export interface StudioInitOptions {
   readonly title: string;
@@ -131,39 +131,60 @@ export async function runStudioInit(
     return 0;
   }
 
-  const session = dependencies.prompt === undefined && dependencies.confirm === undefined
-    ? interactiveSession()
-    : undefined;
-  const prompt = dependencies.prompt ?? session?.prompt;
-  const confirm = dependencies.confirm ?? session?.confirm;
+  const injectedPrompt = dependencies.prompt;
+  const injectedConfirm = dependencies.confirm;
+  const terminalInteractive = process.stdin.isTTY === true && process.stdout.isTTY === true;
 
   try {
     const inputRoot = dependencies.cwd ?? process.cwd();
     const root = await findSupportedProjectRoot(inputRoot) ?? resolve(inputRoot);
-    const title = parsed.title ?? await askRequired(prompt, "Article title: ");
-    if (title === null) {
-      stdout("Cancelled. No article was created.\n");
-      return 0;
-    }
-    const derivedSlug = parsed.slug ?? deriveArticleSlug(title);
-    const slug = parsed.slug ?? await askDefault(prompt, `Slug [${derivedSlug}]: `, derivedSlug);
-    if (slug === null) {
-      stdout("Cancelled. No article was created.\n");
-      return 0;
-    }
-
     const contentDirectory = await chooseContentDirectory(
       root,
       parsed.contentDirectory,
       "--content-dir"
     );
+    const shownContentDirectory = displayWorkspacePath(root, contentDirectory);
+    const title = parsed.title ?? await askTitle(injectedPrompt, terminalInteractive);
+    if (title === null) {
+      stdout(renderReceipt("cancelled", "No article was created."));
+      return 0;
+    }
+
+    const derivedSlug = parsed.slug ?? deriveArticleSlug(title);
+    const slug = parsed.slug ?? await askEditable(
+      injectedPrompt,
+      terminalInteractive,
+      "Slug",
+      derivedSlug,
+      validateArticleSlug
+    );
+    if (slug === null) {
+      stdout(renderReceipt("cancelled", "No article was created."));
+      return 0;
+    }
+
     const defaultPath = displayWorkspacePath(
       root,
       resolve(contentDirectory, `${slug}.mdx`)
     );
-    const selectedPath = parsed.path ?? await askDefault(prompt, `Article path [${defaultPath}]: `, defaultPath);
+    const selectedPath = parsed.path ?? await askEditable(
+      injectedPrompt,
+      terminalInteractive,
+      "Article path",
+      defaultPath,
+      (value) => {
+        try {
+          const targetPath = resolveInsideWorkspace(root, value, "Article path");
+          return articleExtensions[extname(targetPath).toLowerCase()] === true
+            ? undefined
+            : "Article path must end in .md or .mdx.";
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+      }
+    );
     if (selectedPath === null) {
-      stdout("Cancelled. No article was created.\n");
+      stdout(renderReceipt("cancelled", "No article was created."));
       return 0;
     }
 
@@ -174,27 +195,37 @@ export async function runStudioInit(
       ...(parsed.contentDirectory === undefined ? {} : { contentDirectory: parsed.contentDirectory })
     });
     const shownPath = displayWorkspacePath(plan.root, plan.targetPath);
-    stdout([
-      "Scribe Studio — new article",
-      "",
-      `  Title  ${plan.title}`,
-      `  Slug   ${plan.slug}`,
-      `  Path   ${shownPath}`,
-      ""
-    ].join("\n"));
+    stdout(renderPanel({
+      title: "Scribe Studio · New article",
+      description: "Review the source file before creation.",
+      rows: [
+        { label: "Content", value: shownContentDirectory },
+        { label: "Title", value: plan.title },
+        { label: "Slug", value: plan.slug },
+        { label: "Path", value: shownPath }
+      ],
+      footer: "Scribe will create one minimal MDX file and open Studio."
+    }));
 
-    const confirmed = parsed.yes ? true : confirm === undefined ? null : await confirm("Create this article?");
+    const confirmed = parsed.yes
+      ? true
+      : injectedConfirm === undefined
+        ? await promptConfirm("Create and open this article?")
+        : await injectedConfirm("Create this article?");
     if (confirmed === null) {
       stderr("The terminal is non-interactive. Re-run with --title and --yes after reviewing the target path.\n");
       return 2;
     }
     if (!confirmed) {
-      stdout("Cancelled. No article was created.\n");
+      stdout(renderReceipt("cancelled", "No article was created."));
       return 0;
     }
 
     await createStudioArticle(plan);
-    stdout(`Created  ${shownPath}\nOpening Scribe Studio…\n`);
+    stdout(renderReceipt("success", "Article created", [
+      shownPath,
+      "Opening Scribe Studio…"
+    ]));
     const launchStudio = dependencies.launchStudio ?? runStudio;
     return launchStudio([shownPath, ...parsed.studioArgs], {
       cwd: plan.root,
@@ -202,10 +233,11 @@ export async function runStudioInit(
       stderr
     });
   } catch (error) {
-    stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+    stderr(renderReceipt(
+      "error",
+      error instanceof Error ? error.message : String(error)
+    ));
     return error instanceof ContentPathUsageError ? 2 : 1;
-  } finally {
-    session?.close();
   }
 }
 
@@ -254,45 +286,64 @@ function parseStudioInitArguments(args: readonly string[]): ParsedStudioInitArgu
   };
 }
 
-function interactiveSession(): {
-  readonly prompt: (question: string) => Promise<string | null>;
-  readonly confirm: (question: string) => Promise<boolean | null>;
-  readonly close: () => void;
-} | undefined {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined;
-  const interface_ = createInterface({ input: process.stdin, output: process.stdout });
-  const question = async (value: string): Promise<string | null> => {
-    try {
-      return await interface_.question(value);
-    } catch {
-      return null;
+async function askTitle(
+  prompt: ((question: string) => Promise<string | null>) | undefined,
+  terminalInteractive: boolean
+): Promise<string | null> {
+  if (prompt !== undefined) return askRequired(prompt, "Article title: ");
+  if (!terminalInteractive) {
+    throw new ContentPathUsageError("Article title is required in a non-interactive terminal. Pass --title.");
+  }
+  const value = await promptText({
+    message: "Article title",
+    placeholder: "The Smallest Honest Redis Clone",
+    validate: (candidate) => {
+      const normalized = candidate.trim();
+      return normalized === "" || /[\r\n]/u.test(normalized)
+        ? "Enter one non-empty line."
+        : undefined;
     }
-  };
-  return {
-    prompt: question,
-    confirm: async (value) => {
-      const answer = await question(`${value} [Y/n] `);
-      return answer === null ? null : !/^(?:n|no)$/iu.test(answer.trim());
-    },
-    close: () => interface_.close()
-  };
+  });
+  return value === null ? null : value.trim();
+}
+
+async function askEditable(
+  prompt: ((question: string) => Promise<string | null>) | undefined,
+  terminalInteractive: boolean,
+  label: string,
+  fallback: string,
+  validate: (value: string) => string | undefined
+): Promise<string | null> {
+  if (prompt !== undefined) return askDefault(prompt, `${label} [${fallback}]: `, fallback);
+  if (!terminalInteractive) return fallback;
+  const value = await promptText({
+    message: label,
+    initialValue: fallback,
+    validate: (candidate) => validate(candidate.trim() === "" ? fallback : candidate.trim())
+  });
+  if (value === null) return null;
+  return value.trim() === "" ? fallback : value.trim();
+}
+
+function validateArticleSlug(value: string): string | undefined {
+  return /^[\p{Letter}\p{Number}]+(?:-[\p{Letter}\p{Number}]+)*$/u.test(value)
+    ? undefined
+    : "Use letters or numbers separated by single hyphens.";
 }
 
 async function askRequired(
-  prompt: ((question: string) => Promise<string | null>) | undefined,
+  prompt: (question: string) => Promise<string | null>,
   question: string
 ): Promise<string | null> {
-  if (prompt === undefined) throw new ContentPathUsageError("Article title is required in a non-interactive terminal. Pass --title.");
   const value = await prompt(question);
   return value === null ? null : value.trim();
 }
 
 async function askDefault(
-  prompt: ((question: string) => Promise<string | null>) | undefined,
+  prompt: (question: string) => Promise<string | null>,
   question: string,
   fallback: string
 ): Promise<string | null> {
-  if (prompt === undefined) return fallback;
   const value = await prompt(question);
   if (value === null) return null;
   return value.trim() === "" ? fallback : value.trim();
