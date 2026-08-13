@@ -276,7 +276,7 @@ it("explains the accepted syntax for malformed code metadata", async () => {
 
   expect(await main(["validate", path])).toBe(1);
   expect(stderr.mock.calls.join("\n")).toContain(
-    'Expected: filename="...", lineNumbers, highlight="1,3-5", focus="1,3-5", add="1,3-5", remove="1,3-5".'
+    'Expected: filename="...", lineNumbers, wrap, highlight="1,3-5", focus="1,3-5", add="1,3-5", remove="1,3-5".'
   );
 });
 

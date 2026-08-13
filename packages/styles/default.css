@@ -486,6 +486,50 @@
     counter-increment: scribe-line;
   }
 
+  :where(.scribe .scribe-code-frame__pre[data-scribe-wrap]) {
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
+  }
+
+  :where(.scribe .scribe-code-frame__pre[data-scribe-wrap] code) {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  :where(.scribe .scribe-code-frame__pre[data-scribe-wrap] .line) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  :where(.scribe .scribe-wrap-toggle-button[data-state="wrapped"]) {
+    color: var(--scribe-foreground);
+    background: var(--scribe-surface-strong);
+  }
+
+  :where(.scribe .scribe-code-frame--mermaid) {
+    padding: 1.5rem;
+    border: 1px solid var(--scribe-border);
+    border-radius: var(--scribe-radius);
+    background: var(--scribe-surface);
+  }
+
+  :where(.scribe .scribe-mermaid) {
+    display: flex;
+    justify-content: center;
+  }
+
+  :where(.scribe .scribe-mermaid svg) {
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+
+  :where(.scribe .scribe-mermaid-fallback) {
+    margin: 0;
+    color: var(--scribe-muted);
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+  }
+
   :where(.scribe .scribe-code-frame__pre[data-scribe-line-numbers] .line::before) {
     position: absolute;
     inset-inline-start: 0;
@@ -635,11 +679,11 @@
   }
 
   :where(.scribe .scribe-callout[data-variant="success"]) {
-    --scribe-callout-tone: #2f8f5b;
+    --scribe-callout-tone: #1f9d69;
   }
 
   :where(.scribe .scribe-callout[data-variant="error"]) {
-    --scribe-callout-tone: #c44747;
+    --scribe-callout-tone: #d64d55;
   }
 
   :where(.scribe .scribe-callout__marker) {
@@ -672,12 +716,72 @@
     inline-size: min(var(--scribe-wide-width), 100%);
   }
 
-  :where(.scribe .scribe-figure > :is(img, picture, video, svg), .scribe > p > .scribe-image) {
+  :where(.scribe .scribe-figure > :is(img, picture, video, svg), .scribe .scribe-image) {
     inline-size: 100%;
     block-size: auto;
     border: 1px solid var(--scribe-border);
     border-radius: var(--scribe-radius);
     background: var(--scribe-surface);
+  }
+
+  :where(.scribe .scribe-image-zoom-trigger) {
+    all: unset;
+    display: block;
+    inline-size: 100%;
+    cursor: zoom-in;
+  }
+
+  :where(.scribe .scribe-image-zoom-trigger .scribe-image) {
+    border: 1px solid var(--scribe-border);
+    border-radius: var(--scribe-radius);
+  }
+
+  :where(.scribe .scribe-image-dialog) {
+    max-inline-size: min(92vw, 60rem);
+    max-block-size: 90vh;
+    padding: 1.5rem;
+    border: 1px solid var(--scribe-border);
+    border-radius: var(--scribe-radius);
+    background: var(--scribe-surface);
+    color: var(--scribe-foreground);
+  }
+
+  :where(.scribe .scribe-image-dialog::backdrop) {
+    background: color-mix(in oklab, black 65%, transparent);
+  }
+
+  :where(.scribe .scribe-image-dialog__image) {
+    display: block;
+    max-inline-size: 100%;
+    max-block-size: calc(90vh - 5rem);
+    block-size: auto;
+    margin-inline: auto;
+  }
+
+  :where(.scribe .scribe-image-dialog__caption) {
+    margin-block-start: 0.8rem;
+    color: var(--scribe-muted);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  :where(.scribe .scribe-image-dialog__close) {
+    all: unset;
+    position: absolute;
+    inset-block-start: 0.75rem;
+    inset-inline-end: 0.75rem;
+    display: grid;
+    place-items: center;
+    inline-size: 2rem;
+    block-size: 2rem;
+    border-radius: 999px;
+    color: var(--scribe-muted);
+    cursor: pointer;
+  }
+
+  :where(.scribe .scribe-image-dialog__close:hover) {
+    color: var(--scribe-foreground);
+    background: var(--scribe-surface-strong);
   }
 
   :where(.scribe .scribe-figure figcaption) {
@@ -691,7 +795,7 @@
     text-wrap: pretty;
   }
 
-  :where(.scribe > p:has(> .scribe-image:only-child)) {
+  :where(.scribe > p:has(> .scribe-image:only-child), .scribe > p:has(> .scribe-image-zoom-trigger:only-child)) {
     margin-block-start: 2.5rem;
   }
 

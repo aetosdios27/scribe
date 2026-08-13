@@ -301,6 +301,13 @@ async function highlightTarget(
   const source = rawSource.endsWith("\n") ? rawSource.slice(0, -1) : rawSource;
   const declaredLanguage = readLanguage(target.code);
   const metadata = readMetadata(target.code, source, file);
+
+  if (declaredLanguage === "mermaid") {
+    target.pre.properties.dataScribeMermaid = "";
+    if (metadata.filename) target.pre.properties.dataScribeFilename = metadata.filename;
+    return;
+  }
+
   const supported = isSupportedLanguage(declaredLanguage);
 
   if (!supported) {
@@ -338,6 +345,7 @@ async function highlightTarget(
   if (!supported) generatedPre.properties.dataScribeFallback = "plaintext";
   if (metadata.filename) generatedPre.properties.dataScribeFilename = metadata.filename;
   if (metadata.lineNumbers) generatedPre.properties.dataScribeLineNumbers = "";
+  if (metadata.wrap) generatedPre.properties.dataScribeWrap = "";
 
   const generatedCode = generatedPre.children.find(
     (node): node is Element => node.type === "element" && node.tagName === "code"

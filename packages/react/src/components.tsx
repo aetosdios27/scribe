@@ -3,11 +3,12 @@ import {
   isValidElement,
   type CSSProperties,
   type HTMLAttributes,
-  type ImgHTMLAttributes,
   type ReactNode
 } from "react";
 
 import { CopyButton } from "./copy-button.js";
+import { MermaidDiagram } from "./mermaid-diagram.js";
+import { WrapToggleButton } from "./wrap-toggle-button.js";
 
 function classes(...values: Array<string | false | null | undefined>): string {
   return values.filter(Boolean).join(" ");
@@ -126,6 +127,8 @@ export interface CodeFrameProps extends HTMLAttributes<HTMLPreElement> {
   readonly "data-scribe-filename"?: string;
   readonly "data-scribe-language"?: string;
   readonly "data-scribe-line-numbers"?: string;
+  readonly "data-scribe-wrap"?: string;
+  readonly "data-scribe-mermaid"?: string;
 }
 
 export function CodeFrame({ children, className, ...props }: CodeFrameProps) {
@@ -133,6 +136,22 @@ export function CodeFrame({ children, className, ...props }: CodeFrameProps) {
   const language = props["data-scribe-language"];
   const source = textContent(children);
   const copyTarget = filename ?? language ?? "code block";
+  const defaultWrapped = props["data-scribe-wrap"] !== undefined;
+
+  if (props["data-scribe-mermaid"] !== undefined) {
+    return (
+      <div className="scribe-code-frame scribe-code-frame--mermaid">
+        {filename === undefined ? null : (
+          <div className="scribe-code-frame__header">
+            <div className="scribe-code-frame__identity">
+              <span className="scribe-code-frame__filename" title={filename}>{filename}</span>
+            </div>
+          </div>
+        )}
+        <MermaidDiagram source={source} />
+      </div>
+    );
+  }
 
   return (
     <div className="scribe-code-frame">
@@ -141,6 +160,7 @@ export function CodeFrame({ children, className, ...props }: CodeFrameProps) {
           {filename === undefined ? null : <span className="scribe-code-frame__filename" title={filename}>{filename}</span>}
           {language === undefined ? null : <span className="scribe-code-frame__language">{language}</span>}
         </div>
+        <WrapToggleButton label={`Toggle wrap for ${copyTarget}`} defaultWrapped={defaultWrapped} />
         <CopyButton label={`Copy ${copyTarget} code`} source={source} />
       </div>
       <pre {...props} className={classes("scribe-code-frame__pre", className)}>{children}</pre>
@@ -160,6 +180,26 @@ function textContent(node: ReactNode): string {
   return text;
 }
 
-export function ScribeImage({ className, alt, ...props }: ImgHTMLAttributes<HTMLImageElement>) {
-  return <img {...props} alt={alt ?? ""} className={classes("scribe-image", className)} />;
+export { ScribeImage, type ScribeImageProps } from "./zoomable-image.js";
+
+export interface VideoProps extends HTMLAttributes<HTMLElement> {
+  readonly src: string;
+  readonly poster?: string;
+  readonly caption?: ReactNode;
+  readonly wide?: boolean;
+}
+
+function videoMimeType(src: string): string {
+  return src.endsWith(".webm") ? "video/webm" : "video/mp4";
+}
+
+export function Video({ src, poster, caption, wide = false, className, ...props }: VideoProps) {
+  return (
+    <Figure caption={caption} wide={wide} className={className}>
+      <video {...props} controls poster={poster} playsInline>
+        <source src={src} type={videoMimeType(src)} />
+        <p>Your browser does not support embedded video. <a href={src}>Download the video</a> instead.</p>
+      </video>
+    </Figure>
+  );
 }

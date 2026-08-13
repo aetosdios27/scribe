@@ -6,6 +6,7 @@ export interface LineRange {
 export interface ScribeCodeMetadata {
   readonly filename?: string;
   readonly lineNumbers: boolean;
+  readonly wrap: boolean;
   readonly highlight: readonly LineRange[];
   readonly focus: readonly LineRange[];
   readonly add: readonly LineRange[];
@@ -25,7 +26,7 @@ export interface ParsedCodeMetadata {
 }
 
 const namedFields = new Set(["filename", "highlight", "focus", "add", "remove"]);
-const acceptedSyntax = 'Expected: filename="...", lineNumbers, highlight="1,3-5", focus="1,3-5", add="1,3-5", remove="1,3-5".';
+const acceptedSyntax = 'Expected: filename="...", lineNumbers, wrap, highlight="1,3-5", focus="1,3-5", add="1,3-5", remove="1,3-5".';
 
 export function parseCodeMetadata(
   raw: string | undefined,
@@ -36,6 +37,7 @@ export function parseCodeMetadata(
   const seen = new Set<string>();
   const values = new Map<string, string>();
   let lineNumbers = false;
+  let wrap = false;
   let cursor = 0;
 
   while (cursor < source.length) {
@@ -63,6 +65,16 @@ export function parseCodeMetadata(
       if (source[cursor] === "=") {
         const end = nextWhitespace(source, cursor);
         issues.push(issue("SCB1001", "`lineNumbers` is a flag and does not accept a value.", fieldStart, end));
+        cursor = end;
+      }
+      continue;
+    }
+
+    if (field === "wrap") {
+      wrap = true;
+      if (source[cursor] === "=") {
+        const end = nextWhitespace(source, cursor);
+        issues.push(issue("SCB1001", "`wrap` is a flag and does not accept a value.", fieldStart, end));
         cursor = end;
       }
       continue;
@@ -102,8 +114,8 @@ export function parseCodeMetadata(
   const remove = parseRanges("remove", values.get("remove"), lineCount, source, issues);
   const filename = values.get("filename");
   const value: ScribeCodeMetadata = filename === undefined
-    ? { lineNumbers, highlight, focus, add, remove }
-    : { filename, lineNumbers, highlight, focus, add, remove };
+    ? { lineNumbers, wrap, highlight, focus, add, remove }
+    : { filename, lineNumbers, wrap, highlight, focus, add, remove };
 
   return { value, issues };
 }
