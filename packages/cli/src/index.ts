@@ -5,7 +5,6 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { renderScribeLogo } from "./brand.js";
 import { colorize, commandArgument, displayPath, suggestClosest, supportsColor } from "./cli-output.js";
 import { importHelp, initHelp, integrateHelp, studioHelp, studioInitHelp, updateHelp } from "./command-help.js";
 import { delegateToLocalCli, resolveCliPackageRoot, resolveExecutionContext, shouldDelegate } from "./launcher.js";
@@ -68,6 +67,7 @@ export interface MainDependencies {
   readonly isTTY?: boolean;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly argv1?: string;
+  readonly columns?: number;
 }
 
 export async function main(
@@ -79,11 +79,9 @@ export async function main(
   const stderr = dependencies.stderr ?? ((value: string) => process.stderr.write(value));
   const env = dependencies.env ?? process.env;
   const isTTY = dependencies.isTTY ?? process.stdout.isTTY === true;
+  const columns = dependencies.columns ?? process.stdout.columns ?? 80;
   const color = supportsColor(isTTY, env);
-  const logo = () => renderScribeLogo(version, {
-    color,
-    detailed: isTTY && env.TERM !== "dumb" && (process.stdout.columns ?? 80) >= 48
-  });
+
   if (args.includes("--version") || args.includes("-v")) {
     stdout(`${version}\n`);
     return 0;
@@ -94,17 +92,10 @@ export async function main(
   }
   if (args.length === 0) {
     const { bareStateOutput } = await import("./bare.js");
-    stdout(logo());
     stdout(await bareStateOutput({ cwd, version }));
     return 0;
   }
 
-  if (
-    isTTY
-    && ["studio", "update", "init", "integrate", "import"].includes(args[0] ?? "")
-    && !args.includes("--help")
-    && !args.includes("-h")
-  ) stdout(logo());
 
   const [command, ...rest] = args;
   if (command === "init") {
@@ -138,7 +129,15 @@ export async function main(
         return 0;
       }
       const { runStudioInit } = await import("./studio-init.js");
-      return runStudioInit(rest.slice(1), { cwd, stdout, stderr });
+      return runStudioInit(rest.slice(1), {
+        cwd,
+        stdout,
+        stderr,
+        version,
+        isTTY,
+        env,
+        columns
+      });
     }
     if (rest.includes("--help") || rest.includes("-h")) {
       stdout(studioHelp);

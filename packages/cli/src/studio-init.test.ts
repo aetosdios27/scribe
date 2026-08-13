@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { expect, it, vi } from "vitest";
 
-import { deriveArticleSlug, runStudioInit } from "./studio-init.js";
+import {
+  deriveArticleSlug,
+  renderStudioInitHeader,
+  runStudioInit
+} from "./studio-init.js";
 
 async function workspace(): Promise<string> {
   return mkdtemp(join(tmpdir(), "scribe-studio-init-"));
@@ -14,16 +18,50 @@ it("derives a readable article slug", () => {
   expect(deriveArticleSlug("The Smallest Honest Redis Clone")).toBe("the-smallest-honest-redis-clone");
   expect(deriveArticleSlug("  Déjà vu: cache & queue  ")).toBe("deja-vu-cache-queue");
 });
+it("renders the pixel wordmark only for truecolor init headers", () => {
+  const truecolor = renderStudioInitHeader("0.1.0-beta", true);
+  expect(truecolor.split("\n")).toHaveLength(5);
+  expect(truecolor).toContain("\u001B[48;2;");
+  expect(truecolor).toContain("S C R I B E");
+  expect(truecolor).toContain("Publishing SDK · 0.1.0-beta");
+  expect(truecolor).not.toContain("╭──────────╮");
+
+  const fallback = renderStudioInitHeader("0.1.0-beta", false);
+  expect(fallback).toBe("{S}  S C R I B E\n     Publishing SDK · 0.1.0-beta\n");
+  expect(fallback).not.toContain("\u001B[");
+});
+
+it("uses the compact fallback when injected terminal columns are narrow", async () => {
+  const cwd = await workspace();
+  const stdout = vi.fn();
+
+  expect(await runStudioInit(["--title", "Narrow", "--yes"], {
+    cwd,
+    stdout,
+    isTTY: true,
+    columns: 47,
+    env: { COLORTERM: "truecolor" },
+    launchStudio: vi.fn(async () => 0)
+  })).toBe(0);
+
+  const output = stdout.mock.calls.join("");
+  expect(output).toContain("{S}  S C R I B E");
+  expect(output).not.toContain("\u001B[48;2;");
+});
+
 
 it("creates a minimal article in the detected content directory and launches normal Studio", async () => {
   const cwd = await workspace();
   await mkdir(join(cwd, "posts"), { recursive: true });
   const launchStudio = vi.fn(async (_args: readonly string[]) => 0);
+  const prompt = vi.fn(async () => {
+    throw new Error("--yes must not prompt for editable defaults");
+  });
   const stdout = vi.fn();
 
   expect(await runStudioInit([
     "--title", "The Smallest Honest Redis Clone", "--yes", "--no-open"
-  ], { cwd, stdout, launchStudio })).toBe(0);
+  ], { cwd, stdout, prompt, launchStudio })).toBe(0);
 
   const path = join(cwd, "posts", "the-smallest-honest-redis-clone.mdx");
   await expect(readFile(path, "utf8")).resolves.toBe(
@@ -31,9 +69,11 @@ it("creates a minimal article in the detected content directory and launches nor
   );
   expect(launchStudio).toHaveBeenCalledOnce();
   expect(launchStudio.mock.calls[0]?.[0]).toEqual([
-    "posts/the-smallest-honest-redis-clone.mdx",
-    "--no-open"
+    "--no-open",
+    "--",
+    "posts/the-smallest-honest-redis-clone.mdx"
   ]);
+  expect(prompt).not.toHaveBeenCalled();
   expect(stdout.mock.calls.join("\n")).toContain("Opening Scribe Studio");
 });
 
@@ -51,7 +91,31 @@ it("respects an explicit content directory and editable slug and path", async ()
 
   await expect(readFile(join(cwd, "writing", "deep", "redis.mdx"), "utf8"))
     .resolves.toContain('title: "Cache Notes"');
-  expect(launchStudio.mock.calls[0]?.[0]?.[0]).toBe("writing/deep/redis.mdx");
+  expect(launchStudio.mock.calls[0]?.[0]).toEqual(["--", "writing/deep/redis.mdx"]);
+});
+
+it("uses an explicit path without resolving ambiguous content directories", async () => {
+  const cwd = await workspace();
+  await mkdir(join(cwd, "posts"), { recursive: true });
+  await mkdir(join(cwd, "content", "blog"), { recursive: true });
+  const launchStudio = vi.fn(async (_args: readonly string[]) => 0);
+
+  expect(await runStudioInit([
+    "--title", "Explicit Target",
+    "--path", "drafts/explicit-target.mdx"
+  ], {
+    cwd,
+    stdout: vi.fn(),
+    confirm: async () => true,
+    launchStudio
+  })).toBe(0);
+
+  await expect(readFile(join(cwd, "drafts", "explicit-target.mdx"), "utf8"))
+    .resolves.toContain('title: "Explicit Target"');
+  expect(launchStudio.mock.calls[0]?.[0]).toEqual([
+    "--",
+    "drafts/explicit-target.mdx"
+  ]);
 });
 
 it("refuses to overwrite an existing article", async () => {

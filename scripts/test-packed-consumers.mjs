@@ -202,6 +202,8 @@ export default function Layout({ children }: { children: ReactNode }) { return <
   if (aliasVersion.stdout.trim() !== version) throw new Error(`npm Next scb alias reported ${aliasVersion.stdout.trim()}, expected ${version}.`);
   run(bin(directory, "scribe"), ["--help"], directory);
   run(bin(directory, "scb"), ["--help"], directory);
+  run(bin(directory, "scribe"), ["studio", "init", "--help"], directory);
+  run(bin(directory, "scribe"), ["update", "--help"], directory);
   run(executable("npx"), ["--no-install", "scribe", "validate", join(directory, "app/article.mdx")], directory);
   run(bin(directory, "scb"), ["validate", join(directory, "app/article.mdx")], directory);
   const invalid = run(bin(directory, "scribe"), ["validate", join(directory, "invalid.mdx")], directory, false);
@@ -445,7 +447,8 @@ async function smokeStudio(directory, articlePath) {
   if (termination.code !== 0 || termination.signal !== null) {
     throw new Error(`Packed Studio did not shut down cleanly (code ${String(termination.code)}, signal ${String(termination.signal)}):\n${stdout}\n${stderr}`);
   }
-  if (/points to missing source files|\.scribe-studio\.mdx/iu.test(stderr)) {
+  const output = `${stdout}\n${stderr}`;
+  if (/points to missing source files|\.scribe-studio\.mdx/iu.test(output)) {
     throw new Error(`Packed Studio emitted a bogus generated-MDX sourcemap warning:\n${stderr}`);
   }
   results.push({ command: [command, ...args].join(" "), cwd: directory, status: 0, stdout: stdout.trim(), stderr: stderr.trim() });

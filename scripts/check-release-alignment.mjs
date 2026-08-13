@@ -47,6 +47,12 @@ assert(equalSets(config.fixed[0], expectedNames), `Changesets fixed group must c
 const pre = JSON.parse(await readFile(join(root, ".changeset", "pre.json"), "utf8"));
 assert(pre.mode === "pre", "The current release state must remain in prerelease mode.");
 assert(pre.tag === "alpha" || pre.tag === "beta", `Unsupported prerelease channel: ${String(pre.tag)}.`);
+assert(
+  pre.initialVersions !== null &&
+    typeof pre.initialVersions === "object" &&
+    expectedNames.every((name) => typeof pre.initialVersions[name] === "string"),
+  `Prerelease initial versions must be strings for: ${expectedNames.join(", ")}.`
+);
 const initialVersions = new Set(expectedNames.map((name) => pre.initialVersions[name]));
 assert(initialVersions.size === 1, `Prerelease initial versions drifted: ${expectedNames.map((name) => `${name}@${String(pre.initialVersions[name])}`).join(", ")}.`);
 const currentPrerelease = parsePrereleaseVersion(version);

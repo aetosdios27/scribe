@@ -107,6 +107,7 @@ describe("publishable package manifests", () => {
     expect(manifest.exports).toEqual({});
     expect(manifest.dependencies).toEqual({
       "@base-ui/react": "1.6.0",
+      "@clack/prompts": "1.7.0",
       "@cloudflare/kumo": "2.8.0",
       "@fontsource/ibm-plex-mono": "5.2.7",
       "@fontsource/ibm-plex-sans": "5.2.8",

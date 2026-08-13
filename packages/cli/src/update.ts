@@ -49,6 +49,7 @@ export interface UpdateDependencies {
   readonly resolveTarget?: () => Promise<string>;
   readonly runCommand?: (command: PackageCommand, cwd: string) => Promise<number>;
   readonly inspectAlignment?: typeof checkPackageAlignment;
+  readonly releaseLock?: typeof releaseIntegrationLock;
 }
 
 interface ParsedUpdateArguments {
@@ -62,7 +63,7 @@ export async function resolveScribePrereleaseTarget(
 ): Promise<string> {
   const versions = await Promise.all(scribePackageDefinitions.map(async ({ name }) => {
     const response = await fetchImpl(`https://registry.npmjs.org/${encodeURIComponent(name)}`, {
-      headers: { accept: "application/json" },
+      headers: { accept: "application/vnd.npm.install-v1+json, application/json" },
       signal: AbortSignal.timeout(15_000)
     });
     if (!response.ok) {
@@ -218,13 +219,15 @@ export async function runUpdate(
     ].join("\n");
   }
 
+  let lockReleaseFailure: string | undefined;
   try {
-    await releaseIntegrationLock(lock);
+    await (dependencies.releaseLock ?? releaseIntegrationLock)(lock);
   } catch (error) {
-    failure += `${failure === "" ? "" : "\n"}Could not safely release the Scribe integration lock: ${error instanceof Error ? error.message : String(error)}`;
+    lockReleaseFailure = `Could not safely release the Scribe integration lock: ${error instanceof Error ? error.message : String(error)}`;
   }
 
   if (failure !== "") {
+    if (lockReleaseFailure !== undefined) failure += `\n${lockReleaseFailure}`;
     stderr(renderReceipt("error", "Scribe update failed", failure.split("\n")));
     return 1;
   }
@@ -232,6 +235,9 @@ export async function runUpdate(
     "success",
     `Updated. All four Scribe packages now resolve at ${target}.`
   ));
+  if (lockReleaseFailure !== undefined) {
+    stderr(renderReceipt("warning", "Scribe was updated, but lock cleanup failed", [lockReleaseFailure]));
+  }
   return 0;
 }
 

@@ -1248,10 +1248,12 @@ async function verificationOptions(
             mode: plan.mode
           }
         }),
-    files: applied.map((change) => ({
-      path: change.path,
-      expectedHash: change.writtenHash
-    }))
+    files: applied.flatMap((change) => change.result.kind === "file"
+      ? [{
+          path: change.path,
+          expectedHash: change.result.hash
+        }]
+      : [])
   };
 }
 

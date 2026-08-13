@@ -20,6 +20,7 @@ import {
   IntegrationLockOwnershipError,
   manifestAndLockfilePaths,
   releaseIntegrationLock,
+  observeTrackedMutations,
   restoreSnapshot,
   snapshotFiles,
   verifyIntegration
@@ -115,6 +116,46 @@ it("snapshots and restores binary files byte-for-byte", async () => {
 
   expect(await restoreSnapshot(root, snapshot)).toEqual([]);
   expect(await readFile(join(root, "bun.lockb"))).toEqual(original);
+});
+
+it("restores a tracked file deleted by the package manager", async () => {
+  const root = await project({ "bun.lock": "original\n" });
+  const snapshot = await snapshotFiles(root, ["bun.lock"]);
+  await rm(join(root, "bun.lock"));
+  const observed = await observeTrackedMutations(root, snapshot, ["bun.lock"]);
+
+  expect(observed).toEqual([{
+    path: "bun.lock",
+    created: false,
+    result: { kind: "missing" }
+  }]);
+  expect(await restoreSnapshot(root, snapshot, observed)).toEqual([]);
+  await expect(readFile(join(root, "bun.lock"), "utf8")).resolves.toBe("original\n");
+});
+
+it("rollback preserves a file recreated after a package-manager deletion", async () => {
+  const root = await project({ "bun.lock": "original\n" });
+  const snapshot = await snapshotFiles(root, ["bun.lock"]);
+  await rm(join(root, "bun.lock"));
+  const observed = await observeTrackedMutations(root, snapshot, ["bun.lock"]);
+  await writeFile(join(root, "bun.lock"), "user replacement\n");
+
+  expect(await restoreSnapshot(root, snapshot, observed)).toEqual(["bun.lock"]);
+  await expect(readFile(join(root, "bun.lock"), "utf8")).resolves.toBe("user replacement\n");
+});
+
+it("rollback does not recreate a tracked file deleted after package-manager output was observed", async () => {
+  const root = await project({ "bun.lock": "original\n" });
+  const snapshot = await snapshotFiles(root, ["bun.lock"]);
+  await writeFile(join(root, "bun.lock"), "package manager\n");
+  const observed = await observeTrackedMutations(root, snapshot, ["bun.lock"]);
+  await rm(join(root, "bun.lock"));
+
+  expect(await restoreSnapshot(root, snapshot, observed)).toEqual(["bun.lock"]);
+  await expect(readFile(join(root, "bun.lock")).then(
+    () => "exists",
+    (error: NodeJS.ErrnoException) => error.code
+  )).resolves.toBe("ENOENT");
 });
 
 it("aborts when an existing file changed after planning", async () => {

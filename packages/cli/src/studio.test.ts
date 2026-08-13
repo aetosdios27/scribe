@@ -80,6 +80,13 @@ it("parses the documented studio command surface and rejects unknown flags", () 
     open: true,
     help: false
   });
+  expect(parseStudioArguments(["--no-open", "--", "-draft.mdx"])).toEqual({
+    path: "-draft.mdx",
+    port: 4317,
+    portExplicit: false,
+    open: false,
+    help: false
+  });
   expect(parseStudioArguments(["content/a.mdx", "--no-opn"])).toEqual({ error: 'Unknown studio option "--no-opn". Did you mean "--no-open"?' });
   expect(parseStudioArguments(["content/a.txt"])).toMatchObject({ error: expect.stringContaining(".md or .mdx") });
 });

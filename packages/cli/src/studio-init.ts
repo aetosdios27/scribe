@@ -13,6 +13,11 @@ import {
 import { findSupportedProjectRoot } from "./launcher.js";
 import { runStudio } from "./studio.js";
 import { promptConfirm, promptText, renderPanel, renderReceipt } from "./terminal-ui.js";
+import {
+  renderLogo,
+  renderLogoFallback,
+  supportsTrueColorFor
+} from "./logo.js";
 
 export interface StudioInitOptions {
   readonly title: string;
@@ -37,6 +42,10 @@ export interface StudioInitDependencies {
   readonly prompt?: (question: string) => Promise<string | null>;
   readonly confirm?: (question: string) => Promise<boolean | null>;
   readonly launchStudio?: typeof runStudio;
+  readonly version?: string;
+  readonly isTTY?: boolean;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly columns?: number;
 }
 
 interface ParsedStudioInitArguments {
@@ -78,9 +87,15 @@ export async function planStudioArticle(
     throw new ContentPathUsageError("Article slug must contain letters or numbers separated by single hyphens.");
   }
 
-  const contentDirectory = await chooseContentDirectory(root, options.contentDirectory, "--content-dir");
-  const defaultPath = displayWorkspacePath(root, resolve(contentDirectory, `${slug}.mdx`));
-  const targetPath = resolveInsideWorkspace(root, options.path ?? defaultPath, "Article path");
+  let contentDirectory: string;
+  let targetPath: string;
+  if (options.path === undefined) {
+    contentDirectory = await chooseContentDirectory(root, options.contentDirectory, "--content-dir");
+    targetPath = resolve(contentDirectory, `${slug}.mdx`);
+  } else {
+    targetPath = resolveInsideWorkspace(root, options.path, "Article path");
+    contentDirectory = dirname(targetPath);
+  }
   if (articleExtensions[extname(targetPath).toLowerCase()] !== true) {
     throw new ContentPathUsageError("Article path must end in .md or .mdx.");
   }
@@ -105,7 +120,11 @@ export async function createStudioArticle(plan: StudioArticlePlan): Promise<void
     await handle.writeFile(plan.source, "utf8");
     await handle.sync();
   } catch (error) {
-    if (handle !== undefined) await rm(plan.targetPath, { force: true }).catch(() => undefined);
+    if (handle !== undefined) {
+      await handle.close().catch(() => undefined);
+      handle = undefined;
+      await rm(plan.targetPath, { force: true }).catch(() => undefined);
+    }
     if (error !== null && typeof error === "object" && "code" in error && error.code === "EEXIST") {
       throw new Error(`${displayWorkspacePath(plan.root, plan.targetPath)} already exists. Scribe will not overwrite it.`);
     }
@@ -134,26 +153,35 @@ export async function runStudioInit(
   const injectedPrompt = dependencies.prompt;
   const injectedConfirm = dependencies.confirm;
   const terminalInteractive = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  const outputIsTTY = dependencies.isTTY ?? process.stdout.isTTY === true;
+  const columns = dependencies.columns ?? process.stdout.columns ?? 80;
+  if (outputIsTTY) {
+    stdout(renderStudioInitHeader(
+      dependencies.version ?? "0.1.0-beta",
+      columns >= 48 && supportsTrueColorFor({
+        isTTY: outputIsTTY,
+        env: dependencies.env ?? process.env
+      })
+    ));
+  }
 
   try {
     const inputRoot = dependencies.cwd ?? process.cwd();
     const root = await findSupportedProjectRoot(inputRoot) ?? resolve(inputRoot);
-    const contentDirectory = await chooseContentDirectory(
-      root,
-      parsed.contentDirectory,
-      "--content-dir"
-    );
-    const shownContentDirectory = displayWorkspacePath(root, contentDirectory);
+    const contentDirectory = parsed.path === undefined
+      ? await chooseContentDirectory(root, parsed.contentDirectory, "--content-dir")
+      : undefined;
     const title = parsed.title ?? await askTitle(injectedPrompt, terminalInteractive);
     if (title === null) {
       stdout(renderReceipt("cancelled", "No article was created."));
       return 0;
     }
 
-    const derivedSlug = parsed.slug ?? deriveArticleSlug(title);
+    const derivedSlug = deriveArticleSlug(title);
     const slug = parsed.slug ?? await askEditable(
       injectedPrompt,
       terminalInteractive,
+      parsed.yes,
       "Slug",
       derivedSlug,
       validateArticleSlug
@@ -163,13 +191,13 @@ export async function runStudioInit(
       return 0;
     }
 
-    const defaultPath = displayWorkspacePath(
-      root,
-      resolve(contentDirectory, `${slug}.mdx`)
-    );
+    const defaultPath = contentDirectory === undefined
+      ? ""
+      : displayWorkspacePath(root, resolve(contentDirectory, `${slug}.mdx`));
     const selectedPath = parsed.path ?? await askEditable(
       injectedPrompt,
       terminalInteractive,
+      parsed.yes,
       "Article path",
       defaultPath,
       (value) => {
@@ -199,7 +227,7 @@ export async function runStudioInit(
       title: "Scribe Studio · New article",
       description: "Review the source file before creation.",
       rows: [
-        { label: "Content", value: shownContentDirectory },
+        { label: "Content", value: displayWorkspacePath(plan.root, plan.contentDirectory) },
         { label: "Title", value: plan.title },
         { label: "Slug", value: plan.slug },
         { label: "Path", value: shownPath }
@@ -227,7 +255,7 @@ export async function runStudioInit(
       "Opening Scribe Studio…"
     ]));
     const launchStudio = dependencies.launchStudio ?? runStudio;
-    return launchStudio([shownPath, ...parsed.studioArgs], {
+    return launchStudio([...parsed.studioArgs, "--", shownPath], {
       cwd: plan.root,
       stdout,
       stderr
@@ -240,6 +268,15 @@ export async function runStudioInit(
     return error instanceof ContentPathUsageError ? 2 : 1;
   }
 }
+export function renderStudioInitHeader(version: string, trueColor: boolean): string {
+  if (!trueColor) {
+    return `${renderLogoFallback()}  S C R I B E\n     Publishing SDK · ${version}\n`;
+  }
+  const mark = renderLogo().split("\n");
+  const heading = ["", "S C R I B E", `Publishing SDK · ${version}`, ""];
+  return `${mark.map((line, index) => `${line}  ${heading[index] ?? ""}`).join("\n")}\n`;
+}
+
 
 function parseStudioInitArguments(args: readonly string[]): ParsedStudioInitArguments | string {
   let contentDirectory: string | undefined;
@@ -310,10 +347,12 @@ async function askTitle(
 async function askEditable(
   prompt: ((question: string) => Promise<string | null>) | undefined,
   terminalInteractive: boolean,
+  acceptDefault: boolean,
   label: string,
   fallback: string,
   validate: (value: string) => string | undefined
 ): Promise<string | null> {
+  if (acceptDefault) return fallback;
   if (prompt !== undefined) return askDefault(prompt, `${label} [${fallback}]: `, fallback);
   if (!terminalInteractive) return fallback;
   const value = await promptText({
@@ -353,9 +392,9 @@ async function askDefault(
 async function assertTargetMissing(root: string, path: string): Promise<void> {
   try {
     await lstat(path);
-    throw new Error(`${displayWorkspacePath(root, path)} already exists. Scribe will not overwrite it.`);
   } catch (error) {
     if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT") return;
     throw error;
   }
+  throw new Error(`${displayWorkspacePath(root, path)} already exists. Scribe will not overwrite it.`);
 }

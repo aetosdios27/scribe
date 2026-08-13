@@ -137,32 +137,34 @@ export function parseStudioArguments(args: readonly string[]): StudioArguments |
   let portExplicit = false;
   let open = true;
   let help = false;
+  let optionsEnded = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
-    if (argument === "--help" || argument === "-h") help = true;
-    else if (argument === "--no-open") open = false;
-    else if (argument === "--mode") {
+    if (!optionsEnded && argument === "--") {
+      optionsEnded = true;
+    } else if (!optionsEnded && (argument === "--help" || argument === "-h")) help = true;
+    else if (!optionsEnded && argument === "--no-open") open = false;
+    else if (!optionsEnded && argument === "--mode") {
       const value = args[index + 1];
       if (!styleModes.has(value as StyleMode)) return { error: `Invalid --mode value "${String(value)}". Expected one of: foundation, default, tailwind.` };
       mode = value as StyleMode;
       index += 1;
-    } else if (argument === "--host-css") {
+    } else if (!optionsEnded && argument === "--host-css") {
       const value = args[index + 1];
       if (!value || value.startsWith("-")) return { error: "--host-css requires a local CSS path." };
       hostCss = value;
       index += 1;
-    } else if (argument === "--port") {
+    } else if (!optionsEnded && argument === "--port") {
       const value = Number(args[index + 1]);
       if (!Number.isInteger(value) || value < 1 || value > 65_535) return { error: "--port requires an integer from 1 to 65535." };
       port = value;
       portExplicit = true;
       index += 1;
-    } else if (argument?.startsWith("-")) {
+    } else if (!optionsEnded && argument?.startsWith("-")) {
       const suggestion = suggestClosest(argument, ["--mode", "--host-css", "--port", "--no-open", "--help"]);
       return { error: `Unknown studio option "${argument}".${suggestion === undefined ? "" : ` Did you mean "${suggestion}"?`}` };
-    }
-    else if (path === undefined) path = argument;
+    } else if (path === undefined) path = argument;
     else return { error: "Expected exactly one Markdown or MDX source file." };
   }
 

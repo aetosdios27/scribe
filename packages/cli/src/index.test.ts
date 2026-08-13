@@ -24,7 +24,7 @@ it("prints the packaged prerelease version", async () => {
   expect(write).toHaveBeenCalledWith(`${version}\n`);
 });
 
-it("opens interactive Scribe surfaces with the inline {S} logo", async () => {
+it("does not print the pixel logo on unrelated commands", async () => {
   const stdout = vi.fn();
   const cwd = await project({
     "package.json": JSON.stringify({ name: "plain-dir", private: true })
@@ -34,21 +34,18 @@ it("opens interactive Scribe surfaces with the inline {S} logo", async () => {
     cwd,
     stdout,
     isTTY: true,
-    env: { TERM: "xterm-256color" }
+    env: { COLORTERM: "truecolor" }
   })).toBe(0);
-  expect(stdout.mock.calls.join("")).toContain("\u001B[94m╭──────────╮\u001B[0m");
-  expect(stdout.mock.calls.join("")).toContain("\u001B[94m│   {S}    │\u001B[0m  Publishing SDK");
-  expect(stdout.mock.calls.join("")).toContain("S C R I B E");
+  expect(stdout.mock.calls.join("")).not.toContain("\u001B[48;2;");
 
   stdout.mockClear();
   expect(await main(["studio", "--help"], {
     cwd,
     stdout,
     isTTY: true,
-    env: { TERM: "xterm-256color" }
+    env: { COLORTERM: "truecolor" }
   })).toBe(0);
-  expect(stdout.mock.calls.join("")).not.toContain("Publishing SDK");
-  expect(stdout.mock.calls.join("")).toContain("scribe studio <article.mdx>");
+  expect(stdout.mock.calls.join("")).not.toContain("\u001B[48;2;");
 });
 
 it("contains unexpected command failures without exposing an internal stack", async () => {

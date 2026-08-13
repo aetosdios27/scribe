@@ -12,15 +12,19 @@ const alpha = "0.1.0-alpha.10";
 const beta = "0.1.0-beta";
 
 it("resolves one aligned beta target across all four registry packages", async () => {
-  const requested: string[] = [];
-  const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-    requested.push(String(input));
+  const requested: { readonly url: string; readonly accept: string | null }[] = [];
+  const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    requested.push({
+      url: String(input),
+      accept: new Headers(init?.headers).get("accept")
+    });
     return new Response(JSON.stringify({ "dist-tags": { beta } }), { status: 200 });
   });
 
   await expect(resolveScribePrereleaseTarget(fetchImpl as typeof fetch)).resolves.toBe(beta);
   expect(requested).toHaveLength(4);
-  expect(requested.every((url) => url.startsWith("https://registry.npmjs.org/"))).toBe(true);
+  expect(requested.every(({ url }) => url.startsWith("https://registry.npmjs.org/"))).toBe(true);
+  expect(requested.every(({ accept }) => accept === "application/vnd.npm.install-v1+json, application/json")).toBe(true);
 });
 
 it("reports an aligned installation as already current", async () => {
@@ -109,6 +113,90 @@ it.each([
   await expect(checkPackageAlignment(cwd, beta)).resolves.toMatchObject({ aligned: true });
 });
 
+it.each(["pnpm", "yarn"] as const)("does not automate updates with %s", async (manager) => {
+  const cwd = await projectFixture(manager, Object.fromEntries(
+    scribePackageDefinitions.map(({ name }) => [name, alpha])
+  ));
+  const runCommand = vi.fn(async () => 0);
+
+  expect(await runUpdate([], {
+    cwd,
+    version: alpha,
+    stdout: vi.fn(),
+    stderr: vi.fn(),
+    resolveTarget: async () => beta,
+    runCommand
+  })).toBe(2);
+  expect(runCommand).not.toHaveBeenCalled();
+});
+
+it("writes a cancelled receipt when the update is declined", async () => {
+  const cwd = await projectFixture("bun", Object.fromEntries(
+    scribePackageDefinitions.map(({ name }) => [name, alpha])
+  ));
+  const stdout = vi.fn();
+  const runCommand = vi.fn(async () => 0);
+
+  expect(await runUpdate([], {
+    cwd,
+    version: alpha,
+    stdout,
+    stderr: vi.fn(),
+    confirm: async () => false,
+    resolveTarget: async () => beta,
+    runCommand
+  })).toBe(0);
+  expect(stdout.mock.calls.join("\n")).toContain("No package-manager commands were run");
+  expect(runCommand).not.toHaveBeenCalled();
+});
+
+it("rejects non-interactive update confirmation without running commands", async () => {
+  const cwd = await projectFixture("npm", Object.fromEntries(
+    scribePackageDefinitions.map(({ name }) => [name, alpha])
+  ));
+  const stderr = vi.fn();
+  const runCommand = vi.fn(async () => 0);
+
+  expect(await runUpdate([], {
+    cwd,
+    version: alpha,
+    stdout: vi.fn(),
+    stderr,
+    confirm: async () => null,
+    resolveTarget: async () => beta,
+    runCommand
+  })).toBe(2);
+  expect(stderr.mock.calls.join("\n")).toContain("non-interactive");
+  expect(runCommand).not.toHaveBeenCalled();
+});
+
+it("reports verified success when only integration lock cleanup fails", async () => {
+  const cwd = await projectFixture("bun", Object.fromEntries(
+    scribePackageDefinitions.map(({ name }) => [name, alpha])
+  ));
+  const stdout = vi.fn();
+  const stderr = vi.fn();
+  let commands = 0;
+
+  expect(await runUpdate(["--yes"], {
+    cwd,
+    version: alpha,
+    stdout,
+    stderr,
+    resolveTarget: async () => beta,
+    runCommand: async () => {
+      commands += 1;
+      if (commands === 2) await installVersions(cwd, beta);
+      return 0;
+    },
+    releaseLock: async () => {
+      throw new Error("cleanup unavailable");
+    }
+  })).toBe(0);
+  expect(stdout.mock.calls.join("\n")).toContain(`All four Scribe packages now resolve at ${beta}`);
+  expect(stderr.mock.calls.join("\n")).toContain("lock cleanup failed");
+});
+
 it("rolls back tracked package files and never reports partial success after a failed update", async () => {
   const cwd = await projectFixture("bun", Object.fromEntries(
     scribePackageDefinitions.map(({ name }) => [name, alpha])
@@ -138,13 +226,25 @@ it("rolls back tracked package files and never reports partial success after a f
 });
 
 async function projectFixture(
-  manager: "bun" | "npm",
+  manager: "bun" | "npm" | "pnpm" | "yarn",
   versions: Readonly<Record<string, string>>
 ): Promise<string> {
+  const packageManagerVersions = {
+    bun: "1.3.13",
+    npm: "11.6.2",
+    pnpm: "10.0.0",
+    yarn: "4.0.0"
+  } as const;
+  const lockfiles = {
+    bun: "bun.lock",
+    npm: "package-lock.json",
+    pnpm: "pnpm-lock.yaml",
+    yarn: "yarn.lock"
+  } as const;
   const cwd = await mkdtemp(join(tmpdir(), `scribe-update-${manager}-`));
   await writeFile(join(cwd, "package.json"), `${JSON.stringify({
     private: true,
-    packageManager: manager === "bun" ? "bun@1.3.13" : "npm@11.6.2",
+    packageManager: `${manager}@${packageManagerVersions[manager]}`,
     dependencies: {
       react: "19.2.7",
       next: "16.2.11",
@@ -154,7 +254,7 @@ async function projectFixture(
     },
     devDependencies: { "@scribe-sdk/cli": versions["@scribe-sdk/cli"] }
   }, null, 2)}\n`);
-  await writeFile(join(cwd, manager === "bun" ? "bun.lock" : "package-lock.json"), "fixture\n");
+  await writeFile(join(cwd, lockfiles[manager]), "fixture\n");
   for (const { name } of scribePackageDefinitions) {
     const directory = join(cwd, "node_modules", ...name.split("/"));
     await mkdir(directory, { recursive: true });
