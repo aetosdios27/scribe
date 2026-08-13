@@ -15,17 +15,26 @@
     "LICENSE"
   ],
   "bin": {
-    "scribe": "./dist/index.mjs",
-    "scb": "./dist/index.mjs"
+    "scribe": "./dist/bootstrap.mjs",
+    "scb": "./dist/bootstrap.mjs"
   },
   "exports": {},
   "scripts": {
     "build": "tsdown",
     "prepack": "node ../../scripts/sync-package-docs.mjs --check"
   },
+  "optionalDependencies": {
+    "@scribe-sdk/cli-linux-x64-gnu": "0.1.0-beta",
+    "@scribe-sdk/cli-linux-x64-musl": "0.1.0-beta",
+    "@scribe-sdk/cli-linux-arm64-gnu": "0.1.0-beta",
+    "@scribe-sdk/cli-linux-arm64-musl": "0.1.0-beta",
+    "@scribe-sdk/cli-darwin-x64": "0.1.0-beta",
+    "@scribe-sdk/cli-darwin-arm64": "0.1.0-beta",
+    "@scribe-sdk/cli-win32-x64-msvc": "0.1.0-beta",
+    "@scribe-sdk/cli-win32-arm64-msvc": "0.1.0-beta"
+  },
   "dependencies": {
     "@base-ui/react": "1.6.0",
-    "@clack/prompts": "1.7.0",
     "@cloudflare/kumo": "2.8.0",
     "@fontsource/ibm-plex-mono": "5.2.7",
     "@fontsource/ibm-plex-sans": "5.2.8",

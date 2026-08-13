@@ -1,13 +1,13 @@
-import { access, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 
 import {
+  createStudioArticle,
   deriveArticleSlug,
-  renderStudioInitHeader,
-  runStudioInit
+  planStudioArticle
 } from "./studio-init.js";
 
 async function workspace(): Promise<string> {
@@ -18,104 +18,37 @@ it("derives a readable article slug", () => {
   expect(deriveArticleSlug("The Smallest Honest Redis Clone")).toBe("the-smallest-honest-redis-clone");
   expect(deriveArticleSlug("  Déjà vu: cache & queue  ")).toBe("deja-vu-cache-queue");
 });
-it("renders the pixel wordmark only for truecolor init headers", () => {
-  const truecolor = renderStudioInitHeader("0.1.0-beta", true);
-  expect(truecolor.split("\n")).toHaveLength(5);
-  expect(truecolor).toContain("\u001B[48;2;");
-  expect(truecolor).toContain("S C R I B E");
-  expect(truecolor).toContain("Publishing SDK · 0.1.0-beta");
-  expect(truecolor).not.toContain("╭──────────╮");
 
-  const fallback = renderStudioInitHeader("0.1.0-beta", false);
-  expect(fallback).toBe("{S}  S C R I B E\n     Publishing SDK · 0.1.0-beta\n");
-  expect(fallback).not.toContain("\u001B[");
-});
-
-it("uses the compact fallback when injected terminal columns are narrow", async () => {
-  const cwd = await workspace();
-  const stdout = vi.fn();
-
-  expect(await runStudioInit(["--title", "Narrow", "--yes"], {
-    cwd,
-    stdout,
-    isTTY: true,
-    columns: 47,
-    env: { COLORTERM: "truecolor" },
-    launchStudio: vi.fn(async () => 0)
-  })).toBe(0);
-
-  const output = stdout.mock.calls.join("");
-  expect(output).toContain("{S}  S C R I B E");
-  expect(output).not.toContain("\u001B[48;2;");
-});
-
-
-it("creates a minimal article in the detected content directory and launches normal Studio", async () => {
+it("creates a minimal article in the detected content directory", async () => {
   const cwd = await workspace();
   await mkdir(join(cwd, "posts"), { recursive: true });
-  const launchStudio = vi.fn(async (_args: readonly string[]) => 0);
-  const prompt = vi.fn(async () => {
-    throw new Error("--yes must not prompt for editable defaults");
-  });
-  const stdout = vi.fn();
+  const plan = await planStudioArticle(cwd, { title: "The Smallest Honest Redis Clone" });
 
-  expect(await runStudioInit([
-    "--title", "The Smallest Honest Redis Clone", "--yes", "--no-open"
-  ], { cwd, stdout, prompt, launchStudio })).toBe(0);
+  await createStudioArticle(plan);
 
-  const path = join(cwd, "posts", "the-smallest-honest-redis-clone.mdx");
-  await expect(readFile(path, "utf8")).resolves.toBe(
+  expect(plan.targetPath).toBe(join(cwd, "posts", "the-smallest-honest-redis-clone.mdx"));
+  await expect(readFile(plan.targetPath, "utf8")).resolves.toBe(
     '---\ntitle: "The Smallest Honest Redis Clone"\n---\n'
   );
-  expect(launchStudio).toHaveBeenCalledOnce();
-  expect(launchStudio.mock.calls[0]?.[0]).toEqual([
-    "--no-open",
-    "--",
-    "posts/the-smallest-honest-redis-clone.mdx"
-  ]);
-  expect(prompt).not.toHaveBeenCalled();
-  expect(stdout.mock.calls.join("\n")).toContain("Opening Scribe Studio");
 });
 
-it("respects an explicit content directory and editable slug and path", async () => {
+it("respects explicit content directories, slugs, and paths", async () => {
   const cwd = await workspace();
-  const launchStudio = vi.fn(async (_args: readonly string[]) => 0);
+  const slugPlan = await planStudioArticle(cwd, {
+    title: "Cache Notes",
+    slug: "redis-internals",
+    contentDirectory: "writing"
+  });
+  expect(slugPlan.targetPath).toBe(join(cwd, "writing", "redis-internals.mdx"));
 
-  expect(await runStudioInit([
-    "--content-dir", "writing",
-    "--title", "Cache Notes",
-    "--slug", "redis-internals",
-    "--path", "writing/deep/redis.mdx",
-    "--yes"
-  ], { cwd, stdout: vi.fn(), launchStudio })).toBe(0);
-
-  await expect(readFile(join(cwd, "writing", "deep", "redis.mdx"), "utf8"))
-    .resolves.toContain('title: "Cache Notes"');
-  expect(launchStudio.mock.calls[0]?.[0]).toEqual(["--", "writing/deep/redis.mdx"]);
-});
-
-it("uses an explicit path without resolving ambiguous content directories", async () => {
-  const cwd = await workspace();
   await mkdir(join(cwd, "posts"), { recursive: true });
   await mkdir(join(cwd, "content", "blog"), { recursive: true });
-  const launchStudio = vi.fn(async (_args: readonly string[]) => 0);
-
-  expect(await runStudioInit([
-    "--title", "Explicit Target",
-    "--path", "drafts/explicit-target.mdx"
-  ], {
-    cwd,
-    stdout: vi.fn(),
-    confirm: async () => true,
-    launchStudio
-  })).toBe(0);
-
-  await expect(readFile(join(cwd, "drafts", "explicit-target.mdx"), "utf8"))
-    .resolves.toContain('title: "Explicit Target"');
-  expect(launchStudio.mock.calls[0]?.[0]).toEqual([
-    "--",
-    "drafts/explicit-target.mdx"
-  ]);
+  const pathPlan = await planStudioArticle(cwd, {
+    title: "Explicit Target",
+    path: "drafts/explicit-target.mdx"
+  });
+  await createStudioArticle(pathPlan);
+  await expect(readFile(pathPlan.targetPath, "utf8")).resolves.toContain('title: "Explicit Target"');
 });
 
 it("refuses to overwrite an existing article", async () => {
@@ -123,54 +56,26 @@ it("refuses to overwrite an existing article", async () => {
   const path = join(cwd, "content", "blog", "existing.mdx");
   await mkdir(join(cwd, "content", "blog"), { recursive: true });
   await writeFile(path, "original\n");
-  const stderr = vi.fn();
-  const launchStudio = vi.fn(async (_args: readonly string[]) => 0);
 
-  expect(await runStudioInit([
-    "--title", "Existing", "--path", "content/blog/existing.mdx", "--yes"
-  ], { cwd, stderr, stdout: vi.fn(), launchStudio })).toBe(1);
-
+  await expect(planStudioArticle(cwd, {
+    title: "Existing",
+    path: "content/blog/existing.mdx"
+  })).rejects.toThrow("will not overwrite");
   await expect(readFile(path, "utf8")).resolves.toBe("original\n");
-  expect(stderr.mock.calls.join("\n")).toContain("will not overwrite");
-  expect(launchStudio).not.toHaveBeenCalled();
 });
 
-it("writes nothing when title entry or final confirmation is cancelled", async () => {
-  const titleCancelled = await workspace();
-  expect(await runStudioInit([], {
-    cwd: titleCancelled,
-    stdout: vi.fn(),
-    prompt: async () => null,
-    confirm: async () => true,
-    launchStudio: vi.fn(async (_args: readonly string[]) => 0)
-  })).toBe(0);
-  expect(await readdir(titleCancelled)).toEqual([]);
-
-  const confirmationCancelled = await workspace();
-  expect(await runStudioInit(["--title", "No Write"], {
-    cwd: confirmationCancelled,
-    stdout: vi.fn(),
-    confirm: async () => false,
-    launchStudio: vi.fn(async (_args: readonly string[]) => 0)
-  })).toBe(0);
-  expect(await readdir(confirmationCancelled)).toEqual([]);
-});
-
-it("rejects paths outside the project and unsafe symbolic-link targets", async () => {
+it("rejects invalid and unsafe targets before writing", async () => {
   const cwd = await workspace();
-  const stderr = vi.fn();
-  const launchStudio = vi.fn(async (_args: readonly string[]) => 0);
-
-  expect(await runStudioInit([
-    "--title", "Escape", "--path", "../escape.mdx", "--yes"
-  ], { cwd, stderr, stdout: vi.fn(), launchStudio })).toBe(2);
+  await expect(planStudioArticle(cwd, {
+    title: "Escape",
+    path: "../escape.mdx"
+  })).rejects.toThrow("inside the current workspace");
   await expect(access(join(cwd, "..", "escape.mdx"))).rejects.toMatchObject({ code: "ENOENT" });
 
   const outside = await workspace();
   await symlink(outside, join(cwd, "linked"));
-  expect(await runStudioInit([
-    "--title", "Linked", "--path", "linked/article.mdx", "--yes"
-  ], { cwd, stderr, stdout: vi.fn(), launchStudio })).toBe(1);
-  expect(stderr.mock.calls.join("\n")).toContain("symbolic link");
-  expect(launchStudio).not.toHaveBeenCalled();
+  await expect(planStudioArticle(cwd, {
+    title: "Linked",
+    path: "linked/article.mdx"
+  })).rejects.toThrow("symbolic link");
 });

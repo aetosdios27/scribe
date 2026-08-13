@@ -88,13 +88,17 @@ That limitation is architectural information, not a bug to hide behind a univers
 
 ### `@scribe-sdk/cli`: deliberate integration and local authoring
 
-The CLI owns the repository-facing workflow:
+The installed command is a platform-native Rust executable. `@scribe-sdk/cli` contains a minimal Node bootstrap that preserves project-local delegation, selects one exact optional native package for the current OS, architecture, and Linux libc, then passes the packaged engine entry to the binary. Rust owns command parsing, generated help, capability detection, prompts, plan/progress/receipt rendering, process status, signals, and exit-code policy. A versioned JSON-RPC 2.0 protocol over stdio isolates that shell from the TypeScript engine, which owns the existing repository-domain operations and Studio server:
 
 - `init` creates a source-owned content launchpad;
 - `integrate` detects the host, proposes package and file changes, supports dry-run inspection, applies a reviewed transaction, and verifies the result;
 - `import` converts official Medium exports without overwriting existing articles;
-- `validate` compiles one source through the Scribe pipeline; and
-- `studio` opens the local authoring and preview surface.
+- `validate` compiles one source through the Scribe pipeline;
+- `studio init` creates one minimal article and enters the normal Studio path;
+- `studio` opens the local authoring and preview surface; and
+- `update` aligns the four public Scribe packages through the detected package manager.
+
+The protocol handshake requires the CLI and engine versions to match and advertises capabilities before any operation. Plans are immutable, single-use envelopes; apply requests reference their generated plan ID. Semantic progress events carry tasks and diagnostics rather than preformatted terminal strings. The engine never owns terminal styling or command-line parsing.
 
 The CLI is allowed to understand filesystems, package managers, host configuration, local HTTP, and browser launch behavior. Those concerns do not belong in reader-facing React or compiler packages.
 

@@ -11,3 +11,6 @@ test-results/
 .scribe-local/
 .scribe-release/
 tests/integration/vite/public/generated/
+packages/cli-native/*/bin/
+packages/cli-native/*/build-metadata.json
+/target/

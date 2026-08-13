@@ -1,6 +1,5 @@
 import { relative, resolve, sep } from "node:path";
 
-import { updateHelp } from "./command-help.js";
 import { findSupportedProjectRoot } from "./launcher.js";
 import {
   detectPackageManagerContext,
@@ -22,6 +21,7 @@ import {
   restoreSnapshot,
   snapshotFiles,
   type AppliedChange,
+  type ExpectedFileState,
   type IntegrationLockHandle,
   type SnapshotEntry
 } from "./transaction.js";
@@ -31,32 +31,9 @@ import {
   scribePackageDefinitions,
   type AlignmentReport
 } from "./version-alignment.js";
-import {
-  promptConfirm,
-  renderPanel,
-  renderReceipt,
-  renderTask
-} from "./terminal-ui.js";
 
 export const scribePrereleaseChannel = "beta";
 
-export interface UpdateDependencies {
-  readonly cwd?: string;
-  readonly version: string;
-  readonly stdout?: (value: string) => void;
-  readonly stderr?: (value: string) => void;
-  readonly confirm?: (question: string) => Promise<boolean | null>;
-  readonly resolveTarget?: () => Promise<string>;
-  readonly runCommand?: (command: PackageCommand, cwd: string) => Promise<number>;
-  readonly inspectAlignment?: typeof checkPackageAlignment;
-  readonly releaseLock?: typeof releaseIntegrationLock;
-}
-
-interface ParsedUpdateArguments {
-  readonly dryRun: boolean;
-  readonly yes: boolean;
-  readonly help: boolean;
-}
 
 export async function resolveScribePrereleaseTarget(
   fetchImpl: typeof fetch = fetch
@@ -83,209 +60,198 @@ export async function resolveScribePrereleaseTarget(
   return versions[0]?.version as string;
 }
 
-export async function runUpdate(
-  args: readonly string[],
-  dependencies: UpdateDependencies
-): Promise<number> {
-  const stdout = dependencies.stdout ?? ((value: string) => process.stdout.write(value));
-  const stderr = dependencies.stderr ?? ((value: string) => process.stderr.write(value));
-  const parsed = parseUpdateArguments(args);
-  if (typeof parsed === "string") {
-    stderr(`${parsed}\n${updateHelp}`);
-    return 2;
-  }
-  if (parsed.help) {
-    stdout(updateHelp);
-    return 0;
-  }
+export interface UpdatePlan {
+  readonly projectRoot: string;
+  readonly context: PackageManagerContext;
+  readonly before: AlignmentReport;
+  readonly target: string;
+  readonly commands: readonly PackageCommand[];
+  readonly trackedPaths: readonly string[];
+  readonly guards: readonly {
+    readonly path: string;
+    readonly expected: ExpectedFileState;
+  }[];
+}
 
-  let projectRoot: string;
-  let context: PackageManagerContext;
-  let before: AlignmentReport;
-  let target: string;
-  try {
-    const detectedRoot = await findSupportedProjectRoot(dependencies.cwd ?? process.cwd());
-    if (detectedRoot === undefined) {
-      throw new Error("No supported Next.js or Vite project was found. Run `scribe update` from the project you want to update.");
-    }
-    projectRoot = detectedRoot;
-    context = await detectPackageManagerContext(projectRoot);
-    before = await (dependencies.inspectAlignment ?? checkPackageAlignment)(
-      projectRoot,
-      dependencies.version,
-      context.packageManagerRoot
+export interface UpdateApplyEvent {
+  readonly type: "task.started" | "task.completed";
+  readonly task: string;
+  readonly detail?: string;
+}
+
+export interface UpdateApplyResult {
+  readonly changed: boolean;
+  readonly target: string;
+}
+
+export class UpdateOperationError extends Error {
+  public constructor(
+    message: string,
+    public readonly recovery: readonly string[],
+    public readonly partialState: boolean,
+    public readonly usage = false
+  ) {
+    super(message);
+    this.name = "UpdateOperationError";
+  }
+}
+
+export async function planScribeUpdate(
+  cwd: string,
+  version: string,
+  dependencies: {
+    readonly resolveTarget?: () => Promise<string>;
+    readonly inspectAlignment?: typeof checkPackageAlignment;
+  } = {}
+): Promise<UpdatePlan> {
+  const projectRoot = await findSupportedProjectRoot(cwd);
+  if (projectRoot === undefined) {
+    throw new UpdateOperationError(
+      "No supported Next.js or Vite project was found.",
+      ["Run `scribe update` from the project you want to update."],
+      false,
+      true
     );
-    if (!before.inspectable) {
-      throw new Error(formatAlignmentDiagnostic(before, context.manager));
-    }
-    target = await (dependencies.resolveTarget ?? resolveScribePrereleaseTarget)();
-  } catch (error) {
-    stderr(renderReceipt(
-      "error",
-      `Scribe update could not inspect the installation: ${error instanceof Error ? error.message : String(error)}`
-    ));
-    return 1;
   }
-
+  const context = await detectPackageManagerContext(projectRoot);
+  const inspectAlignment = dependencies.inspectAlignment ?? checkPackageAlignment;
+  const before = await inspectAlignment(projectRoot, version, context.packageManagerRoot);
+  if (!before.inspectable) {
+    throw new UpdateOperationError(
+      formatAlignmentDiagnostic(before, context.manager),
+      [],
+      false
+    );
+  }
+  const target = await (dependencies.resolveTarget ?? resolveScribePrereleaseTarget)();
   const commands = scribeConvergenceCommands(context.manager, target);
-  stdout(formatUpdatePlan(before, target, context.manager, commands, parsed.dryRun));
-  if (before.installed.every((entry) => entry.status === "resolved" && entry.version === target)) {
-    stdout(renderReceipt(
-      "success",
-      `Already current. All four Scribe packages resolve at ${target}.`
-    ));
-    return 0;
-  }
-  if (parsed.dryRun) return 0;
-  if (!isAutomatedPackageManager(context.manager)) {
-    stderr(`Automatic updates currently use Bun or npm. Run the commands shown above with ${context.manager}, then run \`scribe update\` again to verify alignment.\n`);
-    return 2;
-  }
-
-  const confirmed = parsed.yes
-    ? true
-    : await (dependencies.confirm ?? promptConfirm)("Apply update?");
-  if (confirmed === null) {
-    stderr("The terminal is non-interactive. Re-run with --yes to apply the reviewed update.\n");
-    return 2;
-  }
-  if (!confirmed) {
-    stdout(renderReceipt("cancelled", "No package-manager commands were run."));
-    return 0;
-  }
-
-  const applicationManifest = relative(context.packageManagerRoot, resolve(projectRoot, "package.json")).split(sep).join("/");
-  const trackedPaths = manifestAndLockfilePaths(applicationManifest, context.manager);
+  const applicationManifest = relative(
+    context.packageManagerRoot,
+    resolve(projectRoot, "package.json")
+  ).split(sep).join("/");
+  const trackedPaths = isAutomatedPackageManager(context.manager)
+    ? manifestAndLockfilePaths(applicationManifest, context.manager)
+    : [];
   const guards = await Promise.all(trackedPaths.map(async (path) => ({
     path,
     expected: await captureExpectedFileState(context.packageManagerRoot, path)
   })));
-  const runCommand = dependencies.runCommand ?? runPackageCommand;
+  return {
+    projectRoot,
+    context,
+    before,
+    target,
+    commands,
+    trackedPaths,
+    guards
+  };
+}
 
-  let lock: IntegrationLockHandle;
-  try {
-    lock = await acquireIntegrationLock(context.packageManagerRoot);
-  } catch (error) {
-    stderr(`${error instanceof Error ? error.message : String(error)}\n`);
-    return 1;
+export async function applyScribeUpdatePlan(
+  plan: UpdatePlan,
+  dependencies: {
+    readonly runCommand?: (command: PackageCommand, cwd: string) => Promise<number>;
+    readonly inspectAlignment?: typeof checkPackageAlignment;
+    readonly releaseLock?: typeof releaseIntegrationLock;
+    readonly onEvent?: (event: UpdateApplyEvent) => void;
+  } = {}
+): Promise<UpdateApplyResult> {
+  if (
+    plan.before.installed.every(
+      (entry) => entry.status === "resolved" && entry.version === plan.target
+    )
+  ) {
+    return { changed: false, target: plan.target };
   }
-
+  if (!isAutomatedPackageManager(plan.context.manager)) {
+    throw new UpdateOperationError(
+      `Automatic updates currently use Bun or npm, not ${plan.context.manager}.`,
+      plan.commands.map(formatPackageCommand),
+      false,
+      true
+    );
+  }
+  const emit = (type: UpdateApplyEvent["type"], task: string, detail?: string) => {
+    dependencies.onEvent?.({
+      type,
+      task,
+      ...(detail === undefined ? {} : { detail })
+    });
+  };
+  const runCommand = dependencies.runCommand ?? runPackageCommand;
+  const inspectAlignment = dependencies.inspectAlignment ?? checkPackageAlignment;
+  const lock = await acquireIntegrationLock(plan.context.packageManagerRoot);
   let snapshot: Map<string, SnapshotEntry> | undefined;
   let observed: readonly AppliedChange[] = [];
-  let failure = "";
+  let operationError: UpdateOperationError | undefined;
   try {
-    stdout(renderTask("active", "Snapshot package files"));
-    await assertExpectedFileStates(context.packageManagerRoot, guards);
-    snapshot = await snapshotFiles(context.packageManagerRoot, trackedPaths);
-    stdout(renderTask("success", "Snapshot package files"));
-    for (const [index, command] of commands.entries()) {
-      const label = index === 0 ? "Update runtime packages" : "Update project CLI";
-      stdout(renderTask("active", label, formatPackageCommand(command)));
+    emit("task.started", "Snapshot package files");
+    await assertExpectedFileStates(plan.context.packageManagerRoot, plan.guards);
+    snapshot = await snapshotFiles(plan.context.packageManagerRoot, plan.trackedPaths);
+    emit("task.completed", "Snapshot package files");
+    for (const [index, command] of plan.commands.entries()) {
+      const task = index === 0 ? "Update runtime packages" : "Update project CLI";
+      const shown = formatPackageCommand(command);
+      emit("task.started", task, shown);
       let status: number;
       try {
-        status = await runCommand(command, projectRoot);
+        status = await runCommand(command, plan.projectRoot);
       } finally {
         observed = mergeAppliedChanges(
           observed,
-          await observeTrackedMutations(context.packageManagerRoot, snapshot, trackedPaths)
+          await observeTrackedMutations(
+            plan.context.packageManagerRoot,
+            snapshot,
+            plan.trackedPaths
+          )
         );
       }
-      if (status !== 0) {
-        throw new Error(`Command failed with status ${status}: ${formatPackageCommand(command)}`);
-      }
-      stdout(renderTask("success", label));
+      if (status !== 0) throw new Error(`Command failed with status ${status}: ${shown}`);
+      emit("task.completed", task);
     }
-
-    stdout(renderTask("active", "Verify package alignment"));
-    const after = await (dependencies.inspectAlignment ?? checkPackageAlignment)(
-      projectRoot,
-      target,
-      context.packageManagerRoot
+    emit("task.started", "Verify package alignment");
+    const after = await inspectAlignment(
+      plan.projectRoot,
+      plan.target,
+      plan.context.packageManagerRoot
     );
-    if (!after.aligned) throw new Error(formatAlignmentDiagnostic(after, context.manager));
-    stdout(renderTask("success", "Verify package alignment"));
+    if (!after.aligned) {
+      throw new Error(formatAlignmentDiagnostic(after, plan.context.manager));
+    }
+    emit("task.completed", "Verify package alignment");
   } catch (error) {
     const restored = snapshot === undefined
       ? []
-      : await restoreSnapshot(context.packageManagerRoot, snapshot, observed);
-    failure = [
-      `Scribe update failed: ${error instanceof Error ? error.message : String(error)}`,
-      snapshot === undefined
-        ? "No package files were changed by Scribe."
-        : restored.length === 0
-          ? "The project manifest and lockfile snapshot was restored. node_modules may still require a normal package-manager install."
-          : `Rollback could not safely restore: ${restored.join(", ")}.`,
-      "Scribe did not report the installation as updated."
-    ].join("\n");
+      : await restoreSnapshot(plan.context.packageManagerRoot, snapshot, observed);
+    operationError = new UpdateOperationError(
+      error instanceof Error ? error.message : String(error),
+      [
+        snapshot === undefined
+          ? "No package files were changed by Scribe."
+          : restored.length === 0
+            ? "The project manifest and lockfile snapshot was restored. Run a normal package-manager install if node_modules changed."
+            : `Rollback could not safely restore: ${restored.join(", ")}.`
+      ],
+      restored.length > 0 || observed.length > 0
+    );
   }
-
-  let lockReleaseFailure: string | undefined;
   try {
     await (dependencies.releaseLock ?? releaseIntegrationLock)(lock);
   } catch (error) {
-    lockReleaseFailure = `Could not safely release the Scribe integration lock: ${error instanceof Error ? error.message : String(error)}`;
+    const message = `Could not safely release the Scribe integration lock: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    operationError = operationError === undefined
+      ? new UpdateOperationError(message, [], true)
+      : new UpdateOperationError(
+        operationError.message,
+        [...operationError.recovery, message],
+        true,
+        operationError.usage
+      );
   }
-
-  if (failure !== "") {
-    if (lockReleaseFailure !== undefined) failure += `\n${lockReleaseFailure}`;
-    stderr(renderReceipt("error", "Scribe update failed", failure.split("\n")));
-    return 1;
-  }
-  stdout(renderReceipt(
-    "success",
-    `Updated. All four Scribe packages now resolve at ${target}.`
-  ));
-  if (lockReleaseFailure !== undefined) {
-    stderr(renderReceipt("warning", "Scribe was updated, but lock cleanup failed", [lockReleaseFailure]));
-  }
-  return 0;
-}
-
-function parseUpdateArguments(args: readonly string[]): ParsedUpdateArguments | string {
-  let dryRun = false;
-  let yes = false;
-  let help = false;
-  for (const argument of args) {
-    if (argument === "--dry-run") dryRun = true;
-    else if (argument === "--yes") yes = true;
-    else if (argument === "--help" || argument === "-h") help = true;
-    else return `Unknown update option "${argument}".`;
-  }
-  return { dryRun, yes, help };
-}
-
-function formatUpdatePlan(
-  report: AlignmentReport,
-  target: string,
-  manager: string,
-  commands: readonly PackageCommand[],
-  dryRun: boolean
-): string {
-  const resolved = report.installed.filter((entry) => entry.status === "resolved");
-  const versions = new Set(resolved.map(({ version }) => version));
-  const current = resolved.length === scribePackageDefinitions.length && versions.size === 1
-    ? resolved[0]?.version
-    : "mixed";
-  return renderPanel({
-    title: `Scribe Update${dryRun ? " · Dry run" : ""}`,
-    description: `${current ?? "unknown"} → ${target}`,
-    rows: [
-      { label: "Channel", value: scribePrereleaseChannel },
-      { label: "Manager", value: manager },
-      ...report.installed.map((entry) => ({
-        label: entry.packageName,
-        value: entry.status === "resolved" ? entry.version ?? "unknown" : entry.status,
-        ...(entry.status === "resolved" ? {} : { tone: "warning" as const })
-      })),
-      ...commands.map((command, index) => ({
-        label: `Command ${index + 1}`,
-        value: formatPackageCommand(command)
-      }))
-    ],
-    footer: dryRun
-      ? "No package files will be changed."
-      : "Scribe snapshots the manifest and lockfile before updating."
-  });
+  if (operationError !== undefined) throw operationError;
+  return { changed: true, target: plan.target };
 }
 
 

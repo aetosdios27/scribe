@@ -2,8 +2,6 @@ import { constants } from "node:fs";
 import { access, readFile, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-import { suggestClosest } from "./cli-output.js";
-import { integrateHelp } from "./command-help.js";
 import {
   detectPackageManagerContext,
   formatPackageCommand,
@@ -41,11 +39,6 @@ import {
   type AlignmentReport,
   type InstalledPackageVersion
 } from "./version-alignment.js";
-import {
-  promptConfirm,
-  renderReport,
-  renderTask
-} from "./terminal-ui.js";
 
 export type StyleMode = "foundation" | "default" | "tailwind";
 export type { PackageManager };
@@ -131,14 +124,6 @@ export interface StyleModeResolution {
   readonly ambiguities: readonly string[];
 }
 
-export interface IntegrateDependencies {
-  readonly cwd?: string;
-  readonly version: string;
-  readonly stdout?: (value: string) => void;
-  readonly stderr?: (value: string) => void;
-  readonly confirm?: (question: string) => Promise<boolean | null>;
-  readonly runCommand?: (command: PackageCommand, cwd: string) => Promise<number>;
-}
 
 interface SourceEntry {
   readonly path: string;
@@ -579,6 +564,162 @@ export async function planIntegrate(
   };
 }
 
+export interface IntegrateApplyEvent {
+  readonly type: "task.started" | "task.completed";
+  readonly task: string;
+  readonly detail?: string;
+}
+
+export interface IntegrateApplyResult {
+  readonly installedPackages: boolean;
+  readonly manualSteps: readonly string[];
+}
+
+export class IntegrateOperationError extends Error {
+  public constructor(
+    message: string,
+    public readonly recovery: readonly string[],
+    public readonly partialState: boolean,
+    public readonly conflict: boolean
+  ) {
+    super(message);
+    this.name = "IntegrateOperationError";
+  }
+}
+
+export async function applyIntegratePlan(
+  plan: IntegratePlan,
+  version: string,
+  dependencies: {
+    readonly runCommand?: (command: PackageCommand, cwd: string) => Promise<number>;
+    readonly onEvent?: (event: IntegrateApplyEvent) => void;
+  } = {}
+): Promise<IntegrateApplyResult> {
+  if (
+    plan.ambiguities.length > 0
+    || plan.mode === undefined
+    || plan.inspection.packageManager === undefined
+    || plan.inspection.packageManagerRoot === undefined
+  ) {
+    throw new IntegrateOperationError(
+      "The integration plan requires unresolved project decisions.",
+      plan.ambiguities,
+      false,
+      true
+    );
+  }
+  const manager = plan.inspection.packageManager;
+  if (plan.packages.length > 0 && !isAutomatedPackageManager(manager)) {
+    throw new IntegrateOperationError(
+      `Automatic integration currently uses Bun or npm, not ${manager}.`,
+      plan.commands.map(formatPackageCommand),
+      false,
+      true
+    );
+  }
+  if (plan.commands.length === 0 && plan.changes.length === 0) {
+    return {
+      installedPackages: false,
+      manualSteps: plan.manualSteps
+    };
+  }
+  const projectRoot = plan.inspection.root;
+  const transactionRoot = plan.inspection.packageManagerRoot;
+  const runCommand = dependencies.runCommand ?? runPackageCommand;
+  const emit = (type: IntegrateApplyEvent["type"], task: string, detail?: string) => {
+    dependencies.onEvent?.({
+      type,
+      task,
+      ...(detail === undefined ? {} : { detail })
+    });
+  };
+  const lock = await acquireIntegrationLock(transactionRoot);
+  let snapshot: Map<string, SnapshotEntry> | undefined;
+  let applied: readonly AppliedChange[] = [];
+  let packageObserved: readonly AppliedChange[] = [];
+  let operationError: IntegrateOperationError | undefined;
+  try {
+    emit("task.started", "Snapshot project files");
+    await assertExpectedFileStates(transactionRoot, plan.guards);
+    snapshot = await snapshotFiles(
+      transactionRoot,
+      plan.guards.map((guard) => guard.path)
+    );
+    emit("task.completed", "Snapshot project files");
+    for (const command of plan.commands) {
+      const shown = formatPackageCommand(command);
+      emit("task.started", "Install aligned Scribe packages", shown);
+      let status: number;
+      try {
+        status = await runCommand(command, projectRoot);
+      } finally {
+        packageObserved = mergeAppliedChanges(
+          packageObserved,
+          await observeTrackedMutations(
+            transactionRoot,
+            snapshot,
+            plan.guards.map((guard) => guard.path)
+          )
+        );
+      }
+      if (status !== 0) throw new Error(`Command failed with status ${status}: ${shown}`);
+      emit("task.completed", "Install aligned Scribe packages");
+    }
+    emit("task.started", "Apply source changes");
+    applied = await applyFileChanges(transactionRoot, plan.changes);
+    emit("task.completed", "Apply source changes");
+    emit("task.started", "Verify integration");
+    const alignment = await checkPackageAlignment(projectRoot, version, transactionRoot);
+    if (!alignment.aligned) throw new Error(formatAlignmentDiagnostic(alignment, manager));
+    const problems = await verifyIntegration(
+      transactionRoot,
+      await verificationOptions(plan, alignment, applied)
+    );
+    if (problems.length > 0) throw new Error(problems.join("\n"));
+    emit("task.completed", "Verify integration");
+  } catch (error) {
+    const conflict = error instanceof FileStateConflictError;
+    const written = error instanceof FileTransactionError ? error.written : applied;
+    const failures = snapshot === undefined
+      ? []
+      : await restoreSnapshot(
+        transactionRoot,
+        snapshot,
+        mergeAppliedChanges(packageObserved, written)
+      );
+    operationError = new IntegrateOperationError(
+      error instanceof Error ? error.message : String(error),
+      failures.length === 0
+        ? ["The tracked project-file snapshot was restored."]
+        : [`Rollback could not safely restore: ${failures.join(", ")}.`],
+      failures.length > 0 || packageObserved.length > 0,
+      conflict
+    );
+  }
+  try {
+    await releaseIntegrationLock(lock);
+  } catch (error) {
+    const message = `Could not safely release the Scribe integration lock: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    if (operationError === undefined) {
+      operationError = new IntegrateOperationError(message, [], true, false);
+    } else {
+      operationError = new IntegrateOperationError(
+        operationError.message,
+        [...operationError.recovery, message],
+        true,
+        operationError.conflict
+      );
+    }
+  }
+  if (operationError !== undefined) throw operationError;
+  return {
+    installedPackages: plan.commands.length > 0,
+    manualSteps: plan.manualSteps
+  };
+}
+
 export async function resolveProjectStyleMode(
   root: string,
   explicitMode?: StyleMode
@@ -650,554 +791,6 @@ export function recommendStyleMode(
   };
 }
 
-export async function runIntegrate(
-  args: readonly string[],
-  dependencies: IntegrateDependencies
-): Promise<number> {
-  const stdout =
-    dependencies.stdout ?? ((value: string) => process.stdout.write(value));
-  const stderr =
-    dependencies.stderr ?? ((value: string) => process.stderr.write(value));
-  const parsed = parseIntegrateArguments(args);
-
-  if (typeof parsed === "string") {
-    stderr(`${parsed}\n${integrateHelp}`);
-    return 2;
-  }
-  if (parsed.help) {
-    stdout(integrateHelp);
-    return 0;
-  }
-
-  let plan: IntegratePlan;
-  try {
-    plan = await planIntegrate(
-      dependencies.cwd ?? process.cwd(),
-      parsed.mode,
-      dependencies.version
-    );
-  } catch (error) {
-    stderr(`${error instanceof Error ? error.message : String(error)}\n`);
-    return 2;
-  }
-
-  stdout(formatIntegratePlan(plan, parsed.dryRun));
-
-  if (
-    plan.ambiguities.length > 0 ||
-    plan.mode === undefined ||
-    plan.inspection.packageManager === undefined ||
-    plan.inspection.packageManagerRoot === undefined
-  ) {
-    return 2;
-  }
-
-  if (parsed.dryRun) return 0;
-
-  const manager = plan.inspection.packageManager;
-  if (
-    plan.packages.length > 0 &&
-    !isAutomatedPackageManager(manager)
-  ) {
-    stderr(deferredInstallMessage(plan));
-    return 2;
-  }
-
-  const hasAutomaticWork =
-    plan.commands.length > 0 || plan.changes.length > 0;
-
-  if (!hasAutomaticWork) {
-    if (plan.manualSteps.length > 0) {
-      stdout(actionRequiredMessage(plan));
-      return 3;
-    }
-    stdout(successMessage(plan, false));
-    return 0;
-  }
-
-  let confirmed: boolean | null;
-  if (parsed.yes) confirmed = true;
-  else if (dependencies.confirm !== undefined) {
-    confirmed = await dependencies.confirm(
-      "Apply this Scribe integration plan?"
-    );
-  } else {
-    confirmed = await promptConfirm(
-      "Apply this Scribe integration plan?",
-      false
-    );
-  }
-
-  if (confirmed === null) {
-    stderr(
-      "The terminal is non-interactive.\nRe-run with `--yes` to apply the reviewed plan without a prompt.\n"
-    );
-    return 2;
-  }
-  if (confirmed === false) {
-    stdout("Cancelled. No changes made.\n");
-    return 0;
-  }
-
-  const projectRoot = plan.inspection.root;
-  const transactionRoot = plan.inspection.packageManagerRoot;
-  const runCommand = dependencies.runCommand ?? runPackageCommand;
-
-  let lock: IntegrationLockHandle;
-  try {
-    lock = await acquireIntegrationLock(transactionRoot);
-  } catch (error) {
-    stderr(`${error instanceof Error ? error.message : String(error)}\n`);
-    return 1;
-  }
-
-  let snapshot: Map<string, SnapshotEntry> | undefined;
-  let applied: readonly AppliedChange[] = [];
-  let packageObserved: readonly AppliedChange[] = [];
-  let exitCode = 0;
-  let completionOutput = "";
-  let failureOutput = "";
-
-  try {
-    stdout(renderTask("active", "Snapshot project files"));
-    await assertExpectedFileStates(transactionRoot, plan.guards);
-
-    snapshot = await snapshotFiles(
-      transactionRoot,
-      plan.guards.map((guard) => guard.path)
-    );
-    stdout(renderTask("success", "Snapshot project files"));
-
-    for (const command of plan.commands) {
-      stdout(renderTask("active", "Install aligned Scribe packages", formatPackageCommand(command)));
-      let status: number;
-      try {
-        status = await runCommand(command, projectRoot);
-      } finally {
-        packageObserved = mergeAppliedChanges(
-          packageObserved,
-          await observeTrackedMutations(
-            transactionRoot,
-            snapshot,
-            plan.guards.map((guard) => guard.path)
-          )
-        );
-      }
-
-      if (status !== 0) {
-        throw new Error(
-          `Command failed with status ${status}: ${formatPackageCommand(
-            command
-          )}`
-        );
-      }
-      stdout(renderTask("success", "Install aligned Scribe packages"));
-    }
-
-    stdout(renderTask("active", "Apply source changes"));
-    applied = await applyFileChanges(transactionRoot, plan.changes);
-    stdout(renderTask("success", "Apply source changes"));
-    stdout(renderTask("active", "Verify integration"));
-
-    const alignment = await checkPackageAlignment(
-      projectRoot,
-      dependencies.version,
-      transactionRoot
-    );
-    if (!alignment.aligned) {
-      throw new Error(
-        formatAlignmentDiagnostic(alignment, manager)
-      );
-    }
-
-    const verification = await verificationOptions(
-      plan,
-      alignment,
-      applied
-    );
-    const problems = await verifyIntegration(
-      transactionRoot,
-      verification
-    );
-
-    if (problems.length > 0) {
-      throw new Error(problems.join("\n"));
-    }
-    stdout(renderTask("success", "Verify integration"));
-
-    if (plan.manualSteps.length > 0) {
-      exitCode = 3;
-      completionOutput = partialSuccessMessage(plan);
-    } else {
-      completionOutput = successMessage(
-        plan,
-        plan.commands.length > 0
-      );
-    }
-  } catch (error) {
-    if (snapshot === undefined) {
-      exitCode = error instanceof FileStateConflictError ? 2 : 1;
-      failureOutput = `${
-        error instanceof Error ? error.message : String(error)
-      }\n`;
-    } else {
-      const fileApplied =
-        error instanceof FileTransactionError
-          ? error.written
-          : applied;
-
-      const failures = await restoreSnapshot(
-        transactionRoot,
-        snapshot,
-        mergeAppliedChanges(packageObserved, fileApplied)
-      );
-
-      exitCode = error instanceof FileStateConflictError ? 2 : 1;
-      failureOutput = failureMessage(
-        error,
-        failures,
-        plan.commands.length > 0
-      );
-    }
-  }
-
-  const failedBeforeLockRelease = failureOutput !== "";
-  try {
-    await releaseIntegrationLock(lock);
-  } catch (error) {
-    exitCode = 1;
-    failureOutput +=
-      `Could not safely release the Scribe integration lock: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`;
-  }
-
-  if (completionOutput !== "" && !failedBeforeLockRelease) {
-    stdout(completionOutput);
-  }
-  if (failureOutput !== "") stderr(failureOutput);
-  return exitCode;
-}
-
-function parseIntegrateArguments(
-  args: readonly string[]
-):
-  | {
-      readonly dryRun: boolean;
-      readonly yes: boolean;
-      readonly help: boolean;
-      readonly mode?: StyleMode;
-    }
-  | string {
-  let mode: StyleMode | undefined;
-  let dryRun = false;
-  let yes = false;
-  let help = false;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    if (argument === "--dry-run") dryRun = true;
-    else if (argument === "--yes") yes = true;
-    else if (argument === "--help" || argument === "-h") help = true;
-    else if (argument === "--mode") {
-      const value = args[index + 1];
-      if (
-        value === undefined ||
-        !modes.has(value as StyleMode)
-      ) {
-        return `Invalid --mode value "${String(
-          value
-        )}". Expected one of: foundation, default, tailwind.`;
-      }
-      mode = value as StyleMode;
-      index += 1;
-    } else if (argument?.startsWith("--mode=")) {
-      const value = argument.slice("--mode=".length);
-      if (!modes.has(value as StyleMode)) {
-        return `Invalid --mode value "${value}". Expected one of: foundation, default, tailwind.`;
-      }
-      mode = value as StyleMode;
-    } else {
-      const value = String(argument);
-      const suggestion = suggestClosest(value, [
-        "--dry-run",
-        "--mode",
-        "--yes",
-        "--help"
-      ]);
-      return `Unknown integrate option "${value}".${
-        suggestion === undefined
-          ? ""
-          : ` Did you mean "${suggestion}"?`
-      }`;
-    }
-  }
-
-  return {
-    dryRun,
-    yes,
-    help,
-    ...(mode === undefined ? {} : { mode })
-  };
-}
-
-function formatIntegratePlan(
-  plan: IntegratePlan,
-  dryRun: boolean
-): string {
-  const detected = [
-    `React ${plan.inspection.reactVersion ?? "not detected"}`,
-    plan.inspection.framework === "next" ? "Next.js" : undefined,
-    plan.inspection.framework === "vite" ? "Vite" : undefined,
-    plan.inspection.tailwindMajor === undefined
-      ? undefined
-      : `Tailwind ${plan.inspection.tailwindMajor}`,
-    plan.inspection.hasTypographyPlugin ? "Tailwind Typography" : undefined,
-    plan.inspection.hasNextMdxRemote ? "next-mdx-remote/rsc" : undefined,
-    plan.inspection.hasNextMdx ? "@next/mdx" : undefined,
-    plan.inspection.hasViteMdx ? "Vite MDX" : undefined
-  ].filter(Boolean).join(", ");
-  const packageManager = plan.inspection.packageManager ?? "unresolved";
-  const packageRoot = plan.inspection.packageManagerRoot === undefined
-    ? "unresolved"
-    : displayPath(plan.inspection.root, plan.inspection.packageManagerRoot);
-  const blocked = plan.ambiguities.length > 0
-    || plan.mode === undefined
-    || plan.inspection.packageManager === undefined;
-  const next = blocked
-    ? "Resolve the blocking issues, then rerun `scribe integrate --dry-run`."
-    : dryRun
-      ? plan.manualSteps.length > 0
-        ? "Review the automated plan and manual actions, then run `scribe integrate`."
-        : "Review this plan, then run `scribe integrate`."
-      : plan.manualSteps.length > 0
-        ? "Confirm only if you will complete the manual actions afterward."
-        : "Confirm only after the detected stack and proposed changes are correct.";
-
-  return renderReport({
-    title: `Scribe Integrate${dryRun ? " · Dry run" : ""}`,
-    description: dryRun
-      ? "No files or packages will be changed."
-      : "Review this plan before confirming changes.",
-    sections: [
-      {
-        title: "Detected",
-        lines: [
-          "Project               .",
-          `Stack                 ${detected}`,
-          `Package manager       ${packageManager}`,
-          `Package-manager root  ${packageRoot}`
-        ]
-      },
-      {
-        title: "Recommendation",
-        lines: [
-          `Mode    ${plan.mode ?? "unresolved"}`,
-          ...(plan.reason === "" ? [] : [`Reason  ${plan.reason}`])
-        ]
-      },
-      {
-        title: "Commands",
-        lines: plan.commands.length === 0
-          ? ["none"]
-          : plan.commands.map(formatPackageCommand)
-      },
-      {
-        title: "Packages",
-        lines: plan.packages.length === 0 ? ["none"] : packageLines(plan.packages)
-      },
-      {
-        title: "File changes",
-        lines: plan.changes.length === 0
-          ? ["none"]
-          : plan.changes.map((change) =>
-            `${change.new ? "+" : "~"} ${change.applicationPath} — ${change.description}`)
-      },
-      {
-        title: "Warnings",
-        tone: plan.warnings.length === 0 ? "default" : "warning",
-        lines: plan.warnings.length === 0
-          ? ["none"]
-          : plan.warnings.flatMap((warning) => warning.split("\n"))
-      },
-      {
-        title: "Required manual actions",
-        tone: plan.manualSteps.length === 0 ? "default" : "warning",
-        lines: plan.manualSteps.length === 0 ? ["none"] : plan.manualSteps
-      },
-      ...(plan.ambiguities.length === 0
-        ? []
-        : [{
-            title: "Blocking ambiguities",
-            tone: "error" as const,
-            lines: plan.ambiguities.flatMap((value) => value.split("\n"))
-          }])
-    ],
-    footer: next
-  });
-}
-
-function packageLines(
-  packages: readonly PackageChange[]
-): string[] {
-  const dependencies = packages.filter(
-    (entry) => !entry.development
-  );
-  const development = packages.filter(
-    (entry) => entry.development
-  );
-  const lines: string[] = [];
-
-  if (dependencies.length > 0) {
-    lines.push(
-      "  dependencies",
-      ...dependencies.map(
-        (entry) => `    = ${entry.name}@${entry.version}`
-      )
-    );
-  }
-  if (development.length > 0) {
-    lines.push(
-      "  devDependencies",
-      ...development.map(
-        (entry) => `    = ${entry.name}@${entry.version}`
-      )
-    );
-  }
-
-  return lines;
-}
-
-function failureMessage(
-  error: unknown,
-  failures: readonly string[],
-  packageCommandsRan: boolean
-): string {
-  return renderReport({
-    title: "Scribe Integrate · Failed",
-    description: error instanceof Error ? error.message : String(error),
-    sections: [
-      {
-        title: "Rollback",
-        tone: failures.length > 0 ? "error" : "success",
-        lines: failures.length > 0
-          ? [`Could not safely restore: ${failures.join(", ")}. Review these paths manually before continuing.`]
-          : ["Restored the tracked manifest, lockfiles, and source files to their previous contents."]
-      },
-      ...(packageCommandsRan
-        ? [{
-            title: "Package-manager state",
-            tone: "warning" as const,
-            lines: [
-              "Manifest and lockfiles were restored. node_modules, caches, or lifecycle-script state may still require the package manager's normal install command."
-            ]
-          }]
-        : [])
-    ],
-    footer: "Scribe did not report the project as integrated."
-  });
-}
-
-function successMessage(
-  plan: IntegratePlan,
-  installedSomething: boolean
-): string {
-  return renderReport({
-    title: "Scribe Integrate · Ready",
-    description: "Integration verified successfully.",
-    sections: [
-      { title: "Mode", lines: [String(plan.mode)] },
-      {
-        title: "Packages",
-        tone: "success",
-        lines: plan.packages.length === 0
-          ? ["already aligned"]
-          : plan.packages.map((entry) =>
-            `${entry.name}@${entry.version}${entry.development ? " (dev)" : ""}`)
-      },
-      {
-        title: "Changed files",
-        lines: plan.changes.length === 0
-          ? ["none"]
-          : plan.changes.map((change) =>
-            `${change.new ? "+" : "~"} ${change.applicationPath}`)
-      },
-      {
-        title: "Warnings",
-        tone: plan.warnings.length === 0 ? "default" : "warning",
-        lines: plan.warnings.length === 0
-          ? ["none"]
-          : plan.warnings.flatMap((warning) => warning.split("\n"))
-      },
-      {
-        title: "Next",
-        lines: [
-          "scribe studio init",
-          "scribe studio <article>",
-          "scribe validate <article>"
-        ]
-      }
-    ],
-    footer: installedSomething
-      ? "Scribe packages are pinned to the running CLI version."
-      : "No package installation was required."
-  });
-}
-
-function partialSuccessMessage(plan: IntegratePlan): string {
-  return renderReport({
-    title: "Action required · Automated changes applied",
-    description: "The automated portion verified, but Scribe is not fully integrated yet.",
-    sections: [
-      { title: "Mode", lines: [String(plan.mode)] },
-      {
-        title: "Required manual actions",
-        tone: "warning",
-        lines: plan.manualSteps
-      }
-    ],
-    footer: "After completing them, run `scribe validate path/to/article.mdx`."
-  });
-}
-
-function actionRequiredMessage(plan: IntegratePlan): string {
-  return renderReport({
-    title: "Action required · No automated changes",
-    description: "Scribe cannot report a complete integration until these actions are finished.",
-    sections: [{
-      title: "Required manual actions",
-      tone: "warning",
-      lines: plan.manualSteps
-    }],
-    footer: "No project files were changed."
-  });
-}
-
-function deferredInstallMessage(plan: IntegratePlan): string {
-  const manager = plan.inspection.packageManager;
-  if (manager === undefined) {
-    return renderReport({
-      title: "Scribe Integrate · Stopped",
-      description: "Could not determine the package manager.",
-      sections: [],
-      footer: "No project files were changed."
-    });
-  }
-
-  const commands = scribeConvergenceCommands(
-    manager,
-    plan.packages[0]?.version ?? ""
-  );
-  return renderReport({
-    title: "Scribe Integrate · Manual package update",
-    description: `This project uses ${manager}, whose package installation is not automated yet.`,
-    sections: [{
-      title: "Commands",
-      lines: commands.map(formatPackageCommand)
-    }],
-    footer: "No files changed. Run the commands, then rerun `scribe integrate`."
-  });
-}
 
 async function verificationOptions(
   plan: IntegratePlan,

@@ -229,11 +229,16 @@ export async function runPackageCommand(
   cwd: string
 ): Promise<number> {
   return new Promise((resolveStatus, reject) => {
+    const protocolMode = process.env.SCRIBE_ENGINE_PROTOCOL === "1";
     const child = spawn(value.executable, [...value.args], {
       cwd,
-      stdio: "inherit",
+      stdio: protocolMode ? ["inherit", "pipe", "pipe"] : "inherit",
       shell: false
     });
+    if (protocolMode) {
+      child.stdout?.on("data", (chunk: Buffer) => process.stderr.write(chunk));
+      child.stderr?.on("data", (chunk: Buffer) => process.stderr.write(chunk));
+    }
     let settled = false;
     const forward = (signal: NodeJS.Signals) => {
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);

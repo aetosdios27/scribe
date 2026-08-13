@@ -75,7 +75,8 @@ describe("release documentation", () => {
     expect(skill).toContain("bunx scribe validate path/to/article.mdx --strict");
     expect(skill).toContain("npx --no-install scribe validate path/to/article.mdx");
     expect(skill).toContain("bunx scribe import <medium-export.zip> --dry-run");
-    expect(skill).toContain("do not invent or invoke a `scribe upgrade` command");
+    expect(skill).toContain("Use `scribe update` to resolve the aligned beta");
+    expect(skill).toContain("There is no `scribe upgrade` command");
     expect(skill).not.toMatch(/^scribe validate /mu);
     expect(skill).not.toMatch(/\bscb\b/u);
     expect(skill.trim().split(/\s+/u).length).toBeGreaterThan(500);

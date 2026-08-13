@@ -1,0 +1,16 @@
+{
+  "name": "@scribe-sdk/cli-linux-arm64-musl",
+  "version": "0.1.0-beta",
+  "description": "Scribe native CLI for Linux ARM64 musl.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aetosdios27/scribe.git",
+    "directory": "packages/cli-native/linux-arm64-musl"
+  },
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "libc": ["musl"],
+  "files": ["bin/scribe-cli", "build-metadata.json", "LICENSE"],
+  "engines": { "node": ">=20.19.0" }
+}

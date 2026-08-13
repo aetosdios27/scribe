@@ -1,0 +1,30 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "method": "scribe/event",
+    "params": {
+      "operationId": "update-1",
+      "type": "task.started",
+      "task": "snapshot-files"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "scribe/event",
+    "params": {
+      "operationId": "update-1",
+      "type": "process.output",
+      "stream": "stderr",
+      "detail": "Resolving packages"
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "scribe/event",
+    "params": {
+      "operationId": "update-1",
+      "type": "task.completed",
+      "task": "verify-alignment"
+    }
+  }
+]

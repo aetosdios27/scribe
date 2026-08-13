@@ -14,6 +14,8 @@ const root = process.cwd();
 const release = join(root, ".scribe-release");
 const manifest = JSON.parse(await readFile(join(root, "packages", "cli", "package.json"), "utf8"));
 const version = manifest.version;
+const nativePackage = currentNativePackage();
+const nativeTarballName = `${nativePackage.replace("@scribe-sdk/", "scribe-sdk-")}-${version}.tgz`;
 const directory = await mkdtemp(join(tmpdir(), "scribe portability "));
 const tarballDirectory = join(directory, "tarballs");
 const articleDirectory = join(directory, "articles with spaces", "unicode-記事");
@@ -29,6 +31,8 @@ try {
     await copyFile(join(release, filename), join(tarballDirectory, filename));
     dependencies[`@scribe-sdk/${name}`] = `file:./tarballs/${filename}`;
   }
+  await copyFile(join(release, nativeTarballName), join(tarballDirectory, nativeTarballName));
+  dependencies[nativePackage] = `file:./tarballs/${nativeTarballName}`;
 
   await write(join(directory, "package.json"), JSON.stringify({
     name: "scribe-portability-smoke",
@@ -65,6 +69,8 @@ try {
   runCli("scribe", ["integrate", "--help"]);
   runCli("scribe", ["import", "--help"]);
   runCli("scribe", ["studio", "--help"]);
+  runCli("scribe", ["studio", "init", "--help"]);
+  runCli("scribe", ["update", "--help"]);
   run(executable("bun"), ["run", "scribe:version"], directory);
   const beforeInitDryRun = await snapshotFixtureTree(directory);
   const dryRun = runCli("scribe", ["init", "--dry-run"]);
@@ -130,6 +136,8 @@ try {
     const installed = JSON.parse(await readFile(join(directory, "node_modules", "@scribe-sdk", name, "package.json"), "utf8"));
     assert(installed.version === version, `@scribe-sdk/${name} installed at ${installed.version}; expected ${version}.`);
   }
+  const installedNative = JSON.parse(await readFile(join(directory, "node_modules", ...nativePackage.split("/"), "package.json"), "utf8"));
+  assert(installedNative.version === version, `${nativePackage} installed at ${installedNative.version}; expected ${version}.`);
 
   await verifyLocalNpmInstall();
   await verifyGlobalInstalls();
@@ -184,9 +192,10 @@ async function verifyLocalNpmInstall() {
       "@scribe-sdk/mdx": "file:../tarballs/scribe-sdk-mdx-" + version + ".tgz",
       "@scribe-sdk/react": "file:../tarballs/scribe-sdk-react-" + version + ".tgz",
       "@scribe-sdk/styles": "file:../tarballs/scribe-sdk-styles-" + version + ".tgz",
+      [nativePackage]: "file:../tarballs/" + nativeTarballName,
       react: "19.2.7",
       "react-dom": "19.2.7"
-    },
+    }
   }, null, 2));
   run(executable("npm"), ["install", "--no-audit", "--no-fund"], npmDirectory, true, {}, packageManagerInstallTimeoutMilliseconds);
   const npmVersion = run(executable("npx"), ["--no-install", "scribe", "--version"], npmDirectory).stdout.trim();
@@ -197,6 +206,7 @@ async function verifyLocalNpmInstall() {
 async function verifyGlobalInstalls() {
   const packageTarballs = ["mdx", "react", "styles", "cli"]
     .map((name) => join(tarballDirectory, `scribe-sdk-${name}-${version}.tgz`));
+  packageTarballs.push(join(tarballDirectory, nativeTarballName));
 
   const npmPrefix = join(directory, "npm-global");
   run(executable("npm"), ["install", "--global", "--prefix", npmPrefix, "--no-audit", "--no-fund", ...packageTarballs], directory, true, {}, packageManagerInstallTimeoutMilliseconds);
@@ -261,6 +271,23 @@ async function snapshotFixtureTree(directory, extraExcluded = new Set()) {
   }
   await visit(directory);
   return snapshot;
+}
+
+function currentNativePackage() {
+  if (process.platform === "darwin" && (process.arch === "x64" || process.arch === "arm64")) {
+    return `@scribe-sdk/cli-darwin-${process.arch}`;
+  }
+  if (process.platform === "win32" && (process.arch === "x64" || process.arch === "arm64")) {
+    return `@scribe-sdk/cli-win32-${process.arch}-msvc`;
+  }
+  if (process.platform === "linux" && (process.arch === "x64" || process.arch === "arm64")) {
+    const report = process.report?.getReport();
+    const gnu = report !== undefined && "header" in report &&
+      typeof report.header === "object" && report.header !== null &&
+      "glibcVersionRuntime" in report.header;
+    return `@scribe-sdk/cli-linux-${process.arch}-${gnu ? "gnu" : "musl"}`;
+  }
+  throw new Error(`No packed native CLI target for ${process.platform}/${process.arch}.`);
 }
 
 function assert(condition, message) {

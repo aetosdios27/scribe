@@ -78,15 +78,15 @@ Do not repeat it for each beta. Add normal Changeset fragments during the cycle.
 
 The `Release` GitHub Actions workflow runs only after the complete `CI` workflow succeeds for a push to `main`. It never runs for pull requests, failed CI, cancelled CI, or manually dispatched CI. The workflow has two deterministic outcomes:
 
-1. When unreleased Changeset fragments exist, it creates or updates the ready `changeset-release/main` version pull request, synchronizes package versions and changelogs, refreshes `bun.lock`, and dispatches CI for that exact release branch.
-2. When a verified version pull request has been merged and no unreleased fragments remain, it rebuilds and inspects the packages, then runs Scribe's guarded publisher. The publisher requires beta prerelease mode, publishes each inspected tarball with an explicit `--tag beta`, skips versions already on npm, publishes the CLI last, and waits for each `beta` dist-tag to converge.
+1. When unreleased Changeset fragments exist, it creates or updates the ready `changeset-release/main` version pull request, synchronizes the four public package versions and changelogs, aligns all eight native CLI package manifests and optional-dependency pins, refreshes `bun.lock`, and dispatches CI for that exact release branch.
+2. When a verified version pull request has been merged and no unreleased fragments remain, target-specific Linux, macOS, and Windows jobs build the eight native executables from the verified commit. The release job downloads those immutable artifacts, packs and inspects all twelve npm packages, then runs Scribe's guarded publisher. Native platform packages publish before `@scribe-sdk/cli`; every package uses an explicit `--tag beta`; existing versions are skipped; every `beta` dist-tag must converge.
 
 Publishing uses npm trusted publishing through GitHub OIDC. No npm write token, OTP, or `NODE_AUTH_TOKEN` belongs in GitHub secrets.
 
 Before the first automated publication, complete these one-time owner settings:
 
 1. In GitHub, allow Actions to create pull requests under **Settings → Actions → General → Workflow permissions**. Keep branch protection and required CI checks enabled.
-2. For each of `@scribe-sdk/styles`, `@scribe-sdk/react`, `@scribe-sdk/mdx`, and `@scribe-sdk/cli`, configure the npm trusted publisher with:
+2. For each public package—`@scribe-sdk/styles`, `@scribe-sdk/react`, `@scribe-sdk/mdx`, `@scribe-sdk/cli`, and the eight `@scribe-sdk/cli-<platform>` packages—configure the npm trusted publisher with:
    - provider: GitHub Actions
    - organization or user: `aetosdios27`
    - repository: `scribe`
@@ -153,6 +153,10 @@ After versioning, run every gate from the repository root:
 - [ ] Verify canonical package docs: `bun run docs:check`
 - [ ] Verify fixed-group alignment and release policy: `bun run release:check`
 - [ ] Scan for stale scopes, fixed machine paths, and misplaced Helium references: `bun run portability:check`
+- [ ] Check Rust formatting: `cargo fmt --check`
+- [ ] Lint the native CLI: `cargo clippy --all-targets --all-features --locked -- -D warnings`
+- [ ] Test the native CLI and protocol fixtures: `cargo test --all-targets --all-features --locked`
+- [ ] Build and stage every supported target through the CI native matrix; inspect each `build-metadata.json` target, version, source commit, and SHA-256 digest
 - [ ] Run TypeScript 7 strict checking: `bun run typecheck`
 - [ ] Run TypeScript 6 with library checking enabled: `node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`
 - [ ] Run unit, transformation, diagnostics, and release tests: `bun run test`
@@ -163,7 +167,7 @@ After versioning, run every gate from the repository root:
 - [ ] Build the packed `next-mdx-remote/rsc` consumer through `bun run release:consumers`
 - [ ] Inspect npm dry runs: `bun run release:pack:dry`
 - [ ] Create local tarballs: `bun run release:pack`
-- [ ] Inspect tarball contents, manifests, declarations, README, SKILL, LICENSE, and repository-only exclusions: `bun run release:inspect`
+- [ ] Inspect all twelve tarballs: manifests, declarations, README, SKILL, LICENSE, eight native executables, executable modes, target metadata, SHA-256 digests, and repository-only exclusions: `bun run release:inspect`
 - [ ] Install the packed tarballs and smoke-test portable CLI paths: `bun run test:portability`
 - [ ] Run isolated packed Vite and Next consumers with Bun and npm: `bun run release:consumers`
 - [ ] Check the packaged CLI version and help from the packed consumer: `bunx scribe --version` and `bunx scribe --help`

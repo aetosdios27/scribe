@@ -18,7 +18,7 @@ export default defineConfig({
     { name: "firefox", use: { browserName: "firefox" } }
   ],
   webServer: {
-    command: "node packages/cli/dist/index.mjs studio tests/fixtures/studio-article.mdx --mode default --port 4319 --no-open",
+    command: "node packages/cli/dist/bootstrap.mjs studio tests/fixtures/studio-article.mdx --mode default --port 4319 --no-open",
     cwd: ".",
     url: "http://127.0.0.1:4319",
     reuseExistingServer: false,

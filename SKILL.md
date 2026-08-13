@@ -113,7 +113,7 @@ Preserve the host’s existing MDX options and plugins. Append the `remarkPlugin
 
 Import the selected packaged stylesheet once from the host application shell. Do not copy Scribe CSS into the host.
 
-Package upgrades belong to the host package manager. Use `bun update` or `npm update` for the aligned `@scribe-sdk/*` packages; do not invent or invoke a `scribe upgrade` command.
+Package upgrades belong to the host package manager through Scribe's reviewed orchestration. Use `scribe update` to resolve the aligned beta, show the exact Bun or npm commands, confirm, update all four `@scribe-sdk/*` packages transactionally, and verify alignment. There is no `scribe upgrade` command.
 
 ## Compose articles
 

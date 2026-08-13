@@ -8,10 +8,7 @@ import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 import { studioRecoveryKey } from "./studio-recovery.js";
 import {
-  formatStudioStartup,
   openBrowser,
-  parseStudioArguments,
-  runStudio,
   startStudio,
   studioPreviewArticleClassName,
   closeStudioServers,
@@ -63,57 +60,6 @@ async function mutate(
   });
 }
 
-it("parses the documented studio command surface and rejects unknown flags", () => {
-  expect(parseStudioArguments(["content/a.mdx", "--mode", "tailwind", "--host-css", "src/app.css", "--port", "4317", "--no-open"])).toEqual({
-    path: "content/a.mdx",
-    mode: "tailwind",
-    hostCss: "src/app.css",
-    port: 4317,
-    portExplicit: true,
-    open: false,
-    help: false
-  });
-  expect(parseStudioArguments(["content/a.mdx"])).toEqual({
-    path: "content/a.mdx",
-    port: 4317,
-    portExplicit: false,
-    open: true,
-    help: false
-  });
-  expect(parseStudioArguments(["--no-open", "--", "-draft.mdx"])).toEqual({
-    path: "-draft.mdx",
-    port: 4317,
-    portExplicit: false,
-    open: false,
-    help: false
-  });
-  expect(parseStudioArguments(["content/a.mdx", "--no-opn"])).toEqual({ error: 'Unknown studio option "--no-opn". Did you mean "--no-open"?' });
-  expect(parseStudioArguments(["content/a.txt"])).toMatchObject({ error: expect.stringContaining(".md or .mdx") });
-});
-
-it("formats Studio startup with a project-relative source path", () => {
-  const root = join(tmpdir(), "scribe host");
-  const source = join(root, "content", "peer notes.mdx");
-  const output = formatStudioStartup(root, source, "foundation", "http://127.0.0.1:4317");
-
-  expect(output).toMatch(/Source  content[\\/]peer notes\.mdx/u);
-  expect(output).not.toContain(root);
-});
-
-it("reports automatic port movement and a browser-opening fallback", () => {
-  const output = formatStudioStartup(
-    "/workspace",
-    "/workspace/content/article.mdx",
-    "default",
-    "http://127.0.0.1:4318",
-    4317,
-    false
-  );
-
-  expect(output).toContain("Port 4317 was busy; using 4318.");
-  expect(output).toContain("The browser could not be opened automatically.");
-  expect(output).toContain("http://127.0.0.1:4318");
-});
 
 it("treats browser-launch failure as recoverable", async () => {
   const child = new EventEmitter() as EventEmitter & { unref: () => void };
@@ -217,16 +163,6 @@ it("attempts Vite shutdown even when compiler shutdown fails", async () => {
   expect(viteClose).toHaveBeenCalledOnce();
 });
 
-it("requires an explicit Studio mode when project detection is ambiguous", async () => {
-  const file = await fixture();
-  await writeFile(join(file.root, "package.json"), JSON.stringify({
-    dependencies: { react: "19.2.7", vite: "8.1.3", tailwindcss: "4.3.3" }
-  }));
-  const stderr = vi.fn();
-
-  expect(await runStudio([file.path, "--no-open"], { cwd: file.root, stderr })).toBe(2);
-  expect(stderr.mock.calls.join("\n")).toContain("Choose --mode foundation, default, or tailwind explicitly");
-});
 
 it("starts on loopback, loads the source, and reports metadata", async () => {
   const file = await fixture("peer notes.mdx", "---\ntitle: Peer notes\n---\n# Peer states\n");

@@ -83,6 +83,8 @@ Run CLI commands through `bunx scribe` or `npx --no-install scribe` after instal
 
 `scribe` is the primary executable. The prerelease-only `scb` compatibility alias remains available with identical behavior for existing users; new integrations should use `scribe`.
 
+`@scribe-sdk/cli` installs a small platform-native Rust command for Linux, macOS, or Windows. The npm bootstrap only selects the matching optional platform package, preserves project-local delegation, and starts the packaged engine; command parsing, help, prompts, status, plans, progress, receipts, and exit codes are owned by the native executable.
+
 | Command | Purpose |
 | --- | --- |
 | `scribe init [--content-dir <path>] [--with-assets] [--dry-run] [--yes]` | Create an empty, source-owned content launchpad without generating an article |

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isDirectExecution,
+  nativePackages,
   publicPackages,
   publishPrereleasePackages
 } from "../../scripts/publish-prerelease-packages.mjs";
@@ -44,12 +45,7 @@ describe("prerelease package publisher", () => {
       }
     });
 
-    expect(published.map(({ name }) => name)).toEqual([
-      "@scribe-sdk/styles",
-      "@scribe-sdk/react",
-      "@scribe-sdk/mdx",
-      "@scribe-sdk/cli"
-    ]);
+    expect(published.map(({ name }) => name)).toEqual(publicPackages.map(({ name }) => name));
     expect(published.every(({ tag }) => tag === "beta")).toBe(true);
     expect(published.at(-1)?.tarball.endsWith("scribe-sdk-cli-0.1.0-beta.tgz")).toBe(true);
     expect([...tags.values()].every(({ alpha }) => alpha === "0.1.0-alpha.10")).toBe(true);
@@ -116,14 +112,18 @@ async function releaseFixture(
   await mkdir(join(root, ".scribe-release"), { recursive: true });
   await writeFile(join(root, ".changeset", "pre.json"), JSON.stringify(pre));
 
-  for (const { directory } of publicPackages) {
-    await mkdir(join(root, "packages", directory), { recursive: true });
-    await writeFile(join(root, "packages", directory, "package.json"), JSON.stringify({
-      name: `@scribe-sdk/${directory}`,
+  const nativeNames = new Set<string>(nativePackages.map(({ name }) => name));
+  for (const { name, directory } of publicPackages) {
+    const packageRoot = nativeNames.has(name)
+      ? join(root, "packages", "cli-native", directory)
+      : join(root, "packages", directory);
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(join(packageRoot, "package.json"), JSON.stringify({
+      name,
       version
     }));
     await writeFile(
-      join(root, ".scribe-release", `scribe-sdk-${directory}-${version}.tgz`),
+      join(root, ".scribe-release", `${name.replace("@", "").replace("/", "-")}-${version}.tgz`),
       "fixture"
     );
   }
