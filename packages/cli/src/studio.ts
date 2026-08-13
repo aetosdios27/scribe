@@ -243,7 +243,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   const session = createStudioSession();
   const lease = new StudioWriterLease();
   const events = new StudioEventHub();
-  const articleId = `${sourcePath}.scribe-studio.mdx`;
+  const articleId = sourcePath;
   let server: ViteDevServer;
   const httpServer = createHttpServer((request, response) => {
     server.middlewares(request, response, (error: unknown) => {

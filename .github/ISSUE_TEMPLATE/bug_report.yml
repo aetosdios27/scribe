@@ -49,8 +49,8 @@ body:
     id: package-version
     attributes:
       label: Scribe package and version
-      description: For example, @scribe-sdk/mdx 0.1.0-alpha.10. Include every affected package if versions differ.
-      placeholder: "@scribe-sdk/... 0.1.0-alpha..."
+      description: For example, @scribe-sdk/mdx 0.1.0-beta. Include every affected package if versions differ.
+      placeholder: "@scribe-sdk/... 0.1.0-beta"
     validations:
       required: true
 

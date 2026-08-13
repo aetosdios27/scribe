@@ -14,7 +14,7 @@ export const publicPackages = [
 
 const defaultRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-export async function publishAlphaPackages({
+export async function publishPrereleasePackages({
   root = defaultRoot,
   registry = npmRegistry,
   distTagAttempts = 60,
@@ -30,17 +30,18 @@ export async function publishAlphaPackages({
   );
 
   const pre = await readJson(join(root, ".changeset", "pre.json"));
+  const channel = pre.tag;
   assert(
-    pre.mode === "pre" && pre.tag === "alpha",
-    "Package publication requires Changesets alpha prerelease mode."
+    pre.mode === "pre" && (channel === "alpha" || channel === "beta"),
+    "Package publication requires Changesets alpha or beta prerelease mode."
   );
 
   const releases = await Promise.all(publicPackages.map(async ({ name, directory }) => {
     const manifest = await readJson(join(root, "packages", directory, "package.json"));
     assert(manifest.name === name, `Expected ${name} in packages/${directory}/package.json.`);
     assert(
-      /^\d+\.\d+\.\d+-alpha\.\d+$/u.test(manifest.version),
-      `${name}@${String(manifest.version)} is not an alpha prerelease.`
+      new RegExp(`^\\d+\\.\\d+\\.\\d+-${channel}(?:\\.\\d+)*$`, "u").test(manifest.version),
+      `${name}@${String(manifest.version)} is not a ${channel} prerelease.`
     );
     return {
       name,
@@ -59,16 +60,16 @@ export async function publishAlphaPackages({
 
     if (isFresh) {
       await access(release.tarball);
-      process.stdout.write(`Publishing ${release.name}@${release.version} with the alpha dist-tag.\n`);
-      await registry.publishTarball(release.name, release.tarball, "alpha");
+      process.stdout.write(`Publishing ${release.name}@${release.version} with the ${channel} dist-tag.\n`);
+      await registry.publishTarball(release.name, release.tarball, channel);
     } else {
       process.stdout.write(`Skipping ${release.name}@${release.version}; it is already published.\n`);
     }
 
-    await assertTagConverged(registry, release.name, "alpha", version, { attempts: distTagAttempts, delayMs: distTagDelayMs });
+    await assertTagConverged(registry, release.name, channel, version, { attempts: distTagAttempts, delayMs: distTagDelayMs });
   }
 
-  process.stdout.write(`Verified all public packages at alpha=${version}.\n`);
+  process.stdout.write(`Verified all public packages at ${channel}=${version}.\n`);
 }
 
 const npmRegistry = {
@@ -129,5 +130,5 @@ export function isDirectExecution(moduleUrl, entryPath, cwd = process.cwd()) {
 }
 
 if (isDirectExecution(import.meta.url, process.argv[1])) {
-  await publishAlphaPackages();
+  await publishPrereleasePackages();
 }

@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 
 import { contentConventions } from "./content-paths.js";
 import { findSupportedProjectRoot } from "./launcher.js";
+import { detectPackageManagerContext } from "./package-manager.js";
+import { checkPackageAlignment } from "./version-alignment.js";
 import type { ProjectInspection } from "./integrate.js";
 
 export interface BareCommandDependencies {
@@ -39,8 +41,6 @@ export async function bareStateOutput(dependencies: BareCommandDependencies): Pr
 function unintegratedOutput(root: string): string {
   const stack = stackDescription(root);
   return [
-    "Scribe",
-    "",
     "Detected",
     `  Stack  ${stack}`,
     "",
@@ -56,21 +56,40 @@ async function integratedOutput(root: string, version: string, inspection: Proje
   const { recommendStyleMode } = await import("./integrate.js");
   const mode = recommendStyleMode(inspection, undefined).mode;
   const content = await detectedContentDirectory(root);
+  const packageLines = await packageVersionLines(root, version);
   const lines = [
-    "Scribe",
-    "",
     "Project",
     ...(mode === undefined ? [] : [`  Mode       ${mode}`]),
     ...(content === undefined ? [] : [`  Content    ${content}`]),
     `  CLI        ${version}`,
+    ...packageLines,
     "",
     "Commands",
     "  scribe studio <article>",
     "  scribe validate <article>",
+    "  scribe studio init",
+    "  scribe update",
     "  scribe import <medium-export.zip>",
     ""
   ];
   return lines.join("\n");
+}
+
+async function packageVersionLines(root: string, version: string): Promise<string[]> {
+  try {
+    const context = await detectPackageManagerContext(root);
+    const report = await checkPackageAlignment(root, version, context.packageManagerRoot);
+    if (report.aligned) return [`  Packages   ${version} (aligned)`];
+    return [
+      "  Packages   version mismatch",
+      ...report.installed.map((entry) =>
+        `    ${entry.packageName}  ${entry.status === "resolved" ? entry.version : entry.status}`
+      ),
+      "  Repair     scribe update"
+    ];
+  } catch (error) {
+    return [`  Packages   inspection failed — ${error instanceof Error ? error.message : String(error)}`];
+  }
 }
 
 function stackDescription(root: string): string {

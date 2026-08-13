@@ -1,15 +1,16 @@
 {
   "mode": "pre",
-  "tag": "alpha",
+  "tag": "beta",
   "initialVersions": {
-    "@scribe-sdk/cli": "0.1.0-alpha.1",
-    "@scribe-sdk/mdx": "0.1.0-alpha.1",
-    "@scribe-sdk/react": "0.1.0-alpha.1",
-    "@scribe-sdk/styles": "0.1.0-alpha.1"
+    "@scribe-sdk/cli": "0.1.0-alpha.10",
+    "@scribe-sdk/mdx": "0.1.0-alpha.10",
+    "@scribe-sdk/react": "0.1.0-alpha.10",
+    "@scribe-sdk/styles": "0.1.0-alpha.10"
   },
   "changesets": [
     "bright-pages-publish",
     "calm-sites-publish",
+    "brave-authors-beta",
     "clean-studios-compose",
     "clear-scribes-command",
     "durable-studios-recover",

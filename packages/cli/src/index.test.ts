@@ -24,6 +24,32 @@ it("prints the packaged prerelease version", async () => {
   expect(write).toHaveBeenCalledWith(`${version}\n`);
 });
 
+it("opens interactive Scribe surfaces with the inline {S} logo", async () => {
+  const stdout = vi.fn();
+  const cwd = await project({
+    "package.json": JSON.stringify({ name: "plain-dir", private: true })
+  });
+
+  expect(await main([], {
+    cwd,
+    stdout,
+    isTTY: true,
+    env: { TERM: "xterm-256color" }
+  })).toBe(0);
+  expect(stdout.mock.calls.join("")).toContain("\u001B[94m╭──────────╮\u001B[0m");
+  expect(stdout.mock.calls.join("")).toContain("\u001B[94m│   {S}    │\u001B[0m  Publishing SDK");
+  expect(stdout.mock.calls.join("")).toContain("S C R I B E");
+
+  stdout.mockClear();
+  expect(await main(["studio", "--help"], {
+    cwd,
+    stdout,
+    isTTY: true,
+    env: { TERM: "xterm-256color" }
+  })).toBe(0);
+  expect(stdout.mock.calls.join("")).toContain("\u001B[94m│   {S}    │\u001B[0m  Publishing SDK");
+});
+
 it("contains unexpected command failures without exposing an internal stack", async () => {
   const stderr = vi.fn();
   const runCliEntry = (cli as typeof cli & {
@@ -54,6 +80,10 @@ it("keeps heavyweight commands behind dynamic import boundaries", async () => {
     loaded.add("init");
     return { runInit: vi.fn() };
   });
+  vi.doMock("./studio-init.js", () => {
+    loaded.add("studio-init");
+    return { runStudioInit: vi.fn() };
+  });
   vi.doMock("./integrate.js", () => {
     loaded.add("integrate");
     return { runIntegrate: vi.fn() };
@@ -61,6 +91,10 @@ it("keeps heavyweight commands behind dynamic import boundaries", async () => {
   vi.doMock("./medium-import.js", () => {
     loaded.add("import");
     return { runMediumImport: vi.fn() };
+  });
+  vi.doMock("./update.js", () => {
+    loaded.add("update");
+    return { runUpdate: vi.fn() };
   });
   vi.doMock("@scribe-sdk/mdx", () => {
     loaded.add("mdx");
@@ -73,9 +107,11 @@ it("keeps heavyweight commands behind dynamic import boundaries", async () => {
   const source = await readFile(new URL("./index.ts", import.meta.url), "utf8");
   expect(source).toContain('await import("./studio.js")');
   expect(source).toContain('await import("./init.js")');
+  expect(source).toContain('await import("./studio-init.js")');
   expect(source).toContain('await import("./integrate.js")');
   expect(source).toContain('await import("./medium-import.js")');
   expect(source).toContain('await import("@scribe-sdk/mdx")');
+  expect(source).toContain('await import("./update.js")');
 });
 
 it("prints readable help and succeeds", async () => {
@@ -93,8 +129,8 @@ it("prints readable help and succeeds", async () => {
   expect(output).toContain("scribe validate ./content/article.mdx");
   expect(output).toContain("scribe studio ./content/article.mdx");
   expect(output).toContain("scribe import ~/Downloads/medium-export.zip");
-  expect(output).toContain("public alpha");
-  expect(output).not.toContain("beta");
+  expect(output).toContain("public beta");
+  expect(output).toContain("@scribe-sdk/cli@beta");
   expect(output).toContain("host-owned React site");
   expect(output).not.toContain("--host-css <file>] [--port 4317]");
 });
@@ -122,6 +158,14 @@ it("prints focused help for every public command", async () => {
   write.mockClear();
   expect(await main(["studio", "--help"])).toBe(0);
   expect(write.mock.calls.join("\n")).toContain("scribe studio <article.mdx> [options]");
+
+  write.mockClear();
+  expect(await main(["studio", "init", "--help"])).toBe(0);
+  expect(write.mock.calls.join("\n")).toContain("scribe studio init [options]");
+
+  write.mockClear();
+  expect(await main(["update", "--help"])).toBe(0);
+  expect(write.mock.calls.join("\n")).toContain("scribe update [options]");
 });
 
 it("prints state-aware output and exits 0 when no command is supplied", async () => {
@@ -197,7 +241,7 @@ it("returns a nonzero status with actionable component diagnostics", async () =>
 
   expect(await main(["validate", path])).toBe(1);
   expect(stderr.mock.calls.join("\n")).toContain(
-    '[error SCB1101] Unknown Callout variant "warnng". Expected one of: note, insight, warning.'
+    '[error SCB1101] Unknown Callout variant "warnng". Expected one of: note, insight, warning, success, error.'
   );
 });
 
@@ -332,6 +376,34 @@ it("delegates the full invocation from the global entry to the project-local CLI
   const record = JSON.parse(await readFile(join(cwd, "delegated.json"), "utf8")) as { args: string[]; marker: string | null };
   expect(record.args).toEqual(["--version"]);
   expect(record.marker).toBe(localDirectory);
+});
+
+it("reports a global and project-local CLI mismatch before using the local CLI", async () => {
+  const cwd = await project({
+    "package.json": JSON.stringify({ dependencies: { react: "19.2.7", next: "16.2.11" } })
+  });
+  const localDirectory = join(cwd, "node_modules", "@scribe-sdk", "cli");
+  await mkdir(join(localDirectory, "dist"), { recursive: true });
+  await writeFile(join(localDirectory, "package.json"), JSON.stringify({
+    name: "@scribe-sdk/cli",
+    version: "0.1.0-alpha.9",
+    bin: { scribe: "./dist/index.mjs" }
+  }));
+  await writeFile(join(localDirectory, "dist", "index.mjs"), "");
+  const stdout = vi.fn();
+
+  expect(await cli.runCliMain([], {
+    cwd,
+    argv1: "/global/bin/scribe",
+    stdout,
+    stderr: vi.fn()
+  })).toBe(0);
+
+  const output = stdout.mock.calls.join("\n");
+  expect(output).toContain("Scribe CLI resolution");
+  expect(output).toContain(`${version}`);
+  expect(output).toContain("0.1.0-alpha.9 (used)");
+  expect(output).toContain("project-local CLI handles commands");
 });
 
 async function fixture(source: string): Promise<string> {

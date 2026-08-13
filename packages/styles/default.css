@@ -634,6 +634,14 @@
     --scribe-callout-tone: #c87822;
   }
 
+  :where(.scribe .scribe-callout[data-variant="success"]) {
+    --scribe-callout-tone: #2f8f5b;
+  }
+
+  :where(.scribe .scribe-callout[data-variant="error"]) {
+    --scribe-callout-tone: #c44747;
+  }
+
   :where(.scribe .scribe-callout__marker) {
     inline-size: 0.35rem;
     block-size: 100%;

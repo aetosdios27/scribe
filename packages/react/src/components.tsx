@@ -83,14 +83,14 @@ export function Banner({
   );
 }
 
-export type CalloutVariant = "note" | "insight" | "warning";
+export type CalloutVariant = "note" | "insight" | "warning" | "success" | "error";
 
 export interface CalloutProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
   readonly variant?: CalloutVariant;
   readonly title?: ReactNode;
 }
 
-const calloutVariants = new Set<CalloutVariant>(["note", "insight", "warning"]);
+const calloutVariants = new Set<CalloutVariant>(["note", "insight", "warning", "success", "error"]);
 
 export function Callout({ variant = "note", title, className, children, ...props }: CalloutProps) {
   if (!calloutVariants.has(variant)) {

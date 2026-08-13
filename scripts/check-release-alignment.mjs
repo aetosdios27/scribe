@@ -45,14 +45,12 @@ assert(config.fixed.length === 1, "Changesets must contain exactly one fixed gro
 assert(equalSets(config.fixed[0], expectedNames), `Changesets fixed group must contain exactly: ${expectedNames.join(", ")}.`);
 
 const pre = JSON.parse(await readFile(join(root, ".changeset", "pre.json"), "utf8"));
-assert(pre.mode === "pre" && pre.tag === "alpha", "The current prerelease state must be alpha pre mode.");
+assert(pre.mode === "pre", "The current release state must remain in prerelease mode.");
+assert(pre.tag === "alpha" || pre.tag === "beta", `Unsupported prerelease channel: ${String(pre.tag)}.`);
 const initialVersions = new Set(expectedNames.map((name) => pre.initialVersions[name]));
-assert(initialVersions.size === 1, `Alpha initial versions drifted: ${expectedNames.map((name) => `${name}@${String(pre.initialVersions[name])}`).join(", ")}.`);
-const [initialVersion] = initialVersions;
-const currentAlpha = parseAlphaVersion(version);
-const initialAlpha = parseAlphaVersion(initialVersion);
-assert(currentAlpha.base === initialAlpha.base, `Current ${version} and alpha baseline ${initialVersion} use different semver bases.`);
-assert(currentAlpha.sequence >= initialAlpha.sequence, `Current ${version} precedes alpha baseline ${initialVersion}.`);
+assert(initialVersions.size === 1, `Prerelease initial versions drifted: ${expectedNames.map((name) => `${name}@${String(pre.initialVersions[name])}`).join(", ")}.`);
+const currentPrerelease = parsePrereleaseVersion(version);
+assert(currentPrerelease.channel === pre.tag, `Current ${version} does not use the configured ${pre.tag} prerelease channel.`);
 
 const cliSource = await readFile(join(root, "packages", "cli", "src", "index.ts"), "utf8");
 assert(!/export const version\s*=\s*["'][^"']+["']/u.test(cliSource), "The CLI version must come from its package manifest, not a hard-coded string.");
@@ -67,7 +65,7 @@ for (const filename of ["README.md", "SKILL.md"]) {
   assert(!content.includes(retiredScope), `${filename} references the retired ${retiredScope.slice(0, -1)} package scope.`);
 }
 
-process.stdout.write(`Release alignment verified for ${expectedNames.join(", ")} at ${version} in alpha prerelease mode.\n`);
+process.stdout.write(`Release alignment verified for ${expectedNames.join(", ")} at ${version} in ${pre.tag} prerelease mode.\n`);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -81,8 +79,8 @@ function formatVersions(packages) {
   return packages.map(({ name, version: packageVersion }) => `${name}@${packageVersion}`).join(", ");
 }
 
-function parseAlphaVersion(value) {
-  const match = /^(\d+\.\d+\.\d+)-alpha\.(\d+)$/u.exec(String(value));
-  assert(match !== null, `Expected an alpha prerelease version, received ${String(value)}.`);
-  return { base: match[1], sequence: Number(match[2]) };
+function parsePrereleaseVersion(value) {
+  const match = /^(\d+\.\d+\.\d+)-([0-9A-Za-z-]+)(?:\.([0-9A-Za-z.-]+))?$/u.exec(String(value));
+  assert(match !== null, `Expected a prerelease version, received ${String(value)}.`);
+  return { base: match[1], channel: match[2], sequence: match[3] };
 }

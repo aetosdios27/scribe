@@ -24,7 +24,7 @@ describe("Changesets release policy", () => {
     });
   });
 
-  it("leaves the real repository in the intentional alpha prerelease cycle", async () => {
+  it("leaves the real repository in the intentional beta prerelease cycle", async () => {
     const pre = await readJson(join(root, ".changeset", "pre.json"));
     const fragmentIds = (await readdir(join(root, ".changeset")))
       .filter((name) => name.endsWith(".md") && name !== "README.md")
@@ -32,9 +32,9 @@ describe("Changesets release policy", () => {
       .sort();
 
     expect(pre.mode).toBe("pre");
-    expect(pre.tag).toBe("alpha");
+    expect(pre.tag).toBe("beta");
     expect(fragmentIds).toEqual(expect.arrayContaining([...pre.changesets].sort()));
-    expect(pre.initialVersions).toEqual(Object.fromEntries(publicPackages.map((name) => [name, "0.1.0-alpha.1"])));
+    expect(pre.initialVersions).toEqual(Object.fromEntries(publicPackages.map((name) => [name, "0.1.0-alpha.10"])));
   });
 
   it("records one curated bootstrap fragment for the first public prerelease", async () => {
@@ -59,7 +59,7 @@ describe("Changesets release policy", () => {
     const [version] = versions;
 
     expect(versions.size).toBe(1);
-    expect(version).toMatch(/^0\.1\.0-alpha\.\d+$/);
+    expect(version).toBe("0.1.0-beta");
     expect(manifests.every((manifest) => manifest.license === "Apache-2.0")).toBe(true);
     expect(manifests.find((manifest) => manifest.name === "@scribe-sdk/cli")?.dependencies).toMatchObject({
       "@scribe-sdk/mdx": version,
@@ -69,7 +69,7 @@ describe("Changesets release policy", () => {
     expect(JSON.stringify(manifests)).not.toContain("workspace:");
   });
 
-  it("generates synchronized package changelogs for the bootstrap and public alpha", async () => {
+  it("keeps historical alpha changelogs and records the beta release", async () => {
     for (const directory of packageDirectories) {
       const changelog = await readFile(join(root, "packages", directory, "CHANGELOG.md"), "utf8");
       expect(changelog).toContain(`## 0.1.0-alpha.2`);
@@ -86,7 +86,7 @@ describe("Changesets release policy", () => {
       if (directory === "styles") {
         expect(changelog).toContain("Keep compile-time Shiki foreground and background colors paired in Tailwind mode");
       }
-      expect(changelog).not.toContain("beta");
+      expect(changelog).toContain("## 0.1.0-beta");
     }
   });
 
@@ -97,7 +97,7 @@ describe("Changesets release policy", () => {
       changeset: "changeset",
       "changeset:status": "changeset status",
       "version:packages": "node scripts/version-packages.mjs",
-      "release:packages": "node scripts/publish-alpha-packages.mjs",
+      "release:packages": "node scripts/publish-prerelease-packages.mjs",
       "release:check": "node scripts/check-release-alignment.mjs"
     });
     const versionScript = await readFile(join(root, "scripts", "version-packages.mjs"), "utf8");
@@ -114,11 +114,11 @@ describe("Changesets release policy", () => {
 
     expect(releasing).toContain("bunx changeset");
     expect(releasing).toContain("bunx changeset status");
-    expect(releasing).toContain("bunx changeset pre enter alpha");
+    expect(releasing).toContain("bunx changeset pre enter beta");
     expect(releasing).toContain("bunx changeset version");
     expect(releasing).toContain("bun run release:packages");
     expect(releasing).toContain("npm publish");
-    expect(releasing).toContain("--tag alpha");
+    expect(releasing).toContain("--tag beta");
     expect(releasing).toContain("bunx changeset pre exit");
     expect(releasing).toContain("observable user impact");
     expect(releasing).toContain("packages/*/CHANGELOG.md");

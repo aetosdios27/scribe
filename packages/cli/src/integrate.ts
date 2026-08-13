@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, readFile, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -11,6 +10,7 @@ import {
   formatPackageCommand,
   isAutomatedPackageManager,
   scribeConvergenceCommands,
+  runPackageCommand,
   type PackageCommand,
   type PackageManager,
   type PackageManagerContext
@@ -24,6 +24,8 @@ import {
   FileTransactionError,
   hashContent,
   manifestAndLockfilePaths,
+  mergeAppliedChanges,
+  observeTrackedMutations,
   releaseIntegrationLock,
   restoreSnapshot,
   snapshotFiles,
@@ -734,7 +736,7 @@ export async function runIntegrate(
 
   const projectRoot = plan.inspection.root;
   const transactionRoot = plan.inspection.packageManagerRoot;
-  const runCommand = dependencies.runCommand ?? spawnCommand;
+  const runCommand = dependencies.runCommand ?? runPackageCommand;
 
   let lock: IntegrationLockHandle;
   try {
@@ -1420,52 +1422,6 @@ function scribeDeclarationsAligned(
   });
 }
 
-async function observeTrackedMutations(
-  transactionRoot: string,
-  snapshot: ReadonlyMap<string, SnapshotEntry>,
-  paths: readonly string[]
-): Promise<readonly AppliedChange[]> {
-  const observed: AppliedChange[] = [];
-
-  for (const path of paths) {
-    const before = snapshot.get(path);
-    if (before === undefined) continue;
-
-    const current = await captureExpectedFileState(
-      transactionRoot,
-      path
-    );
-
-    if (current.kind !== "file") continue;
-
-    const beforeHash =
-      before.existed && before.content !== undefined
-        ? hashContent(before.content)
-        : undefined;
-
-    if (!before.existed || beforeHash !== current.hash) {
-      observed.push({
-        path,
-        created: !before.existed,
-        writtenHash: current.hash
-      });
-    }
-  }
-
-  return observed;
-}
-
-function mergeAppliedChanges(
-  ...groups: readonly (readonly AppliedChange[])[]
-): readonly AppliedChange[] {
-  const merged = new Map<string, AppliedChange>();
-  for (const group of groups) {
-    for (const change of group) {
-      merged.set(change.path, change);
-    }
-  }
-  return [...merged.values()];
-}
 
 async function collectSourceFiles(
   inputRoot: string
@@ -1763,66 +1719,6 @@ async function confirmInteractively(
   }
 }
 
-async function spawnCommand(
-  command: PackageCommand,
-  cwd: string
-): Promise<number> {
-  return new Promise((resolveStatus, reject) => {
-    const child = spawn(
-      command.executable,
-      [...command.args],
-      {
-        cwd,
-        stdio: "inherit",
-        shell: false
-      }
-    );
-
-    let settled = false;
-
-    const forward = (signal: NodeJS.Signals) => {
-      if (
-        child.exitCode === null &&
-        child.signalCode === null
-      ) {
-        child.kill(signal);
-      }
-    };
-    const onSigint = () => forward("SIGINT");
-    const onSigterm = () => forward("SIGTERM");
-
-    const cleanup = () => {
-      process.removeListener("SIGINT", onSigint);
-      process.removeListener("SIGTERM", onSigterm);
-    };
-
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      callback();
-    };
-
-    process.once("SIGINT", onSigint);
-    process.once("SIGTERM", onSigterm);
-
-    child.once("error", (error) => {
-      finish(() => reject(error));
-    });
-    child.once("exit", (code, signal) => {
-      finish(() =>
-        resolveStatus(
-          code ??
-            (signal === "SIGINT"
-              ? 130
-              : signal === "SIGTERM"
-                ? 143
-                : 1)
-        )
-      );
-    });
-  });
-}
 
 async function canonicalDirectory(
   input: string

@@ -126,6 +126,8 @@ createRoot(root).render(<Article components={createScribeComponents()} />);
   if (aliasVersion.stdout.trim() !== version) throw new Error(`Bun Vite scb alias reported ${aliasVersion.stdout.trim()}, expected ${version}.`);
   run(bin(directory, "scribe"), ["--help"], directory);
   run(bin(directory, "scb"), ["--help"], directory);
+  run(bin(directory, "scribe"), ["studio", "init", "--help"], directory);
+  run(bin(directory, "scribe"), ["update", "--help"], directory);
   run(bin(directory, "scribe"), ["validate", join(directory, "src/article.mdx")], directory);
   run(bin(directory, "scb"), ["validate", join(directory, "src/article.mdx")], directory);
   const invalid = run(bin(directory, "scribe"), ["validate", join(directory, "src/invalid.mdx")], directory, false);
@@ -442,6 +444,9 @@ async function smokeStudio(directory, articlePath) {
   }
   if (termination.code !== 0 || termination.signal !== null) {
     throw new Error(`Packed Studio did not shut down cleanly (code ${String(termination.code)}, signal ${String(termination.signal)}):\n${stdout}\n${stderr}`);
+  }
+  if (/points to missing source files|\.scribe-studio\.mdx/iu.test(stderr)) {
+    throw new Error(`Packed Studio emitted a bogus generated-MDX sourcemap warning:\n${stderr}`);
   }
   results.push({ command: [command, ...args].join(" "), cwd: directory, status: 0, stdout: stdout.trim(), stderr: stderr.trim() });
   process.stderr.write(`✓ packed Studio loopback smoke on ${port}\n`);

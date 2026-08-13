@@ -246,6 +246,13 @@ it("starts on loopback, loads the source, and reports metadata", async () => {
   expect(studio).toContain('src="/@scribe-studio/client.tsx"');
   expect(studio).not.toContain('id="mode"');
 
+  const previewModule = await (await fetch(`${handle.origin}/@scribe-studio/preview.tsx`)).text();
+  expect(previewModule).toContain("/content/peer notes.mdx");
+  expect(previewModule).not.toContain(".scribe-studio.mdx");
+  const articleModule = await fetch(`${handle.origin}/content/peer%20notes.mdx`);
+  expect(articleModule.status).toBe(200);
+  expect(await articleModule.text()).not.toContain(".scribe-studio.mdx");
+
   const publicImage = await fetch(`${handle.origin}/peer-banner.svg`);
   expect(publicImage.status).toBe(200);
 

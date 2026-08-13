@@ -1,5 +1,11 @@
 # @scribe-sdk/styles
 
+## 0.1.0-beta
+
+### Patch Changes
+
+- Style `success` and `error` Callout variants in the default editorial mode.
+
 ## 0.1.0-alpha.10
 
 ## 0.1.0-alpha.9

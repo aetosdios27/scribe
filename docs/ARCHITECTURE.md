@@ -191,7 +191,7 @@ A useful diagnostic says what is wrong, points at source where possible, and tel
 
 ## Package exports and bundles
 
-Public entry points are enumerated in each package's `exports` map and covered by release tests. Published files are limited to built output, canonical README/SKILL documentation, and the license. The four packages move as one Changesets fixed group so integrations do not receive mismatched alpha versions.
+Public entry points are enumerated in each package's `exports` map and covered by release tests. Published files are limited to built output, canonical README/SKILL documentation, and the license. The four packages move as one Changesets fixed group so integrations do not receive mismatched prerelease versions.
 
 Release verification builds declarations with TypeScript 7 and TypeScript 6, packs tarballs, inspects manifests and contents, installs them in isolated Bun and npm consumers, exercises public imports and the CLI, and scans browser bundles for compiler-only or Node payloads.
 

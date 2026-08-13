@@ -25,7 +25,7 @@
     "release:consumers": "node scripts/test-packed-consumers.mjs",
     "release:pack": "node scripts/pack-packages.mjs",
     "release:pack:dry": "node scripts/pack-packages.mjs --dry-run",
-    "release:packages": "node scripts/publish-alpha-packages.mjs",
+    "release:packages": "node scripts/publish-prerelease-packages.mjs",
     "release:visual": "node scripts/run-helium-visual.mjs --require-helium",
     "portability:check": "node scripts/check-portability.mjs",
     "test": "vitest run",

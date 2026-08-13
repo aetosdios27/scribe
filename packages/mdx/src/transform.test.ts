@@ -122,11 +122,15 @@ opaque value
     });
   });
 
+  it.each(["success", "error"])("accepts the %s Callout variant", async (variant) => {
+    await expect(compileScribeMdx(`<Callout variant="${variant}">State</Callout>`)).resolves.toBeDefined();
+  });
+
   it("rejects an unknown static Callout variant during compilation", async () => {
     await expect(
       compileScribeMdx('<Callout variant="warnng">Mind the typo.</Callout>')
     ).rejects.toMatchObject({
-      reason: 'Unknown Callout variant "warnng". Expected one of: note, insight, warning.',
+      reason: 'Unknown Callout variant "warnng". Expected one of: note, insight, warning, success, error.',
       ruleId: "SCB1101",
       source: "scribe"
     });

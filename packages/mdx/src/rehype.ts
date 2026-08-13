@@ -44,7 +44,7 @@ const rehypeScribe: Plugin<[ScribeMdxOptions?]> = function rehypeScribe(options 
 
 export default rehypeScribe;
 
-const calloutVariants = ["note", "insight", "warning"] as const;
+const calloutVariants = ["note", "insight", "warning", "success", "error"] as const;
 
 function validateScribeComponents(tree: Root, file: VFile): void {
   visit(tree, (node) => {

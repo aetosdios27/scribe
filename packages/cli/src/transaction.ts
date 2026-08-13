@@ -286,6 +286,41 @@ export async function restoreSnapshot(
   return failures;
 }
 
+export async function observeTrackedMutations(
+  root: string,
+  snapshot: ReadonlyMap<string, SnapshotEntry>,
+  paths: readonly string[]
+): Promise<readonly AppliedChange[]> {
+  const observed: AppliedChange[] = [];
+  for (const path of paths) {
+    const before = snapshot.get(path);
+    if (before === undefined) continue;
+    const current = await captureExpectedFileState(root, path);
+    if (current.kind !== "file") continue;
+    const beforeHash = before.existed && before.content !== undefined
+      ? hashContent(before.content)
+      : undefined;
+    if (!before.existed || beforeHash !== current.hash) {
+      observed.push({
+        path,
+        created: !before.existed,
+        writtenHash: current.hash
+      });
+    }
+  }
+  return observed;
+}
+
+export function mergeAppliedChanges(
+  ...groups: readonly (readonly AppliedChange[])[]
+): readonly AppliedChange[] {
+  const merged = new Map<string, AppliedChange>();
+  for (const group of groups) {
+    for (const change of group) merged.set(change.path, change);
+  }
+  return [...merged.values()];
+}
+
 export interface VerifyOptions {
   readonly files: readonly { readonly path: string; readonly expectedHash: string }[];
   readonly packages?: readonly {

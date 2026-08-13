@@ -1,5 +1,14 @@
 # @scribe-sdk/cli
 
+## 0.1.0-beta
+
+### Minor Changes
+
+- Complete the first beta authoring loop: create minimal articles with `scribe studio init`, update the aligned Scribe installation with `scribe update`, expose package and launcher version skew, introduce the inline `{S}` terminal identity, and remove the bogus Studio generated-MDX sourcemap warning.
+  - @scribe-sdk/react@0.1.0-beta
+  - @scribe-sdk/styles@0.1.0-beta
+  - @scribe-sdk/mdx@0.1.0-beta
+
 ## 0.1.0-alpha.10
 
 ### Patch Changes

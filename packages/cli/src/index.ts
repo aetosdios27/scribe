@@ -5,15 +5,16 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { renderScribeLogo } from "./brand.js";
 import { colorize, commandArgument, displayPath, suggestClosest, supportsColor } from "./cli-output.js";
-import { importHelp, initHelp, integrateHelp, studioHelp } from "./command-help.js";
+import { importHelp, initHelp, integrateHelp, studioHelp, studioInitHelp, updateHelp } from "./command-help.js";
 import { delegateToLocalCli, resolveCliPackageRoot, resolveExecutionContext, shouldDelegate } from "./launcher.js";
 
 export const version = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ).version as string;
 
-const help = `Scribe ${version} · public alpha
+const help = `Scribe ${version} · public beta
 
 Publication structure and behavior for a host-owned React site.
 
@@ -26,14 +27,17 @@ Commands
   import      Convert an official Medium export into local Scribe MDX
   validate    Compile and validate one Markdown or MDX article
   studio      Open the local source-authoritative authoring Studio
+  update      Align every installed Scribe package to the current beta
 
 Bootstrap
-  bunx @scribe-sdk/cli@alpha integrate --dry-run
+  bunx @scribe-sdk/cli@beta integrate --dry-run
 
 Examples
   scribe init --dry-run
   scribe validate ./content/article.mdx
   scribe studio ./content/article.mdx
+  scribe studio init
+  scribe update
   scribe import ~/Downloads/medium-export.zip
 
 Options
@@ -73,10 +77,13 @@ export async function main(
   const cwd = dependencies.cwd ?? process.cwd();
   const stdout = dependencies.stdout ?? ((value: string) => process.stdout.write(value));
   const stderr = dependencies.stderr ?? ((value: string) => process.stderr.write(value));
-  const color = supportsColor(
-    dependencies.isTTY ?? process.stdout.isTTY === true,
-    dependencies.env ?? process.env
-  );
+  const env = dependencies.env ?? process.env;
+  const isTTY = dependencies.isTTY ?? process.stdout.isTTY === true;
+  const color = supportsColor(isTTY, env);
+  const logo = () => renderScribeLogo(version, {
+    color,
+    detailed: isTTY && env.TERM !== "dumb" && (process.stdout.columns ?? 80) >= 48
+  });
   if (args.includes("--version") || args.includes("-v")) {
     stdout(`${version}\n`);
     return 0;
@@ -87,9 +94,12 @@ export async function main(
   }
   if (args.length === 0) {
     const { bareStateOutput } = await import("./bare.js");
+    stdout(logo());
     stdout(await bareStateOutput({ cwd, version }));
     return 0;
   }
+
+  if (isTTY && (args[0] === "studio" || args[0] === "update")) stdout(logo());
 
   const [command, ...rest] = args;
   if (command === "init") {
@@ -117,6 +127,14 @@ export async function main(
     return runMediumImport(rest, { cwd, stdout, stderr });
   }
   if (command === "studio") {
+    if (rest[0] === "init") {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        stdout(studioInitHelp);
+        return 0;
+      }
+      const { runStudioInit } = await import("./studio-init.js");
+      return runStudioInit(rest.slice(1), { cwd, stdout, stderr });
+    }
     if (rest.includes("--help") || rest.includes("-h")) {
       stdout(studioHelp);
       return 0;
@@ -124,8 +142,16 @@ export async function main(
     const { runStudio } = await import("./studio.js");
     return runStudio(rest, { cwd, stdout, stderr });
   }
+  if (command === "update") {
+    if (rest.includes("--help") || rest.includes("-h")) {
+      stdout(updateHelp);
+      return 0;
+    }
+    const { runUpdate } = await import("./update.js");
+    return runUpdate(rest, { cwd, version, stdout, stderr });
+  }
   if (command !== "validate") {
-    const suggestion = suggestClosest(String(command), ["init", "integrate", "import", "validate", "studio"]);
+    const suggestion = suggestClosest(String(command), ["init", "integrate", "import", "validate", "studio", "update"]);
     stderr(`Unknown command "${String(command)}".${suggestion === undefined ? "" : ` Did you mean "${suggestion}"?`}\nRun \`scribe --help\` for the supported actions.\n`);
     return 2;
   }
@@ -216,6 +242,7 @@ export async function runCliMain(
 ): Promise<number> {
   const cwd = dependencies.cwd ?? process.cwd();
   const env = dependencies.env ?? process.env;
+  const stdout = dependencies.stdout ?? ((value: string) => process.stdout.write(value));
   const stderr = dependencies.stderr ?? ((value: string) => process.stderr.write(value));
   const context = await resolveExecutionContext({
     cwd,
@@ -228,6 +255,21 @@ export async function runCliMain(
     stderr("`scb` is a prerelease compatibility alias.\nUse `scribe` for new integrations.\n");
   }
   if (await shouldDelegate(context)) {
+    if (
+      args.length === 0 &&
+      context.localCli !== undefined &&
+      context.packageVersion !== context.localCli.version
+    ) {
+      stdout([
+        "Scribe CLI resolution",
+        `  Launcher       ${context.packageVersion}`,
+        `  Project local  ${context.localCli.version} (used)`,
+        "",
+        "The project-local CLI handles commands in this project.",
+        "Run `scribe update` to align the complete installation.",
+        ""
+      ].join("\n"));
+    }
     return delegateToLocalCli(context, args, { env });
   }
   return main(args, dependencies);

@@ -57,8 +57,10 @@ export const studioHelp = `Open Scribe's local, source-authoritative MDX Studio.
 
 Usage
   scribe studio <article.mdx> [options]
+  scribe studio init [options]
 
 Examples
+  scribe studio init
   scribe studio ./content/article.mdx
   scribe studio ./content/article.mdx --mode foundation --no-open
 
@@ -69,5 +71,40 @@ Options
   --no-open         Do not open the system browser automatically.
   -h, --help        Show this command help.
 
+Run \`scribe studio init --help\` for article-creation options.
 Without --port, Studio starts at 4317 and advances to the next available port.
+`;
+
+export const studioInitHelp = `Create a minimal article and open it in Scribe Studio.
+
+Usage
+  scribe studio init [options]
+
+Examples
+  scribe studio init
+  scribe studio init --title "The Smallest Honest Redis Clone" --yes
+  scribe studio init --content-dir posts
+
+Options
+  --title <title>       Set the article title without a prompt.
+  --slug <slug>         Override the title-derived slug.
+  --path <path>         Set the final repository-relative .md or .mdx path.
+  --content-dir <path>  Use one repository-relative content directory.
+  --yes                 Create the reviewed article without confirmation.
+  --mode <mode>         Pass a Studio style-mode override after creation.
+  --host-css <path>     Pass a local host stylesheet to Studio.
+  --port <number>       Pass a specific loopback port to Studio.
+  --no-open             Do not open the system browser automatically.
+  -h, --help            Show this command help.
+`;
+
+export const updateHelp = `Update the complete local Scribe installation through the project's package manager.
+
+Usage
+  scribe update [options]
+
+Options
+  --dry-run      Show the target version and exact package-manager commands without changing files.
+  --yes          Apply the reviewed update without confirmation.
+  -h, --help     Show this command help.
 `;

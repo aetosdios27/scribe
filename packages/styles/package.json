@@ -1,6 +1,6 @@
 {
   "name": "@scribe-sdk/styles",
-  "version": "0.1.0-alpha.10",
+  "version": "0.1.0-beta",
   "description": "Scoped, host-adaptive publishing CSS for Scribe technical articles.",
   "author": "aetosdios27",
   "license": "Apache-2.0",
