@@ -1,6 +1,7 @@
 mod app;
 mod cli;
 mod engine;
+mod logo;
 mod protocol;
 mod terminal;
 

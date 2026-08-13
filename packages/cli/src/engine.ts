@@ -207,7 +207,7 @@ async function inspectStatus(): Promise<unknown> {
   const root = await findSupportedProjectRoot(cwd);
   if (root === undefined) {
     return {
-      title: "Scribe · Project status",
+      title: "Project status",
       message: "No supported React project was found.",
       values: { expected: "Next.js or Vite", help: "scribe --help" }
     };
@@ -251,7 +251,7 @@ async function inspectStatus(): Promise<unknown> {
   values.open = "scribe studio <article>";
   values.check = "scribe validate <article>";
   values.next = integrated && runtimePresent ? "scribe update" : "scribe integrate --dry-run";
-  return { title: "Scribe · Project status", message, values };
+  return { title: "Project status", message, values };
 }
 
 async function firstExistingContentDirectory(root: string): Promise<string | undefined> {
