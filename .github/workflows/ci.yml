@@ -129,10 +129,11 @@ jobs:
           --all-features
           --locked
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
       - name: Audit Rust dependencies
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo audit
 
       - name: Download native CLI packages
         uses: actions/download-artifact@v8
