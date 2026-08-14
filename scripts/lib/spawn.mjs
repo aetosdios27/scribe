@@ -1,9 +1,5 @@
 import crossSpawn from "cross-spawn";
 
-import {
-  requiresCommandShell
-} from "./platform.mjs";
-
 export function spawnPortableSync(
   command,
   args,
@@ -12,9 +8,6 @@ export function spawnPortableSync(
   return crossSpawn.sync(
     command,
     args,
-    {
-      ...options,
-      shell: requiresCommandShell(command)
-    }
+    options
   );
 }
