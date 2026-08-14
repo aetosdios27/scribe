@@ -1,5 +1,11 @@
 # @scribe-sdk/mdx
 
+## 0.1.0-beta
+
+### Patch Changes
+
+- Validate `success` and `error` as supported Callout variants.
+
 ## 0.1.0-alpha.10
 
 ## 0.1.0-alpha.9

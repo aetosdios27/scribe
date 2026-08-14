@@ -1,5 +1,11 @@
 # @scribe-sdk/react
 
+## 0.1.0-beta
+
+### Patch Changes
+
+- Support `success` and `error` Callout variants.
+
 ## 0.1.0-alpha.10
 
 ## 0.1.0-alpha.9

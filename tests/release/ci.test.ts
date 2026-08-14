@@ -210,7 +210,7 @@ async function text(relativePath: string): Promise<string> {
 async function repositoryFiles(directory: string, prefix = ""): Promise<string[]> {
   const files: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if ([".git", ".next", ".scribe-local", ".scribe-pack", ".scribe-release", "dist", "node_modules", "out", "playwright-report", "test-results"].includes(entry.name)) continue;
+    if ([".git", ".next", ".scribe-local", ".scribe-pack", ".scribe-release", "dist", "node_modules", "out", "playwright-report", "target", "test-results"].includes(entry.name)) continue;
     const relative = join(prefix, entry.name);
     if (entry.isDirectory()) files.push(...await repositoryFiles(join(directory, entry.name), relative));
     else if (entry.isFile() && /\.(?:json|md|mjs|ts|tsx|yml|yaml)$/u.test(entry.name)) files.push(relative);

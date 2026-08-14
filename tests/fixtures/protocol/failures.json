@@ -1,0 +1,29 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "error": {
+      "code": -32602,
+      "message": "Article path must remain inside the workspace.",
+      "data": {
+        "kind": "path",
+        "usage": "scribe studio init --path <article.mdx>",
+        "recovery": ["Choose a repository-relative .md or .mdx path."],
+        "partialState": false
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "id": 4,
+    "error": {
+      "code": -32603,
+      "message": "Package update failed and rollback was incomplete.",
+      "data": {
+        "kind": "operation",
+        "recovery": ["Review package.json and the active lockfile before retrying."],
+        "partialState": true
+      }
+    }
+  }
+]

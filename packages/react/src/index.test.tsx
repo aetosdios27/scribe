@@ -52,13 +52,17 @@ describe("the Scribe editorial React boundary", () => {
 
   it("renders restrained semantic callout variants and rejects unknown variants", () => {
     const html = renderToStaticMarkup(
-      <Callout variant="warning" title="Protocol edge">
-        Peers can disappear mid-frame.
-      </Callout>
+      <>
+        <Callout variant="warning" title="Protocol edge">Peers can disappear mid-frame.</Callout>
+        <Callout variant="success">Write acknowledged.</Callout>
+        <Callout variant="error">Write rejected.</Callout>
+      </>
     );
 
     expect(html).toContain('<aside class="scribe-callout" role="note"');
     expect(html).toContain('data-variant="warning"');
+    expect(html).toContain('data-variant="success"');
+    expect(html).toContain('data-variant="error"');
     expect(() =>
       renderToStaticMarkup(
         <Callout variant={"danger" as "note"}>Unsupported</Callout>

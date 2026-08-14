@@ -1,0 +1,22 @@
+{
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": 1,
+      "cliVersion": "0.1.0-beta",
+      "cwd": "/workspace",
+      "invokedBinary": "scribe"
+    }
+  },
+  "result": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "protocolVersion": 1,
+      "engineVersion": "0.1.0-beta",
+      "capabilities": ["validate"]
+    }
+  }
+}

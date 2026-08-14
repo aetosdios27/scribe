@@ -32,7 +32,7 @@ export interface SnapshotEntry {
 export interface AppliedChange {
   readonly path: string;
   readonly created: boolean;
-  readonly writtenHash: string;
+  readonly result: ExpectedFileState;
 }
 
 export type ExpectedFileState =
@@ -245,7 +245,11 @@ export async function applyFileChanges(root: string, changes: readonly FileChang
         path
       );
     }
-    written.push({ path, created: before.kind === "missing", writtenHash: hashBytes(content) });
+    written.push({
+      path,
+      created: before.kind === "missing",
+      result: { kind: "file", hash: hashBytes(content) }
+    });
   }
   return written;
 }
@@ -264,9 +268,9 @@ export async function restoreSnapshot(
       const absolute = await resolveSafeProjectPath(root, path);
       const appliedChange = appliedByPath.get(path);
 
-      if (appliedChange !== undefined && await pathExists(absolute)) {
-        const current = await readRegularFile(absolute, path);
-        if (hashBytes(current) !== appliedChange.writtenHash) {
+      if (appliedChange !== undefined) {
+        const current = await captureExpectedFileState(root, path);
+        if (!sameExpectedState(current, appliedChange.result)) {
           failures.push(path);
           continue;
         }
@@ -284,6 +288,40 @@ export async function restoreSnapshot(
   }
 
   return failures;
+}
+
+export async function observeTrackedMutations(
+  root: string,
+  snapshot: ReadonlyMap<string, SnapshotEntry>,
+  paths: readonly string[]
+): Promise<readonly AppliedChange[]> {
+  const observed: AppliedChange[] = [];
+  for (const path of paths) {
+    const before = snapshot.get(path);
+    if (before === undefined) continue;
+    const current = await captureExpectedFileState(root, path);
+    const beforeState: ExpectedFileState = before.existed && before.content !== undefined
+      ? { kind: "file", hash: hashContent(before.content) }
+      : { kind: "missing" };
+    if (!sameExpectedState(beforeState, current)) {
+      observed.push({
+        path,
+        created: beforeState.kind === "missing" && current.kind === "file",
+        result: current
+      });
+    }
+  }
+  return observed;
+}
+
+export function mergeAppliedChanges(
+  ...groups: readonly (readonly AppliedChange[])[]
+): readonly AppliedChange[] {
+  const merged = new Map<string, AppliedChange>();
+  for (const group of groups) {
+    for (const change of group) merged.set(change.path, change);
+  }
+  return [...merged.values()];
 }
 
 export interface VerifyOptions {

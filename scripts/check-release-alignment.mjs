@@ -9,6 +9,16 @@ const publicPackages = [
   { name: "@scribe-sdk/mdx", directory: "mdx" },
   { name: "@scribe-sdk/cli", directory: "cli" }
 ];
+const nativePackages = [
+  ["@scribe-sdk/cli-linux-x64-gnu", "linux-x64-gnu"],
+  ["@scribe-sdk/cli-linux-x64-musl", "linux-x64-musl"],
+  ["@scribe-sdk/cli-linux-arm64-gnu", "linux-arm64-gnu"],
+  ["@scribe-sdk/cli-linux-arm64-musl", "linux-arm64-musl"],
+  ["@scribe-sdk/cli-darwin-x64", "darwin-x64"],
+  ["@scribe-sdk/cli-darwin-arm64", "darwin-arm64"],
+  ["@scribe-sdk/cli-win32-x64-msvc", "win32-x64-msvc"],
+  ["@scribe-sdk/cli-win32-arm64-msvc", "win32-arm64-msvc"]
+];
 const expectedNames = publicPackages.map(({ name }) => name);
 const manifests = await Promise.all(publicPackages.map(async ({ directory }) =>
   JSON.parse(await readFile(join(root, "packages", directory, "package.json"), "utf8"))
@@ -34,9 +44,17 @@ for (const manifest of manifests) {
 
 const cliManifest = manifests.find(({ name }) => name === "@scribe-sdk/cli");
 assert(
-  cliManifest?.bin?.scribe === "./dist/index.mjs" && cliManifest.bin.scb === "./dist/index.mjs",
-  "@scribe-sdk/cli must expose scribe and the scb compatibility alias from the same executable."
+  cliManifest?.bin?.scribe === "./dist/bootstrap.mjs" && cliManifest.bin.scb === "./dist/bootstrap.mjs",
+  "@scribe-sdk/cli must expose scribe and the scb compatibility alias from the native bootstrap."
 );
+const nativeManifests = await Promise.all(nativePackages.map(async ([name, directory]) => {
+  const manifest = JSON.parse(await readFile(join(root, "packages", "cli-native", directory, "package.json"), "utf8"));
+  assert(manifest.name === name, `Expected ${name} in packages/cli-native/${directory}.`);
+  assert(manifest.version === version, `${name}@${String(manifest.version)} does not match ${version}.`);
+  assert(cliManifest.optionalDependencies?.[name] === version, `@scribe-sdk/cli must pin ${name}@${version}.`);
+  return manifest;
+}));
+assert(nativeManifests.length === nativePackages.length, "Every native package manifest must be present.");
 
 const config = JSON.parse(await readFile(join(root, ".changeset", "config.json"), "utf8"));
 assert(config.access === "public", "Changesets access must be public.");
@@ -45,17 +63,33 @@ assert(config.fixed.length === 1, "Changesets must contain exactly one fixed gro
 assert(equalSets(config.fixed[0], expectedNames), `Changesets fixed group must contain exactly: ${expectedNames.join(", ")}.`);
 
 const pre = JSON.parse(await readFile(join(root, ".changeset", "pre.json"), "utf8"));
-assert(pre.mode === "pre" && pre.tag === "alpha", "The current prerelease state must be alpha pre mode.");
+assert(pre.mode === "pre", "The current release state must remain in prerelease mode.");
+assert(pre.tag === "alpha" || pre.tag === "beta", `Unsupported prerelease channel: ${String(pre.tag)}.`);
+assert(
+  pre.initialVersions !== null &&
+    typeof pre.initialVersions === "object" &&
+    expectedNames.every((name) => typeof pre.initialVersions[name] === "string"),
+  `Prerelease initial versions must be strings for: ${expectedNames.join(", ")}.`
+);
 const initialVersions = new Set(expectedNames.map((name) => pre.initialVersions[name]));
-assert(initialVersions.size === 1, `Alpha initial versions drifted: ${expectedNames.map((name) => `${name}@${String(pre.initialVersions[name])}`).join(", ")}.`);
-const [initialVersion] = initialVersions;
-const currentAlpha = parseAlphaVersion(version);
-const initialAlpha = parseAlphaVersion(initialVersion);
-assert(currentAlpha.base === initialAlpha.base, `Current ${version} and alpha baseline ${initialVersion} use different semver bases.`);
-assert(currentAlpha.sequence >= initialAlpha.sequence, `Current ${version} precedes alpha baseline ${initialVersion}.`);
+assert(initialVersions.size === 1, `Prerelease initial versions drifted: ${expectedNames.map((name) => `${name}@${String(pre.initialVersions[name])}`).join(", ")}.`);
+const currentPrerelease = parsePrereleaseVersion(version);
+assert(currentPrerelease.channel === pre.tag, `Current ${version} does not use the configured ${pre.tag} prerelease channel.`);
 
-const cliSource = await readFile(join(root, "packages", "cli", "src", "index.ts"), "utf8");
-assert(!/export const version\s*=\s*["'][^"']+["']/u.test(cliSource), "The CLI version must come from its package manifest, not a hard-coded string.");
+const bootstrapSource = await readFile(join(root, "packages", "cli", "src", "bootstrap.ts"), "utf8");
+const engineSource = await readFile(join(root, "packages", "cli", "src", "engine.ts"), "utf8");
+const compact = (source) => source.replace(/\s+/gu, "");
+assert(
+  compact(bootstrapSource).includes(compact('readFile(resolve(packageRoot, "package.json")')) &&
+    compact(engineSource).includes("readPackageVersion()"),
+  "The bootstrap and engine versions must come from the CLI package manifest."
+);
+for (const source of [bootstrapSource, engineSource]) {
+  assert(!/export const version\s*=\s*["'][^"']+["']/u.test(source), "The CLI version must not be hard-coded.");
+}
+const cargoManifest = await readFile(join(root, "Cargo.toml"), "utf8");
+const rustVersion = /^\s*version\s*=\s*"([^"]+)"/mu.exec(cargoManifest)?.[1];
+assert(rustVersion === version, `Rust CLI version ${String(rustVersion)} does not match ${version}.`);
 
 for (const filename of ["README.md", "SKILL.md"]) {
   const content = await readFile(join(root, filename), "utf8");
@@ -67,7 +101,7 @@ for (const filename of ["README.md", "SKILL.md"]) {
   assert(!content.includes(retiredScope), `${filename} references the retired ${retiredScope.slice(0, -1)} package scope.`);
 }
 
-process.stdout.write(`Release alignment verified for ${expectedNames.join(", ")} at ${version} in alpha prerelease mode.\n`);
+process.stdout.write(`Release alignment verified for ${expectedNames.join(", ")} at ${version} in ${pre.tag} prerelease mode.\n`);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -81,8 +115,8 @@ function formatVersions(packages) {
   return packages.map(({ name, version: packageVersion }) => `${name}@${packageVersion}`).join(", ");
 }
 
-function parseAlphaVersion(value) {
-  const match = /^(\d+\.\d+\.\d+)-alpha\.(\d+)$/u.exec(String(value));
-  assert(match !== null, `Expected an alpha prerelease version, received ${String(value)}.`);
-  return { base: match[1], sequence: Number(match[2]) };
+function parsePrereleaseVersion(value) {
+  const match = /^(\d+\.\d+\.\d+)-([0-9A-Za-z-]+)(?:\.([0-9A-Za-z.-]+))?$/u.exec(String(value));
+  assert(match !== null, `Expected a prerelease version, received ${String(value)}.`);
+  return { base: match[1], channel: match[2], sequence: match[3] };
 }

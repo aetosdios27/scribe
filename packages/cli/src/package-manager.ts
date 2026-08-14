@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, readFile, realpath } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -221,6 +222,47 @@ export function updateCommand(manager: PackageManager, expected: string): readon
 
 export function formatPackageCommand(value: PackageCommand): string {
   return [value.executable, ...value.args].map(shellDisplayArgument).join(" ");
+}
+
+export async function runPackageCommand(
+  value: PackageCommand,
+  cwd: string
+): Promise<number> {
+  return new Promise((resolveStatus, reject) => {
+    const protocolMode = process.env.SCRIBE_ENGINE_PROTOCOL === "1";
+    const child = spawn(value.executable, [...value.args], {
+      cwd,
+      stdio: protocolMode ? ["inherit", "pipe", "pipe"] : "inherit",
+      shell: false
+    });
+    if (protocolMode) {
+      child.stdout?.on("data", (chunk: Buffer) => process.stderr.write(chunk));
+      child.stderr?.on("data", (chunk: Buffer) => process.stderr.write(chunk));
+    }
+    let settled = false;
+    const forward = (signal: NodeJS.Signals) => {
+      if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+    };
+    const onSigint = () => forward("SIGINT");
+    const onSigterm = () => forward("SIGTERM");
+    const cleanup = () => {
+      process.removeListener("SIGINT", onSigint);
+      process.removeListener("SIGTERM", onSigterm);
+    };
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    process.once("SIGINT", onSigint);
+    process.once("SIGTERM", onSigterm);
+    child.once("error", (error) => finish(() => reject(error)));
+    child.once("exit", (code, signal) => finish(() => resolveStatus(
+      code ?? (signal === "SIGINT" ? 130 : signal === "SIGTERM" ? 143 : 1)
+    )));
+  });
 }
 
 async function inspectDirectory(root: string, suppliedDeclaration?: string): Promise<DirectoryInspection> {

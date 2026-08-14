@@ -13,18 +13,17 @@ describe("release documentation", () => {
     expect(readme).toContain("Scribe is an open-source publishing SDK that turns ordinary Markdown, MDX, semantic HTML, and JSX into beautiful technical articles on websites you already own.");
     expect(readme).toContain("Just write. Scribe handles the rest.");
     expect(readme).toContain("developers who already own a React website built with Next.js or Vite");
-    expect(readme).toContain("The public alpha is tested against React 19.2.7, Next.js 16.2.11, Vite 8.1.3, and MDX 3.1.1.");
-    expect(readme).not.toContain("beta");
-    expect(readme).toContain("bun add @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alpha");
-    expect(readme).toContain("bun add --global @scribe-sdk/cli@alpha");
-    expect(readme).toContain("npm install --global @scribe-sdk/cli@alpha");
+    expect(readme).toContain("Scribe 0.1.0-beta is tested against React 19.2.7, Next.js 16.2.11, Vite 8.1.3, and MDX 3.1.1.");
+    expect(readme).toContain("bun add @scribe-sdk/react@beta @scribe-sdk/styles@beta @scribe-sdk/mdx@beta");
+    expect(readme).toContain("bun add --global @scribe-sdk/cli@beta");
+    expect(readme).toContain("npm install --global @scribe-sdk/cli@beta");
     expect(readme).toContain('import "@scribe-sdk/styles/default.css"');
     expect(readme).toContain("createScribeNextMdxOptions");
     expect(readme).toContain("createScribeComponents");
     expect(readme).toContain("scribe validate");
     expect(readme).toContain("scribe import <medium-export.zip>");
     expect(readme).toContain("official Medium export ZIP only");
-    expect(readme).toContain("bun update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli");
+    expect(readme).toContain("scribe update");
     expect(readme).toContain("SKILL.md");
     expect(readme).toContain("Licensed under Apache-2.0");
     expect(readme).toContain("https://github.com/aetosdios27/scribe/blob/main/examples/starter-article.mdx");
@@ -34,11 +33,11 @@ describe("release documentation", () => {
     expect(readme).not.toMatch(/\bnpx scribe\b/u);
     expect(readme).toContain("`scb` compatibility alias");
     expect(readme.match(/\bscb\b/gu)).toHaveLength(1);
-    expect(readme).toContain("If an earlier prerelease used `scribe init` for website integration, run `scribe integrate` now. `scribe init` creates only an empty content launchpad.");
+    expect(readme).toContain("`scribe init` still creates only an empty content launchpad; `scribe studio init` creates an article.");
     expect(readme).toContain("`0 1.25rem 3rem color-mix(in oklab, #000 12%, transparent)`");
   });
 
-  it("freezes compatibility claims to the verified public-alpha matrix", async () => {
+  it("freezes compatibility claims to the verified public-beta matrix", async () => {
     const readme = await readFile(join(root, "README.md"), "utf8");
 
     expect(readme).toContain("## Verified compatibility");
@@ -76,7 +75,8 @@ describe("release documentation", () => {
     expect(skill).toContain("bunx scribe validate path/to/article.mdx --strict");
     expect(skill).toContain("npx --no-install scribe validate path/to/article.mdx");
     expect(skill).toContain("bunx scribe import <medium-export.zip> --dry-run");
-    expect(skill).toContain("do not invent or invoke a `scribe upgrade` command");
+    expect(skill).toContain("Use `scribe update` to resolve the aligned beta");
+    expect(skill).toContain("There is no `scribe upgrade` command");
     expect(skill).not.toMatch(/^scribe validate /mu);
     expect(skill).not.toMatch(/\bscb\b/u);
     expect(skill.trim().split(/\s+/u).length).toBeGreaterThan(500);

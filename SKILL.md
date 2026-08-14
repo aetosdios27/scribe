@@ -19,7 +19,7 @@ Treat unexpected integration workarounds as possible Scribe defects. Do not sile
 
 Scribe is not a CMS, hosted platform, website builder, rich-text editor, proprietary format, collaboration system, or replacement for React, Next.js, HTML, or MDX.
 
-Scribe is in public alpha. Package versions may use prerelease SemVer identifiers while the API is still evolving.
+Scribe 0.1.0-beta is a public beta. Package versions may use prerelease SemVer identifiers while the API is still evolving.
 
 ## Inspect before changing
 
@@ -31,7 +31,7 @@ Scribe is in public alpha. Package versions may use prerelease SemVer identifier
 
 Expected packages are `@scribe-sdk/react`, `@scribe-sdk/styles`, `@scribe-sdk/mdx`, and development-only `@scribe-sdk/cli`. Read the installed Scribe README and `SKILL.md` before integrating. Depending on the installed package, these are available under paths such as `node_modules/@scribe-sdk/react/README.md` and `node_modules/@scribe-sdk/react/SKILL.md`. Use the packaged copies rather than relying on remembered APIs.
 
-If the host has no content convention yet, inspect `bunx scribe init --dry-run` before running `bunx scribe init`. It creates only an empty content directory and an optional asset directory; it never generates an article, metadata, or framework configuration. Skip it when the repository already has a deliberate content layout.
+If the host has no content convention yet, `scribe studio init` detects the existing layout or defaults to `content/blog`, asks for the title and editable target path, creates minimal title frontmatter without overwriting, and opens Studio. Use `scribe init --dry-run` only when the host needs an empty content launchpad without an article.
 
 If existing articles live on Medium, request or locate the official Medium export ZIP. Inspect `bunx scribe import <medium-export.zip> --dry-run` before importing. Published stories are the default; response-shaped entries and drafts stay excluded unless the owner deliberately opts in with `--include-responses` or `--include-drafts`. Images are localized to `public/scribe-imports` by default, while `--no-download-assets` preserves remote URLs. Never scrape Medium URLs or overwrite an existing target to imitate the importer.
 
@@ -43,9 +43,9 @@ Start with the deliberate detector:
 bunx scribe integrate --dry-run
 ```
 
-Review the detected stack, recommended mode, proposed packages, commands, touched files, ambiguities, and existing highlighter warnings. Run `bunx scribe integrate` only after the plan is safe. Bootstrap a new project with `bunx @scribe-sdk/cli@alpha integrate`; the alpha CLI installs the four Scribe packages at the running CLI's version and verifies the result. For Bun and npm, the reported package-manager commands run as part of the reviewed transaction; for pnpm and yarn, the plan reports the copyable install commands (runtime packages and the development-only CLI) and stops with exit `2` before changing any files until those packages are installed. After applying a plan, `integrate` verifies the packages that should be present at the running CLI's version, the selected stylesheet, and the reported files. When installed Scribe package versions do not match the running CLI, `integrate` prints the exact aligned `update` commands instead of upgrading automatically.
+Review the detected stack, recommended mode, proposed packages, commands, touched files, ambiguities, and existing highlighter warnings. Run `bunx scribe integrate` only after the plan is safe. Bootstrap a new project with `bunx @scribe-sdk/cli@beta integrate`; the beta CLI installs the four Scribe packages at the running CLI's version and verifies the result. For Bun and npm, the reported package-manager commands run as part of the reviewed transaction; for pnpm and yarn, the plan reports the copyable install commands and stops before changing files.
 
-`integrate` snapshots the manifest, lockfile, and affected source files before mutating anything and rolls them back if an install or file write fails. Re-running after completion reports no further changes. The project owns the local `@scribe-sdk/cli`; a user-level `scribe` delegates to it inside a supported project and runs directly elsewhere. Scribe never auto-updates its own packages. In CI, keep the run read-only with `--dry-run` until the integration is committed, then use `--yes` for a reviewed non-interactive plan.
+`integrate` snapshots the manifest, lockfile, and affected source files before mutating anything and rolls them back if an install or file write fails. Re-running after completion reports no further changes. The project owns the local `@scribe-sdk/cli`; a user-level `scribe` delegates to it inside a supported project and reports launcher/project version skew on bare `scribe`. Run `scribe update` to resolve the aligned `beta` release, review the exact Bun or npm operation, update all four packages transactionally, and verify alignment. In CI, use `--dry-run` or a reviewed `--yes` invocation.
 
 Choose exactly one style mode:
 
@@ -113,7 +113,7 @@ Preserve the host’s existing MDX options and plugins. Append the `remarkPlugin
 
 Import the selected packaged stylesheet once from the host application shell. Do not copy Scribe CSS into the host.
 
-Package upgrades belong to the host package manager. Use `bun update` or `npm update` for the aligned `@scribe-sdk/*` packages; do not invent or invoke a `scribe upgrade` command.
+Package upgrades belong to the host package manager through Scribe's reviewed orchestration. Use `scribe update` to resolve the aligned beta, show the exact Bun or npm commands, confirm, update all four `@scribe-sdk/*` packages transactionally, and verify alignment. There is no `scribe upgrade` command.
 
 ## Compose articles
 
@@ -197,9 +197,10 @@ Then run the host’s strict TypeScript check and production build. Verify both 
 
 For an established site, compare computed body font, body size, line height, paragraph margins, H1/H2 scale, content width, and code font before and after. Foundation and Tailwind integration is incomplete if any host-owned value changes without an explicit token override. Inspect screenshots; a green build is not visual proof.
 
-Use Studio for a source-authoritative local editing loop when helpful:
+Create a new minimal article or reopen an existing one through the source-authoritative Studio:
 
 ```bash
+bunx scribe studio init
 bunx scribe studio path/to/article.mdx --mode foundation
 ```
 

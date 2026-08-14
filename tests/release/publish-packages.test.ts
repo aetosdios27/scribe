@@ -6,168 +6,126 @@ import { describe, expect, it } from "vitest";
 
 import {
   isDirectExecution,
+  nativePackages,
   publicPackages,
-  publishAlphaPackages
-} from "../../scripts/publish-alpha-packages.mjs";
+  publishPrereleasePackages
+} from "../../scripts/publish-prerelease-packages.mjs";
 
-describe("alpha package publisher", () => {
+describe("prerelease package publisher", () => {
   it("recognizes the relative script path used by the root package command", () => {
     expect(isDirectExecution(
-      "file:///workspace/scripts/publish-alpha-packages.mjs",
-      "scripts/publish-alpha-packages.mjs",
+      "file:///workspace/scripts/publish-prerelease-packages.mjs",
+      "scripts/publish-prerelease-packages.mjs",
       "/workspace"
     )).toBe(true);
   });
 
-  it("publishes missing tarballs explicitly to alpha", async () => {
+  it("publishes every missing package explicitly to beta without moving alpha", async () => {
     const root = await releaseFixture();
-    const versions = new Map(publicPackages.map(({ name }) => [name, ["0.1.0-alpha.7"]]));
-    const tags = new Map<string, { alpha: string }>(
-      publicPackages.map(({ name }) => [name, { alpha: "0.1.0-alpha.7" }])
+    const versions = new Map(publicPackages.map(({ name }) => [name, ["0.1.0-alpha.10"]]));
+    const tags = new Map<string, { alpha: string; beta: string }>(
+      publicPackages.map(({ name }) => [name, {
+        alpha: "0.1.0-alpha.10",
+        beta: "0.1.0-alpha.10"
+      }])
     );
     const published: Array<{ name: string; tarball: string; tag: string }> = [];
 
-    await publishAlphaPackages({
+    await publishPrereleasePackages({
       root,
       registry: {
         versions: async (name) => versions.get(name) ?? [],
         distTags: async (name) => tags.get(name) ?? {},
         publishTarball: async (name, tarball, tag) => {
           published.push({ name, tarball, tag });
-          versions.get(name)?.push("0.1.0-alpha.8");
-          tags.set(name, { alpha: "0.1.0-alpha.8" });
+          versions.get(name)?.push("0.1.0-beta");
+          const previous = tags.get(name) as { alpha: string; beta: string };
+          tags.set(name, { ...previous, beta: "0.1.0-beta" });
         }
       }
     });
 
-    expect(published.map(({ name }) => name)).toEqual([
-      "@scribe-sdk/styles",
-      "@scribe-sdk/react",
-      "@scribe-sdk/mdx",
-      "@scribe-sdk/cli"
-    ]);
-    expect(published.every(({ tag }) => tag === "alpha")).toBe(true);
-    expect(published.at(-1)?.tarball.endsWith("scribe-sdk-cli-0.1.0-alpha.8.tgz")).toBe(true);
+    expect(published.map(({ name }) => name)).toEqual(publicPackages.map(({ name }) => name));
+    expect(published.every(({ tag }) => tag === "beta")).toBe(true);
+    expect(published.at(-1)?.tarball.endsWith("scribe-sdk-cli-0.1.0-beta.tgz")).toBe(true);
+    expect([...tags.values()].every(({ alpha }) => alpha === "0.1.0-alpha.10")).toBe(true);
   });
 
-  it("skips an already-published package and continues with the remaining packages", async () => {
+  it("skips published packages and fails closed when beta never converges", async () => {
     const root = await releaseFixture();
-    const versions = new Map(publicPackages.map(({ name }) => [
-      name,
-      name === "@scribe-sdk/styles" ? ["0.1.0-alpha.8"] : ["0.1.0-alpha.7"]
-    ]));
     const published: string[] = [];
 
-    await publishAlphaPackages({
+    await expect(publishPrereleasePackages({
       root,
       distTagAttempts: 3,
       distTagDelayMs: 0,
       registry: {
-        versions: async (name) => versions.get(name) ?? [],
-        distTags: async () => ({ alpha: "0.1.0-alpha.8" }),
+        versions: async (name) => published.includes(name) ? ["0.1.0-beta"] : [],
+        distTags: async () => ({
+          alpha: "0.1.0-alpha.10",
+          beta: "0.1.0-alpha.10"
+        }),
         publishTarball: async (name) => {
           published.push(name);
         }
       }
-    });
-
-    expect(published).toEqual([
-      "@scribe-sdk/react",
-      "@scribe-sdk/mdx",
-      "@scribe-sdk/cli"
-    ]);
+    })).rejects.toThrow("has beta=0.1.0-alpha.10; expected 0.1.0-beta");
   });
 
-  it("waits for the alpha dist-tag to converge after publishing", async () => {
-    const root = await releaseFixture();
-    const versions = new Map(publicPackages.map(({ name }) => [name, ["0.1.0-alpha.7"]]));
-    const tags = new Map<string, { alpha: string }>(
-      publicPackages.map(({ name }) => [name, { alpha: "0.1.0-alpha.7" }])
+  it("accepts historical alpha mode but rejects unsupported or exited prerelease state", async () => {
+    const alphaRoot = await releaseFixture(
+      { mode: "pre", tag: "alpha" },
+      "0.1.0-alpha.10"
     );
-    const published: Array<{ name: string }> = [];
-    const alphaReads = new Map(publicPackages.map(({ name }) => [name, 0]));
-
-    await publishAlphaPackages({
-      root,
-      distTagDelayMs: 0,
+    await expect(publishPrereleasePackages({
+      root: alphaRoot,
       registry: {
-        versions: async (name) => versions.get(name) ?? [],
-        distTags: async (name) => {
-          const tag = tags.get(name) ?? { alpha: "0.1.0-alpha.7" };
-          const isPublished = published.some((entry) => entry.name === name);
-          if (isPublished && tag.alpha === "0.1.0-alpha.8") {
-            const n = (alphaReads.get(name) ?? 0) + 1;
-            alphaReads.set(name, n);
-            if (n < 13) return { ...tag, alpha: "0.1.0-alpha.7" };
-            return tag;
-          }
-          return tag;
-        },
-        publishTarball: async (name) => {
-          published.push({ name });
-          versions.get(name)?.push("0.1.0-alpha.8");
-          tags.set(name, { alpha: "0.1.0-alpha.8" });
-        }
-      }
-    });
-    expect(alphaReads.get("@scribe-sdk/styles")).toBeGreaterThanOrEqual(13);
-    expect(published.map(({ name }) => name)).toEqual([
-      "@scribe-sdk/styles",
-      "@scribe-sdk/react",
-      "@scribe-sdk/mdx",
-      "@scribe-sdk/cli"
-    ]);
-  });
-
-  it("fails closed when a dist-tag never converges", async () => {
-    const root = await releaseFixture();
-    const published: string[] = [];
-
-    await expect(publishAlphaPackages({
-      root,
-      distTagAttempts: 3,
-      distTagDelayMs: 0,
-      registry: {
-        versions: async (name) => published.includes(name) ? ["0.1.0-alpha.8"] : [],
-        distTags: async () => ({ alpha: "0.1.0-alpha.7" }),
-        publishTarball: async (name) => {
-          published.push(name);
-        }
-      }
-    })).rejects.toThrow("has alpha=0.1.0-alpha.7; expected 0.1.0-alpha.8");
-  });
-
-  it("rejects release state that is not an alpha prerelease", async () => {
-    const root = await releaseFixture({ mode: "exit", tag: "alpha" });
-
-    await expect(publishAlphaPackages({
-      root,
-      registry: {
-        versions: async () => [],
-        distTags: async () => ({}),
+        versions: async () => ["0.1.0-alpha.10"],
+        distTags: async () => ({ alpha: "0.1.0-alpha.10" }),
         publishTarball: async () => undefined
       }
-    })).rejects.toThrow("alpha prerelease mode");
+    })).resolves.toBeUndefined();
+
+    for (const pre of [
+      { mode: "exit", tag: "beta" },
+      { mode: "pre", tag: "next" }
+    ]) {
+      const root = await releaseFixture(pre);
+      await expect(publishPrereleasePackages({
+        root,
+        registry: {
+          versions: async () => [],
+          distTags: async () => ({}),
+          publishTarball: async () => undefined
+        }
+      })).rejects.toThrow("alpha or beta prerelease mode");
+    }
   });
 });
 
-async function releaseFixture(pre = { mode: "pre", tag: "alpha" }): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "scribe-alpha-publish-"));
+async function releaseFixture(
+  pre: { mode: string; tag: string } = { mode: "pre", tag: "beta" },
+  version = "0.1.0-beta"
+): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "scribe-prerelease-publish-"));
   await mkdir(join(root, ".changeset"), { recursive: true });
   await mkdir(join(root, ".scribe-release"), { recursive: true });
   await writeFile(join(root, ".changeset", "pre.json"), JSON.stringify(pre));
 
-  for (const { directory } of publicPackages) {
-    await mkdir(join(root, "packages", directory), { recursive: true });
-    await writeFile(join(root, "packages", directory, "package.json"), JSON.stringify({
-      name: `@scribe-sdk/${directory}`,
-      version: "0.1.0-alpha.8"
+  const nativeNames = new Set<string>(nativePackages.map(({ name }) => name));
+  for (const { name, directory } of publicPackages) {
+    const packageRoot = nativeNames.has(name)
+      ? join(root, "packages", "cli-native", directory)
+      : join(root, "packages", directory);
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(join(packageRoot, "package.json"), JSON.stringify({
+      name,
+      version
     }));
     await writeFile(
-      join(root, ".scribe-release", `scribe-sdk-${directory}-0.1.0-alpha.8.tgz`),
+      join(root, ".scribe-release", `${name.replace("@", "").replace("/", "-")}-${version}.tgz`),
       "fixture"
     );
   }
-
   return root;
 }

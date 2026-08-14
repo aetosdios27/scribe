@@ -6,7 +6,7 @@ Scribe is an open-source publishing SDK that turns ordinary Markdown, MDX, seman
 
 Scribe is for developers who already own a React website built with Next.js or Vite and want publication-grade typography, code, tables, banners, callouts, figures, responsive behavior, and accessibility without assembling a publishing design system themselves. It transforms semantic article content at build time and renders it through a small React component map plus scoped CSS.
 
-Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor, proprietary content format, collaboration service, or replacement for React, Next.js, MDX, routing, deployment, analytics, or content storage. The public alpha is tested against React 19.2.7, Next.js 16.2.11, Vite 8.1.3, and MDX 3.1.1. Broader compatibility will be validated through real integrations.
+Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor, proprietary content format, collaboration service, or replacement for React, Next.js, MDX, routing, deployment, analytics, or content storage. Scribe 0.1.0-beta is tested against React 19.2.7, Next.js 16.2.11, Vite 8.1.3, and MDX 3.1.1. Broader compatibility will be validated through real integrations.
 
 ## Packages
 
@@ -21,18 +21,18 @@ Each installed package includes the same canonical `SKILL.md`. Agents can discov
 
 ## Install
 
-The recommended path bootstraps through the alpha CLI. It installs the four Scribe packages, connects Scribe to the project, and verifies the result as one reviewed transaction. With Bun run it through `bunx`, with npm through `npx`; both run the same alpha CLI. Always inspect the proposed plan before applying it:
+The recommended path bootstraps through the beta CLI. It installs the four Scribe packages, connects Scribe to the project, and verifies the result as one reviewed transaction. With Bun run it through `bunx`, with npm through `npx`; both run the same beta CLI. Always inspect the proposed plan before applying it:
 
 ```bash
-bunx @scribe-sdk/cli@alpha integrate --dry-run   # inspect the proposed plan
-bunx @scribe-sdk/cli@alpha integrate             # review, confirm, and apply
+bunx @scribe-sdk/cli@beta integrate --dry-run   # inspect the proposed plan
+bunx @scribe-sdk/cli@beta integrate             # review, confirm, and apply
 ```
 
 With npm:
 
 ```bash
-npx @scribe-sdk/cli@alpha integrate --dry-run    # inspect the proposed plan
-npx @scribe-sdk/cli@alpha integrate              # review, confirm, and apply
+npx @scribe-sdk/cli@beta integrate --dry-run    # inspect the proposed plan
+npx @scribe-sdk/cli@beta integrate              # review, confirm, and apply
 ```
 
 `integrate` owns package installation for Bun and npm. With pnpm or yarn it reports the reviewed plan and stops before changing files until you install the reported packages manually. Install the four packages explicitly instead if you prefer a separate manifest step:
@@ -40,35 +40,35 @@ npx @scribe-sdk/cli@alpha integrate              # review, confirm, and apply
 With Bun:
 
 ```bash
-bun add @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alpha
-bun add --dev @scribe-sdk/cli@alpha
+bun add @scribe-sdk/react@beta @scribe-sdk/styles@beta @scribe-sdk/mdx@beta
+bun add --dev @scribe-sdk/cli@beta
 ```
 
 With npm:
 
 ```bash
-npm install @scribe-sdk/react@alpha @scribe-sdk/styles@alpha @scribe-sdk/mdx@alpha
-npm install --save-dev @scribe-sdk/cli@alpha
+npm install @scribe-sdk/react@beta @scribe-sdk/styles@beta @scribe-sdk/mdx@beta
+npm install --save-dev @scribe-sdk/cli@beta
 ```
 
 ### First integration checklist
 
 1. Commit the host project before changing its integration.
-2. Bootstrap with `bunx @scribe-sdk/cli@alpha integrate --dry-run` to inspect the plan, then `bunx @scribe-sdk/cli@alpha integrate` to review and apply it. The plan installs the four Scribe packages, connects Scribe, and verifies the result.
-3. If the repository has no content directory, run `bunx scribe init --dry-run` or the equivalent `npx` command, then create the empty launchpad.
-4. If the first article currently lives on Medium, export it from Medium and inspect `bunx scribe import ~/Downloads/medium-export.zip --dry-run`.
-5. Migrate or import one real article.
+2. Bootstrap with `bunx @scribe-sdk/cli@beta integrate --dry-run` to inspect the plan, then `bunx @scribe-sdk/cli@beta integrate` to review and apply it. The plan installs the four Scribe packages, connects Scribe, and verifies the result.
+3. Create the first article with `bunx scribe studio init`; Scribe detects the content directory, creates minimal frontmatter, and opens Studio.
+4. If an article currently lives on Medium, export it from Medium and inspect `bunx scribe import ~/Downloads/medium-export.zip --dry-run`.
+5. Write and save the article in Studio.
 6. Run `bunx scribe validate ./path/to/article.mdx` or the equivalent `npx` command.
 7. Run the host project's production build.
-8. Open the article with `bunx scribe studio ./path/to/article.mdx` or the equivalent `npx` command.
+8. Run `bunx scribe update` later to inspect and align the installed Scribe packages.
 9. Report anything confusing through [GitHub Issues](https://github.com/aetosdios27/scribe/issues).
 
-The project-local CLI installation means every contributor runs the same prerelease. A user-level `scribe` is also supported through `bun add --global @scribe-sdk/cli@alpha` or `npm install --global @scribe-sdk/cli@alpha`; when run inside a supported project it delegates to that project's own CLI, and outside a project it runs directly. The project always owns its runtime Scribe dependencies.
+The project-local CLI installation means every contributor runs the same prerelease. A user-level `scribe` is also supported through `bun add --global @scribe-sdk/cli@beta` or `npm install --global @scribe-sdk/cli@beta`; when run inside a supported project it delegates to that project's own CLI, reports a launcher/project version mismatch on bare `scribe`, and uses the project-local version. Outside a project it runs directly. The project always owns its runtime Scribe dependencies.
 
 Package installation is part of `integrate`'s reviewed transaction and only ever runs the reported package-manager commands. Inspect a proposed integration explicitly:
 
 ```bash
-bunx @scribe-sdk/cli@alpha integrate --dry-run
+bunx @scribe-sdk/cli@beta integrate --dry-run
 ```
 
 With npm, run the same locally installed binary through `npx`:
@@ -81,7 +81,9 @@ npx --no-install scribe integrate --dry-run
 
 Run CLI commands through `bunx scribe` or `npx --no-install scribe` after installing `@scribe-sdk/cli` locally. The examples below use `scribe` to show the command surface without repeating both runners.
 
-`scribe` is the primary executable. The prerelease-only `scb` compatibility alias remains available with identical behavior for existing alpha users; new integrations should use `scribe`.
+`scribe` is the primary executable. The prerelease-only `scb` compatibility alias remains available with identical behavior for existing users; new integrations should use `scribe`.
+
+`@scribe-sdk/cli` installs a small platform-native Rust command for Linux, macOS, or Windows. The npm bootstrap only selects the matching optional platform package, preserves project-local delegation, and starts the packaged engine; command parsing, help, prompts, status, plans, progress, receipts, and exit codes are owned by the native executable.
 
 | Command | Purpose |
 | --- | --- |
@@ -90,13 +92,15 @@ Run CLI commands through `bunx scribe` or `npx --no-install scribe` after instal
 | `scribe import <medium-export.zip> [--into <path>] [--include-drafts] [--include-responses] [--no-download-assets] [--dry-run] [--yes]` | Convert an official Medium export into local Scribe MDX without overwriting existing articles |
 | `scribe validate <article.mdx> [--strict]` | Compile and validate one article without executing the complete host application |
 | `scribe studio <article> [--mode <mode>] [--host-css <file>] [--port <number>] [--no-open]` | Open the local, source-authoritative Markdown/MDX Studio; mode is `foundation`, `default`, or `tailwind` |
+| `scribe studio init [--title <title>] [--slug <slug>] [--path <path>] [--content-dir <path>] [--yes]` | Create one minimal article safely and open it through the normal Studio workflow |
+| `scribe update [--dry-run] [--yes]` | Inspect the beta channel, update all four Scribe packages through Bun or npm, and verify version alignment |
 | `scribe` | Print the project's Scribe state and integration guidance |
 | `scribe --help` | Show the installed CLI command surface |
 | `scribe --version` | Print the installed Scribe version |
 
-Bootstrap a new project with `bunx @scribe-sdk/cli@alpha integrate`. If an earlier prerelease used `scribe init` for website integration, run `scribe integrate` now. `scribe init` creates only an empty content launchpad.
+Bootstrap a new project with `bunx @scribe-sdk/cli@beta integrate`. If an earlier prerelease used `scribe init` for website integration, run `scribe integrate` now. `scribe init` still creates only an empty content launchpad; `scribe studio init` creates an article.
 
-Update installed prereleases through the package manager rather than a Scribe command: use `bun update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli` or `npm update @scribe-sdk/react @scribe-sdk/styles @scribe-sdk/mdx @scribe-sdk/cli`. Scribe does not mutate its own installation.
+Update installed prereleases with `scribe update`. It detects Bun or npm, resolves the aligned `beta` dist-tag for all four Scribe packages, prints the exact commands, confirms before mutation, reuses Scribe's integration transaction and rollback safeguards, and verifies the installed versions afterward.
 
 Use `scribe <command> --help` for focused option summaries and examples. Running `scribe` with no arguments prints the project's Scribe state and exits `0`. CLI exit codes are consistent: `0` means success or a cancelled integration, `1` means execution, transaction, or article-compilation failure, and `2` means invalid usage, unresolved setup configuration, or a required manual package install for a package manager `integrate` does not automate.
 
@@ -492,18 +496,19 @@ Reduced-motion preferences disable nonessential transitions. Print styles remove
 
 ## Local authoring Studio
 
-Open a source-authoritative local workspace for one Markdown or MDX file:
+Create a minimal article and open it immediately:
+
+```bash
+bunx scribe studio init
+```
+
+The interactive flow asks for a title, derives an editable slug, shows an editable repository-relative target path, confirms the final path, writes only YAML title frontmatter, and opens the normal Studio. It never overwrites an existing file. Cancellation writes nothing.
+
+Reopen any existing Markdown or MDX article directly:
 
 ```bash
 bunx scribe studio ./content/article.mdx
 bunx scribe studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
-```
-
-With npm:
-
-```bash
-npx --no-install scribe studio ./content/article.mdx
-npx --no-install scribe studio ./content/article.mdx --mode foundation --host-css ./src/app/globals.css
 ```
 
 Studio detects the project style mode using the same rules as `scribe integrate`; pass `--mode` only to override that result deliberately. An ambiguous project exits with guidance instead of silently choosing a visual preset. Studio starts at port `4317` and advances to the next available port when necessary.
@@ -558,7 +563,7 @@ Scribe owns publication structure, semantic component mappings, responsive artic
 
 ## Verified compatibility
 
-The current public-alpha matrix uses fresh packed tarballs for installation, strict typechecking, and production-build claims:
+The current Scribe 0.1.0-beta matrix uses fresh packed tarballs for installation, strict typechecking, and production-build claims:
 
 - Framework integrations: React 19.2.7, MDX 3.1.1, Vite 8.1.3, `@vitejs/plugin-react` 6.0.3, Next.js 16.2.11, `@next/mdx` 16.2.11, and `next-mdx-remote` 6.0.0.
 - Declarations: TypeScript 7.0.2 and 6.0.2 with `skipLibCheck: false`.
@@ -567,7 +572,7 @@ The current public-alpha matrix uses fresh packed tarballs for installation, str
 
 WebKit and Safari are not verified for this prerelease. These are tested configurations, not a claim that other modern versions cannot work. Package tarballs prove installation and production-build boundaries; the browser suites exercise the same built package output through repository integration fixtures. Host fonts may rasterize differently across operating systems, so Scribe verifies structure and behavior rather than identical glyph pixels.
 
-Scribe is in public alpha. The API may evolve before a stable release, and framework support remains intentionally narrow while real integrations validate the product.
+Scribe 0.1.0-beta is a public beta. The API may evolve before a stable release, and framework support remains intentionally narrow while real integrations validate the product.
 
 ## License
 

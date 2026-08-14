@@ -29,6 +29,11 @@ describe("published CSS contract", () => {
     ]) expect(defaultCss).toContain(marker);
   });
 
+  it("styles success and error callout states", () => {
+    expect(defaultCss).toContain('.scribe-callout[data-variant="success"]');
+    expect(defaultCss).toContain('.scribe-callout[data-variant="error"]');
+  });
+
   it("keeps technical tables legible and code-frame identity intact in narrow containers", () => {
     expect(defaultCss).toContain("table tbody tr:nth-child(even) td");
     expect(defaultCss).toContain("table :is(th, td) + :is(th, td)");

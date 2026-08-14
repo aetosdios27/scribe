@@ -17,9 +17,7 @@ import {
   type ViteDevServer
 } from "vite";
 
-import { displayPath, suggestClosest } from "./cli-output.js";
-import { studioHelp } from "./command-help.js";
-import { resolveProjectStyleMode, type StyleMode } from "./integrate.js";
+import type { StyleMode } from "./integrate.js";
 import {
   durableWriteStudioFile,
   readStudioFile,
@@ -76,19 +74,6 @@ export interface StudioHandle {
   readonly close: () => Promise<void>;
 }
 
-export interface StudioArguments {
-  readonly path: string;
-  readonly mode?: StyleMode;
-  readonly hostCss?: string;
-  readonly port: number;
-  readonly portExplicit: boolean;
-  readonly open: boolean;
-  readonly help: boolean;
-}
-
-interface StudioArgumentError {
-  readonly error: string;
-}
 
 interface StudioState {
   sourcePath: string;
@@ -129,48 +114,6 @@ const styleModes = new Set<StyleMode>(["foundation", "default", "tailwind"]);
 const articleExtensions = new Set([".md", ".mdx"]);
 const maxRequestBytes = 5 * 1024 * 1024;
 
-export function parseStudioArguments(args: readonly string[]): StudioArguments | StudioArgumentError {
-  let path: string | undefined;
-  let mode: StyleMode | undefined;
-  let hostCss: string | undefined;
-  let port = 4317;
-  let portExplicit = false;
-  let open = true;
-  let help = false;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
-    if (argument === "--help" || argument === "-h") help = true;
-    else if (argument === "--no-open") open = false;
-    else if (argument === "--mode") {
-      const value = args[index + 1];
-      if (!styleModes.has(value as StyleMode)) return { error: `Invalid --mode value "${String(value)}". Expected one of: foundation, default, tailwind.` };
-      mode = value as StyleMode;
-      index += 1;
-    } else if (argument === "--host-css") {
-      const value = args[index + 1];
-      if (!value || value.startsWith("-")) return { error: "--host-css requires a local CSS path." };
-      hostCss = value;
-      index += 1;
-    } else if (argument === "--port") {
-      const value = Number(args[index + 1]);
-      if (!Number.isInteger(value) || value < 1 || value > 65_535) return { error: "--port requires an integer from 1 to 65535." };
-      port = value;
-      portExplicit = true;
-      index += 1;
-    } else if (argument?.startsWith("-")) {
-      const suggestion = suggestClosest(argument, ["--mode", "--host-css", "--port", "--no-open", "--help"]);
-      return { error: `Unknown studio option "${argument}".${suggestion === undefined ? "" : ` Did you mean "${suggestion}"?`}` };
-    }
-    else if (path === undefined) path = argument;
-    else return { error: "Expected exactly one Markdown or MDX source file." };
-  }
-
-  if (help) return { path: path ?? "", port, portExplicit, open, help, ...(mode === undefined ? {} : { mode }), ...(hostCss === undefined ? {} : { hostCss }) };
-  if (path === undefined) return { error: "Expected one Markdown or MDX source file." };
-  if (!articleExtensions.has(extname(path).toLowerCase())) return { error: "Studio source must use a .md or .mdx extension." };
-  return { path, port, portExplicit, open, help, ...(mode === undefined ? {} : { mode }), ...(hostCss === undefined ? {} : { hostCss }) };
-}
 
 export async function startStudio(options: StudioOptions): Promise<StudioHandle> {
   const root = resolve(options.root);
@@ -243,7 +186,7 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   const session = createStudioSession();
   const lease = new StudioWriterLease();
   const events = new StudioEventHub();
-  const articleId = `${sourcePath}.scribe-studio.mdx`;
+  const articleId = sourcePath;
   let server: ViteDevServer;
   const httpServer = createHttpServer((request, response) => {
     server.middlewares(request, response, (error: unknown) => {
@@ -440,114 +383,6 @@ export async function startStudio(options: StudioOptions): Promise<StudioHandle>
   };
 }
 
-export async function runStudio(
-  args: readonly string[],
-  dependencies: {
-    readonly cwd?: string;
-    readonly stdout?: (value: string) => void;
-    readonly stderr?: (value: string) => void;
-  } = {}
-): Promise<number> {
-  const stdout = dependencies.stdout ?? ((value: string) => process.stdout.write(value));
-  const stderr = dependencies.stderr ?? ((value: string) => process.stderr.write(value));
-  const parsed = parseStudioArguments(args);
-  if ("error" in parsed) {
-    stderr(`${parsed.error}\n${studioHelp}`);
-    return 2;
-  }
-  if (parsed.help) {
-    stdout(studioHelp);
-    return 0;
-  }
-
-  let mode: StyleMode;
-  let modeReason: string;
-
-  if (parsed.mode !== undefined) {
-    mode = parsed.mode;
-    modeReason = `Selected explicitly with --mode ${parsed.mode}.`;
-  } else {
-    try {
-      const resolution = await resolveProjectStyleMode(
-        dependencies.cwd ?? process.cwd()
-      );
-
-      if (
-        resolution.mode === undefined ||
-        resolution.ambiguities.length > 0
-      ) {
-        stderr(`${resolution.ambiguities.join("\n")}\n`);
-        return 2;
-      }
-
-      mode = resolution.mode;
-      modeReason = resolution.reason;
-    } catch (error) {
-      stderr(
-        `Could not detect the Studio style mode: ${
-          error instanceof Error ? error.message : String(error)
-        }\n`
-      );
-      return 2;
-    }
-  }
-
-  let handle: StudioHandle;
-  stdout(`Starting Scribe Studio for ${displayPath(dependencies.cwd ?? process.cwd(), resolve(dependencies.cwd ?? process.cwd(), parsed.path))}…\n`);
-  try {
-    handle = await startStudio({
-      root: dependencies.cwd ?? process.cwd(),
-      path: parsed.path,
-      mode,
-      modeReason,
-      port: parsed.port,
-      strictPort: parsed.portExplicit,
-      open: parsed.open,
-      ...(parsed.hostCss === undefined ? {} : { hostCss: parsed.hostCss })
-    });
-  } catch (error) {
-    stderr(`${error instanceof Error ? error.message : String(error)}\n`);
-    return 1;
-  }
-
-  stdout(formatStudioStartup(
-    dependencies.cwd ?? process.cwd(),
-    parsed.path,
-    mode,
-    handle.origin,
-    parsed.port,
-    handle.browserOpened
-  ));
-  await new Promise<void>((resolveStop) => {
-    const stop = () => resolveStop();
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-  });
-  if (handle.hasUnsavedChanges()) {
-    stderr("Studio stopped with an unsaved draft. It was preserved in local recovery storage and will be offered when this article is reopened.\n");
-  }
-  await handle.close();
-  return 0;
-}
-
-export function formatStudioStartup(
-  root: string,
-  sourcePath: string,
-  mode: StyleMode,
-  origin: string,
-  preferredPort?: number,
-  browserOpened?: boolean
-): string {
-  const source = displayPath(root, resolve(root, sourcePath));
-  const selectedPort = Number(new URL(origin).port);
-  const movedPort = preferredPort !== undefined && preferredPort !== 0 && preferredPort !== selectedPort
-    ? `Port ${preferredPort} was busy; using ${selectedPort}.\n`
-    : "";
-  const browserFallback = browserOpened === false
-    ? `The browser could not be opened automatically. Open ${origin} manually.\n`
-    : "";
-  return `Scribe Studio\n  ${origin}\n  Source  ${source}\n  Mode    ${mode}\n\n${movedPort}${browserFallback}Source remains authoritative. Save explicitly from Studio or your editor.\nPress Ctrl+C to stop.\n`;
-}
 
 function createStudioPlugin(context: {
   readonly root: string;

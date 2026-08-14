@@ -105,7 +105,7 @@ Before submitting, choose checks based on what changed:
 | Packed public artifacts or consumer installs | `bun run release:pack`, `bun run release:inspect`, `bun run test:portability`, or `bun run release:consumers`, depending on the contract touched |
 | Browser bundle composition | `bun run release:bundle-scan` |
 
-The complete release procedure in [RELEASING.md](./RELEASING.md) is an owner checklist, not the default contributor loop. WebKit is available for investigation with `bun run test:browser:webkit`, but it is not a current public-alpha release gate. The Helium visual command skips clearly when the maintainer's canonical browser is not installed.
+The complete release procedure in [RELEASING.md](./RELEASING.md) is an owner checklist, not the default contributor loop. WebKit is available for investigation with `bun run test:browser:webkit`, but it is not a current public-beta release gate. The Helium visual command skips clearly when the maintainer's canonical browser is not installed.
 
 ## Tests are evidence
 

@@ -11,6 +11,16 @@ const packageFiles = {
   mdx: ["dist", "README.md", "SKILL.md", "LICENSE"],
   cli: ["dist", "README.md", "SKILL.md", "LICENSE"]
 } as const;
+const nativeDirectories = [
+  "linux-x64-gnu",
+  "linux-x64-musl",
+  "linux-arm64-gnu",
+  "linux-arm64-musl",
+  "darwin-x64",
+  "darwin-arm64",
+  "win32-x64-msvc",
+  "win32-arm64-msvc"
+] as const;
 
 describe("publishable package manifests", () => {
   it("pins audited dependency overrides for workspace and consumer fixtures", async () => {
@@ -103,7 +113,7 @@ describe("publishable package manifests", () => {
   it("publishes the CLI as a binary rather than a library API", async () => {
     const manifest = await readJson(join(root, "packages/cli/package.json"));
     const version = await currentPublicVersion();
-    expect(manifest.bin).toEqual({ scribe: "./dist/index.mjs", scb: "./dist/index.mjs" });
+    expect(manifest.bin).toEqual({ scribe: "./dist/bootstrap.mjs", scb: "./dist/bootstrap.mjs" });
     expect(manifest.exports).toEqual({});
     expect(manifest.dependencies).toEqual({
       "@base-ui/react": "1.6.0",
@@ -136,6 +146,24 @@ describe("publishable package manifests", () => {
     });
     expect(manifest.peerDependencies).toEqual({ react: "19.2.7", "react-dom": "19.2.7" });
     expect(manifest.engines).toEqual({ node: ">=20.19.0" });
+    expect(Object.keys(manifest.optionalDependencies)).toEqual(
+      nativeDirectories.map((directory) => `@scribe-sdk/cli-${directory}`)
+    );
+    expect(new Set(Object.values(manifest.optionalDependencies))).toEqual(new Set([version]));
+  });
+
+  it.each(nativeDirectories)("publishes one constrained native CLI package for %s", async (directory) => {
+    const manifest = await readJson(join(root, "packages/cli-native", directory, "package.json"));
+    const binary = directory.startsWith("win32") ? "bin/scribe-cli.exe" : "bin/scribe-cli";
+    expect(manifest).toMatchObject({
+      name: `@scribe-sdk/cli-${directory}`,
+      version: await currentPublicVersion(),
+      license: "Apache-2.0",
+      files: [binary, "build-metadata.json", "LICENSE"]
+    });
+    expect(manifest.os).toHaveLength(1);
+    expect(manifest.cpu).toHaveLength(1);
+    expect(manifest.private).not.toBe(true);
   });
 });
 
