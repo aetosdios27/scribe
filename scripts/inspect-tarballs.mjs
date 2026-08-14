@@ -26,9 +26,9 @@ const summary = [];
 for (const expected of packages) {
   const sourceManifest = JSON.parse(await readFile(join(process.cwd(), "packages", expected.directory, "package.json"), "utf8"));
   const version = sourceManifest.version;
-  const artifactName = expected.directory.replaceAll("/", "-");
-  const file = `scribe-sdk-${artifactName}-${version}.tgz`;
-  const archiveEntries = readTarball(await readFile(tarball));
+  const artifactName = sourceManifest.name.replace(/^@/u, "").replaceAll("/", "-");
+  const file = `${artifactName}-${version}.tgz`;
+  const archiveEntries = readTarball(await readFile(join(directory, file)));
   const entries = archiveEntries.map((entry) => entry.path.replace(/^package\//u, ""));
   const requiredEntries = expected.native === true
     ? ["package.json", "LICENSE", expected.runtime, "build-metadata.json"]
@@ -84,7 +84,7 @@ for (const expected of packages) {
     }
   }
 
-  const packed = await stat(tarball);
+  const packed = await stat(join(directory, file));
   const unpackedSize = archiveEntries.reduce((total, entry) => total + entry.size, 0);
   const topLevelFiles = [...new Set(entries.map((entry) => entry.split("/")[0]).filter(Boolean))].sort();
   summary.push({

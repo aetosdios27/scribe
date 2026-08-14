@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,7 +7,13 @@ export function executable(name, platform = process.platform) {
 }
 
 export function packageBin(directory, name, platform = process.platform) {
-  return join(directory, "node_modules", ".bin", platform === "win32" ? `${name}.cmd` : name);
+  if (platform === "win32") {
+    for (const suffix of [".exe", ".cmd", ""]) {
+      const candidate = join(directory, "node_modules", ".bin", `${name}${suffix}`);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return join(directory, "node_modules", ".bin", name);
 }
 
 export function releaseCacheDirectory() {
