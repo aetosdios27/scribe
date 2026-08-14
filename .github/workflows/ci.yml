@@ -92,7 +92,7 @@ jobs:
     name: Release verification (Linux)
     runs-on: ubuntu-latest
     needs: native-cli
-    timeout-minutes: 35
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
