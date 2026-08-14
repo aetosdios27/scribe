@@ -3,17 +3,20 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createServer as createNetServer } from "node:net";
 
-import { executable, packageBin, releaseCacheDirectory, requiresCommandShell } from "./lib/platform.mjs";
+import { currentNativePackage, executable, packageBin, releaseCacheDirectory, requiresCommandShell } from "./lib/platform.mjs";
 
 const root = process.cwd();
 const release = join(root, ".scribe-release");
 const consumers = join(release, "consumers");
 const version = JSON.parse(await readFile(join(root, "packages", "react", "package.json"), "utf8")).version;
+const nativePackage = currentNativePackage();
+const nativeTarballName = `${nativePackage.replace("@scribe-sdk/", "scribe-sdk-")}-${version}.tgz`;
 const tarballs = {
   mdx: `../../scribe-sdk-mdx-${version}.tgz`,
   react: `../../scribe-sdk-react-${version}.tgz`,
   styles: `../../scribe-sdk-styles-${version}.tgz`,
-  cli: `../../scribe-sdk-cli-${version}.tgz`
+  cli: `../../scribe-sdk-cli-${version}.tgz`,
+  native: `../../${nativeTarballName}`
 };
 const results = [];
 const consumerRunners = new Map([
@@ -59,6 +62,7 @@ async function createViteConsumer() {
       "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
       "@scribe-sdk/react": `file:${tarballs.react}`,
       "@scribe-sdk/styles": `file:${tarballs.styles}`,
+      [nativePackage]: `file:${tarballs.native}`,
       "@vitejs/plugin-react": "6.0.3",
       react: "19.2.7",
       "react-dom": "19.2.7",
@@ -67,7 +71,8 @@ async function createViteConsumer() {
     overrides: {
       "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
       "@scribe-sdk/react": `file:${tarballs.react}`,
-      "@scribe-sdk/styles": `file:${tarballs.styles}`
+      "@scribe-sdk/styles": `file:${tarballs.styles}`,
+      [nativePackage]: `file:${tarballs.native}`
     },
     devDependencies: {
       "@typescript/native": "npm:typescript@7.0.2",
@@ -121,9 +126,9 @@ createRoot(root).render(<Article components={createScribeComponents()} />);
   run("node", ["--input-type=module", "-e", "import('@scribe-sdk/react/components').then(() => process.exit(1)).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') process.exit(1) })"], directory);
   await assertPackagedSkill(directory);
   const cliVersion = run(bin(directory, "scribe"), ["--version"], directory);
-  if (cliVersion.stdout.trim() !== version) throw new Error(`Bun Vite CLI reported ${cliVersion.stdout.trim()}, expected ${version}.`);
+  if (cliVersion.stdout.trim() !== `scribe ${version}`) throw new Error(`Bun Vite CLI reported ${cliVersion.stdout.trim()}, expected ${version}.`);
   const aliasVersion = run(bin(directory, "scb"), ["--version"], directory);
-  if (aliasVersion.stdout.trim() !== version) throw new Error(`Bun Vite scb alias reported ${aliasVersion.stdout.trim()}, expected ${version}.`);
+  if (aliasVersion.stdout.trim() !== `scribe ${version}`) throw new Error(`Bun Vite scb alias reported ${aliasVersion.stdout.trim()}, expected ${version}.`);
   run(bin(directory, "scribe"), ["--help"], directory);
   run(bin(directory, "scb"), ["--help"], directory);
   run(bin(directory, "scribe"), ["studio", "init", "--help"], directory);
@@ -151,6 +156,7 @@ async function createNextConsumer() {
       "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
       "@scribe-sdk/react": `file:${tarballs.react}`,
       "@scribe-sdk/styles": `file:${tarballs.styles}`,
+      [nativePackage]: `file:${tarballs.native}`,
       next: "16.2.11",
       react: "19.2.7",
       "react-dom": "19.2.7"
@@ -197,9 +203,9 @@ export default function Layout({ children }: { children: ReactNode }) { return <
   run("node", ["--input-type=module", "-e", "import('@scribe-sdk/cli/dist/index.mjs').then(() => process.exit(1)).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') process.exit(1) })"], directory);
   await assertPackagedSkill(directory);
   const cliVersion = run(bin(directory, "scribe"), ["--version"], directory);
-  if (cliVersion.stdout.trim() !== version) throw new Error(`npm Next CLI reported ${cliVersion.stdout.trim()}, expected ${version}.`);
+  if (cliVersion.stdout.trim() !== `scribe ${version}`) throw new Error(`npm Next CLI reported ${cliVersion.stdout.trim()}, expected ${version}.`);
   const aliasVersion = run(bin(directory, "scb"), ["--version"], directory);
-  if (aliasVersion.stdout.trim() !== version) throw new Error(`npm Next scb alias reported ${aliasVersion.stdout.trim()}, expected ${version}.`);
+  if (aliasVersion.stdout.trim() !== `scribe ${version}`) throw new Error(`npm Next scb alias reported ${aliasVersion.stdout.trim()}, expected ${version}.`);
   run(bin(directory, "scribe"), ["--help"], directory);
   run(bin(directory, "scb"), ["--help"], directory);
   run(bin(directory, "scribe"), ["studio", "init", "--help"], directory);
@@ -223,6 +229,7 @@ async function createNextRemoteConsumer() {
       "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
       "@scribe-sdk/react": `file:${tarballs.react}`,
       "@scribe-sdk/styles": `file:${tarballs.styles}`,
+      [nativePackage]: `file:${tarballs.native}`,
       next: "16.2.11",
       "next-mdx-remote": "6.0.0",
       react: "19.2.7",
@@ -285,6 +292,7 @@ async function createNextCssModulesConsumer() {
       "@scribe-sdk/mdx": `file:${tarballs.mdx}`,
       "@scribe-sdk/react": `file:${tarballs.react}`,
       "@scribe-sdk/styles": `file:${tarballs.styles}`,
+      [nativePackage]: `file:${tarballs.native}`,
       next: "16.2.11",
       react: "19.2.7",
       "react-dom": "19.2.7"

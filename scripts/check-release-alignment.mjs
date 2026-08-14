@@ -78,9 +78,10 @@ assert(currentPrerelease.channel === pre.tag, `Current ${version} does not use t
 
 const bootstrapSource = await readFile(join(root, "packages", "cli", "src", "bootstrap.ts"), "utf8");
 const engineSource = await readFile(join(root, "packages", "cli", "src", "engine.ts"), "utf8");
+const compact = (source) => source.replace(/\s+/gu, "");
 assert(
-  bootstrapSource.includes('readFile(resolve(packageRoot, "package.json")') &&
-    engineSource.includes("readPackageVersion()"),
+  compact(bootstrapSource).includes(compact('readFile(resolve(packageRoot, "package.json")')) &&
+    compact(engineSource).includes("readPackageVersion()"),
   "The bootstrap and engine versions must come from the CLI package manifest."
 );
 for (const source of [bootstrapSource, engineSource]) {

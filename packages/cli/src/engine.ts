@@ -768,7 +768,11 @@ function protocolFailure(message: string): EngineFailure {
 
 function normalizeFailure(error: unknown): EngineFailure {
   if (error instanceof Error && "code" in error && "kind" in error) return error as EngineFailure;
-  return rpcFailure(-32_603, errorMessage(error), "internal");
+  const ruleId = error instanceof Error ? (error as { ruleId?: unknown }).ruleId : undefined;
+  const detail = typeof ruleId === "string" && ruleId !== ""
+    ? `${ruleId}: ${errorMessage(error)}`
+    : errorMessage(error);
+  return rpcFailure(-32_603, detail, "internal");
 }
 
 function errorMessage(error: unknown): string {

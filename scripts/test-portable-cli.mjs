@@ -18,6 +18,7 @@ import {
 import { createRequire } from "node:module";
 
 import {
+  currentNativePackage,
   executable,
   packageBin
 } from "./lib/platform.mjs";
@@ -351,7 +352,7 @@ try {
       "content/blog"
     ) &&
       dryRun.stdout.includes(
-        "No files will be generated."
+        "create directory"
       ),
     "Init dry run did not describe the empty content launchpad."
   );
@@ -511,10 +512,13 @@ try {
 
   assert(
     integrateDryRun.stdout.includes(
-      "Recommendation"
+      "Scribe Integration"
     ) &&
       integrateDryRun.stdout.includes(
-        "Mode    default"
+        "Mode"
+      ) &&
+      integrateDryRun.stdout.includes(
+        "default"
       ),
     "Integrate dry run did not recommend default mode for the raw Vite fixture."
   );
@@ -1275,63 +1279,6 @@ async function snapshotFixtureTree(
   await visit(directory);
 
   return snapshot;
-}
-
-function currentNativePackage() {
-  if (
-    process.platform ===
-      "darwin" &&
-    (
-      process.arch ===
-        "x64" ||
-      process.arch ===
-        "arm64"
-    )
-  ) {
-    return `@scribe-sdk/cli-darwin-${process.arch}`;
-  }
-
-  if (
-    process.platform ===
-      "win32" &&
-    (
-      process.arch ===
-        "x64" ||
-      process.arch ===
-        "arm64"
-    )
-  ) {
-    return `@scribe-sdk/cli-win32-${process.arch}-msvc`;
-  }
-
-  if (
-    process.platform ===
-      "linux" &&
-    (
-      process.arch ===
-        "x64" ||
-      process.arch ===
-        "arm64"
-    )
-  ) {
-    const report =
-      process.report?.getReport();
-
-    const gnu =
-      report !== undefined &&
-      "header" in report &&
-      typeof report.header ===
-        "object" &&
-      report.header !== null &&
-      "glibcVersionRuntime" in
-        report.header;
-
-    return `@scribe-sdk/cli-linux-${process.arch}-${gnu ? "gnu" : "musl"}`;
-  }
-
-  throw new Error(
-    `No packed native CLI target for ${process.platform}/${process.arch}.`
-  );
 }
 
 function assert(
