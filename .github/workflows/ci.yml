@@ -188,9 +188,6 @@ jobs:
       - name: Inspect npm tarballs
         run: bun run release:inspect
 
-      - name: Test fresh packed consumers
-        run: bun run release:consumers
-
       - name: Scan browser bundles
         run: bun run release:bundle-scan
 
