@@ -10,6 +10,10 @@ const workspaceRoot = resolve(packageRoot, "../..");
 const engineSource = resolve(packageRoot, "src/engine.ts");
 const fixtureRoot = resolve(workspaceRoot, "tests/fixtures/protocol");
 
+const packageVersion = (JSON.parse(
+  await readFile(resolve(packageRoot, "package.json"), "utf8")
+) as { version: string }).version;
+
 describe("engine protocol", () => {
   it("negotiates one versioned handshake and rejects unknown methods", async () => {
     const messages = await runEngine([
@@ -19,7 +23,7 @@ describe("engine protocol", () => {
         method: "initialize",
         params: {
           protocolVersion: 1,
-          cliVersion: "0.1.0-beta",
+          cliVersion: packageVersion,
           cwd: workspaceRoot,
           invokedBinary: "scribe"
         }
@@ -30,7 +34,7 @@ describe("engine protocol", () => {
     expect(messages).toHaveLength(2);
     expect(object(messages[0]).result).toMatchObject({
       protocolVersion: 1,
-      engineVersion: "0.1.0-beta"
+      engineVersion: packageVersion
     });
     expect(object(object(messages[1]).error)).toMatchObject({
       code: -32_601,
@@ -57,7 +61,7 @@ describe("engine protocol", () => {
         method: "initialize",
         params: {
           protocolVersion: 1,
-          cliVersion: "0.1.0-beta",
+          cliVersion: packageVersion,
           cwd: workspaceRoot,
           invokedBinary: "scribe"
         }
