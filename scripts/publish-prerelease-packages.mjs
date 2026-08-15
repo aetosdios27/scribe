@@ -89,7 +89,7 @@ export async function publishPrereleasePackages({
 
 const npmRegistry = {
   async versions(name) {
-    const value = runNpmJson(["view", name, "versions", "--json"]);
+    const value = runNpmJsonOptional(["view", name, "versions", "--json"]);
     return Array.isArray(value) ? value : [value];
   },
   async distTags(name) {
@@ -122,6 +122,11 @@ function runNpmJson(args) {
   return JSON.parse(output);
 }
 
+function runNpmJsonOptional(args) {
+  const output = runNpmOptional(args, "pipe");
+  return output === "" ? undefined : JSON.parse(output);
+}
+
 function runNpm(args, stdio) {
   const result = spawnPortableSync("npm", args, {
     cwd: defaultRoot,
@@ -130,6 +135,17 @@ function runNpm(args, stdio) {
   });
   if (result.status !== 0) throw new Error(`npm ${args.join(" ")} exited with code ${String(result.status)}.`);
   return result.stdout ?? "";
+}
+
+function runNpmOptional(args, stdio) {
+  const result = spawnPortableSync("npm", args, {
+    cwd: defaultRoot,
+    encoding: "utf8",
+    stdio: stdio === "inherit" ? "inherit" : ["ignore", "pipe", "pipe"]
+  });
+  if (result.status === 0) return result.stdout ?? "";
+  if (result.status === 1 && /(?:E404|is not in this registry|Not Found)/iu.test(result.stderr ?? "")) return "";
+  throw new Error(`npm ${args.join(" ")} exited with code ${String(result.status)}.`);
 }
 
 async function readJson(path) {
