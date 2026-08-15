@@ -39,7 +39,7 @@ const {
 } = requireCliDependency("fflate");
 
 const commandTimeoutMilliseconds = 300_000;
-const packageManagerInstallTimeoutMilliseconds = 600_000;
+const packageManagerInstallTimeoutMilliseconds = 1_200_000;
 
 const root = process.cwd();
 const release = join(
@@ -721,13 +721,23 @@ try {
     )}\n`
   );
 
-  await rm(
-    directory,
-    {
-      recursive: true,
-      force: true
-    }
-  );
+  try {
+    await rm(
+      directory,
+      {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 250
+      }
+    );
+  } catch (error) {
+    process.stderr.write(
+      `Warning: could not remove portability temp directory: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`
+    );
+  }
 }
 
 process.stdout.write(

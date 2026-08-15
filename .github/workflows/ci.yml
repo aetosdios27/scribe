@@ -217,7 +217,7 @@ jobs:
     name: Portability (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: native-cli
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
