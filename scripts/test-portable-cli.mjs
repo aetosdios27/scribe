@@ -258,7 +258,7 @@ try {
 
     assert(
       reportedVersion ===
-      expectedVersionOutput,
+        expectedVersionOutput,
       `${command} reported '${reportedVersion}'; expected '${expectedVersionOutput}'.`
     );
 
@@ -351,9 +351,9 @@ try {
     dryRun.stdout.includes(
       "content/blog"
     ) &&
-    dryRun.stdout.includes(
-      "create directory"
-    ),
+      dryRun.stdout.includes(
+        "create directory"
+      ),
     "Init dry run did not describe the empty content launchpad."
   );
 
@@ -363,9 +363,9 @@ try {
         directory
       )
     ) ===
-    JSON.stringify(
-      beforeInitDryRun
-    ),
+      JSON.stringify(
+        beforeInitDryRun
+      ),
     "Init dry run modified the fixture."
   );
 
@@ -394,9 +394,9 @@ try {
         ])
       )
     ) ===
-    JSON.stringify(
-      beforeInit
-    ),
+      JSON.stringify(
+        beforeInit
+      ),
     "Init changed host files while creating the content launchpad."
   );
 
@@ -446,9 +446,9 @@ try {
         directory
       )
     ) ===
-    JSON.stringify(
-      beforeImportDryRun
-    ),
+      JSON.stringify(
+        beforeImportDryRun
+      ),
     "Medium import dry run modified the fixture."
   );
 
@@ -514,12 +514,12 @@ try {
     integrateDryRun.stdout.includes(
       "Scribe Integration"
     ) &&
-    integrateDryRun.stdout.includes(
-      "Mode"
-    ) &&
-    integrateDryRun.stdout.includes(
-      "default"
-    ),
+      integrateDryRun.stdout.includes(
+        "Mode"
+      ) &&
+      integrateDryRun.stdout.includes(
+        "default"
+      ),
     "Integrate dry run did not recommend default mode for the raw Vite fixture."
   );
 
@@ -529,9 +529,9 @@ try {
         directory
       )
     ) ===
-    JSON.stringify(
-      beforeIntegrateDryRun
-    ),
+      JSON.stringify(
+        beforeIntegrateDryRun
+      ),
     "Integrate dry run modified the fixture."
   );
 
@@ -664,7 +664,7 @@ try {
 
     assert(
       installed.version ===
-      version,
+        version,
       `@scribe-sdk/${name} installed at ${installed.version}; expected ${version}.`
     );
   }
@@ -686,7 +686,7 @@ try {
 
   assert(
     installedNative.version ===
-    version,
+      version,
     `${nativePackage} installed at ${installedNative.version}; expected ${version}.`
   );
 
@@ -733,7 +733,8 @@ try {
     );
   } catch (error) {
     process.stderr.write(
-      `Warning: could not remove portability temp directory: ${error instanceof Error ? error.message : String(error)
+      `Warning: could not remove portability temp directory: ${
+        error instanceof Error ? error.message : String(error)
       }\n`
     );
   }
@@ -891,25 +892,19 @@ async function verifyLocalNpmInstall() {
       "--no-fund"
     ],
     npmDirectory,
-    true,
-    {},
-    packageManagerInstallTimeoutMilliseconds
+    true, {}, packageManagerInstallTimeoutMilliseconds
   );
 
   const npxVersion =
     run(
       executable("npx"),
-      [
-        "--no-install",
-        "scribe",
-        "--version"
-      ],
+      ["--no-install", "scribe", "--version"],
       npmDirectory
     ).stdout.trim();
 
   assert(
     npxVersion ===
-    expectedVersionOutput,
+      expectedVersionOutput,
     `npx scribe reported ${npxVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -925,7 +920,7 @@ async function verifyLocalNpmInstall() {
 
   assert(
     npmVersion ===
-    expectedVersionOutput,
+      expectedVersionOutput,
     `Local npm scribe reported ${npmVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -941,7 +936,7 @@ async function verifyLocalNpmInstall() {
 
   assert(
     npmAliasVersion ===
-    expectedVersionOutput,
+      expectedVersionOutput,
     `Local npm scb reported ${npmAliasVersion}; expected ${expectedVersionOutput}.`
   );
 }
@@ -986,9 +981,7 @@ async function verifyGlobalInstalls() {
       ...packageTarballs
     ],
     directory,
-    true,
-    {},
-    packageManagerInstallTimeoutMilliseconds
+    true, {}, packageManagerInstallTimeoutMilliseconds
   );
 
   const npmScribe =
@@ -997,9 +990,9 @@ async function verifyGlobalInstalls() {
         "win32"
         ? npmPrefix
         : join(
-          npmPrefix,
-          "bin"
-        ),
+            npmPrefix,
+            "bin"
+          ),
       "scribe"
     );
 
@@ -1012,7 +1005,7 @@ async function verifyGlobalInstalls() {
 
   assert(
     npmVersion ===
-    expectedVersionOutput,
+      expectedVersionOutput,
     `Global npm scribe reported ${npmVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -1022,9 +1015,9 @@ async function verifyGlobalInstalls() {
         "win32"
         ? npmPrefix
         : join(
-          npmPrefix,
-          "bin"
-        ),
+            npmPrefix,
+            "bin"
+          ),
       "scb"
     );
 
@@ -1037,7 +1030,7 @@ async function verifyGlobalInstalls() {
 
   assert(
     npmAliasVersion ===
-    expectedVersionOutput,
+      expectedVersionOutput,
     `Global npm scb reported ${npmAliasVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -1113,7 +1106,7 @@ async function verifyGlobalInstalls() {
 
   assert(
     bunVersion ===
-    expectedVersionOutput,
+      expectedVersionOutput,
     `Global Bun scribe reported ${bunVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -1134,7 +1127,7 @@ async function verifyGlobalInstalls() {
 
   assert(
     bunAliasVersion ===
-    expectedVersionOutput,
+      expectedVersionOutput,
     `Global Bun scb reported ${bunAliasVersion}; expected ${expectedVersionOutput}.`
   );
 
@@ -1166,16 +1159,16 @@ async function findExecutable(
 ) {
   for (
     const candidate of
-    process.platform ===
+      process.platform ===
       "win32"
-      ? [
-        `${name}.exe`,
-        `${name}.cmd`,
-        name
-      ]
-      : [
-        name
-      ]
+        ? [
+            `${name}.exe`,
+            `${name}.cmd`,
+            name
+          ]
+        : [
+            name
+          ]
   ) {
     const path = join(
       directory,
