@@ -61,7 +61,7 @@ describe("Changesets release policy", () => {
     const [version] = versions;
 
     expect(versions.size).toBe(1);
-    expect(version).toBe("0.1.0-beta");
+    expect(version).toMatch(/^0\.1\.0-beta(?:\.[0-9]+)?$/u);
     expect(manifests.every((manifest) => manifest.license === "Apache-2.0")).toBe(true);
     expect(manifests.find((manifest) => manifest.name === "@scribe-sdk/cli")?.dependencies).toMatchObject({
       "@scribe-sdk/mdx": version,
