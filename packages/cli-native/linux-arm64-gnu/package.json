@@ -1,6 +1,6 @@
 {
   "name": "@scribe-sdk/cli-linux-arm64-gnu",
-  "version": "0.1.0-beta",
+  "version": "0.1.0-beta.0",
   "description": "Scribe native CLI for Linux ARM64 GNU.",
   "license": "Apache-2.0",
   "repository": {
@@ -8,9 +8,21 @@
     "url": "git+https://github.com/aetosdios27/scribe.git",
     "directory": "packages/cli-native/linux-arm64-gnu"
   },
-  "os": ["linux"],
-  "cpu": ["arm64"],
-  "libc": ["glibc"],
-  "files": ["bin/scribe-cli", "build-metadata.json", "LICENSE"],
-  "engines": { "node": ">=20.19.0" }
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "files": [
+    "bin/scribe-cli",
+    "build-metadata.json",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  }
 }
