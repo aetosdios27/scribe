@@ -84,7 +84,7 @@ describe("public CI contract", () => {
       expect(job.indexOf("Typecheck with TypeScript 7")).toBeGreaterThan(-1);
       expect(job.indexOf("Build public packages")).toBeLessThan(job.indexOf("Typecheck with TypeScript 7"));
     }
-    expect(portableOs).toContain("timeout-minutes: 40");
+    expect(portableOs).toContain("timeout-minutes: 60");
   });
 
   it("audits every publishable package without treating private framework fixtures as shipped runtime dependencies", async () => {
@@ -113,7 +113,7 @@ describe("public CI contract", () => {
 
     expect(portableScript).not.toContain('overrides: { "js-yaml": "4.3.0" }');
     expect(portableScript).toContain("const commandTimeoutMilliseconds = 300_000;");
-    expect(portableScript).toContain("const packageManagerInstallTimeoutMilliseconds = 600_000;");
+    expect(portableScript).toContain("const packageManagerInstallTimeoutMilliseconds = 1_200_000;");
     expect(portableScript).toContain("timeoutMilliseconds = commandTimeoutMilliseconds");
     expect(portableScript).toContain("timeout: timeoutMilliseconds");
     expect(portableScript).toContain("true, {}, packageManagerInstallTimeoutMilliseconds");

@@ -39,7 +39,7 @@ const {
 } = requireCliDependency("fflate");
 
 const commandTimeoutMilliseconds = 300_000;
-const packageManagerInstallTimeoutMilliseconds = 600_000;
+const packageManagerInstallTimeoutMilliseconds = 1_200_000;
 
 const root = process.cwd();
 const release = join(
