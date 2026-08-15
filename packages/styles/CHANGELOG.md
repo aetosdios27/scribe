@@ -1,5 +1,11 @@
 # @scribe-sdk/styles
 
+## 0.1.0-beta.0
+
+### Minor Changes
+
+- 0597bf9: Add Mermaid diagram rendering for ` ```mermaid ` code fences, a zoomable lightbox for `ScribeImage` with a `#nozoom` fragment and `zoom={false}` escape hatch, a `Video` component, a word-wrap toggle button on code blocks (with a `wrap` code-fence flag), and `success`/`error` Callout variants.
+
 ## 0.1.0-beta
 
 ### Patch Changes
