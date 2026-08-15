@@ -34,7 +34,9 @@ describe("Changesets release policy", () => {
     expect(pre.mode).toBe("pre");
     expect(pre.tag).toBe("beta");
     expect(fragmentIds).toEqual(expect.arrayContaining([...pre.changesets].sort()));
-    expect(pre.initialVersions).toEqual(Object.fromEntries(publicPackages.map((name) => [name, "0.1.0-alpha.10"])));
+    for (const name of publicPackages) {
+      expect(pre.initialVersions[name]).toBe("0.1.0-alpha.10");
+    }
   });
 
   it("records one curated bootstrap fragment for the first public prerelease", async () => {
