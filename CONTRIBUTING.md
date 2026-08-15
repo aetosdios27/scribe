@@ -61,12 +61,14 @@ Demonstrated need comes before abstraction. Do not build a plugin framework beca
 
 ## Repository map
 
-Scribe is a Bun workspace with four version-aligned public packages:
+Scribe is a Bun workspace with four version-aligned public packages, plus a Cargo crate that builds the CLI's native shell:
 
 - `@scribe-sdk/mdx` owns the compile-time MDX pipeline: GFM and frontmatter parsing, Scribe validation, table normalization, Shiki code output, heading slugs, and the Next.js and `next-mdx-remote` adapters.
 - `@scribe-sdk/react` owns the publication boundary, semantic component map, and Scribe runtime primitives. Most output is server-compatible markup; the copy button is kept as a narrow client island.
 - `@scribe-sdk/styles` owns scoped publishing mechanics and three explicit modes: Foundation, Default, and Tailwind. Foundation and Tailwind adapt to host visual policy; Default is the opt-in editorial preset.
-- `@scribe-sdk/cli` owns `scribe init`, `integrate`, `import`, `validate`, and the local Studio. Studio is part of the CLI package, not a separate hosted application.
+- `@scribe-sdk/cli` owns `init`, `integrate`, `import`, `validate`, `update`, and the local Studio server. Studio is part of the CLI package, not a separate hosted application. A minimal Node bootstrap in this package selects the matching native binary and starts the packaged TypeScript engine; the CLI shell itself lives in Rust.
+
+`crates/scribe-cli` is the Rust binary that owns command parsing, generated help, prompts, plan/progress/receipt rendering, and exit-code policy. It talks to the TypeScript engine in `@scribe-sdk/cli` over a versioned JSON-RPC 2.0 protocol on stdio, so the two can be built, tested, and versioned independently. `packages/cli-native/<platform>` holds the optional, platform-specific npm packages staged from Rust release builds; see [`scripts/stage-native-cli.mjs`](./scripts/stage-native-cli.mjs). Read [Architecture](./docs/ARCHITECTURE.md#scribe-sdkcli-deliberate-integration-and-local-authoring) for why the split exists before changing either side of the protocol.
 
 `tests/integration/` contains real Vite, Next.js, `next-mdx-remote`, Tailwind v3/v4, and CSS Modules consumers. Portable Playwright suites cover browser behavior and Studio flows. The release scripts pack the public packages, inspect their public surface, install their tarballs into isolated Bun and npm consumers, and scan browser bundles. These are not decorative fixtures: they are where compatibility claims become evidence.
 
@@ -83,6 +85,17 @@ bun run typecheck
 bun run test
 ```
 
+Changes to the native CLI shell in `crates/scribe-cli` also need Rust. Install the toolchain pinned in [`rust-toolchain.toml`](./rust-toolchain.toml) (`rustup` selects it automatically inside the repository), then run the same checks CI enforces in `Release verification (Linux)`:
+
+```bash
+cargo build --locked
+cargo test --all-targets --all-features --locked
+cargo fmt --check
+cargo clippy --all-targets --all-features --locked -- -D warnings
+```
+
+The protocol between the Rust shell and the TypeScript engine is versioned; if you change request/response shapes, update both sides and the handshake version together, and run both the Rust and TypeScript checks above.
+
 During development, run the narrowest useful test first. Vitest accepts a file path or test-name filter, for example:
 
 ```bash
@@ -96,6 +109,7 @@ Before submitting, choose checks based on what changed:
 | Change | Relevant checks |
 | --- | --- |
 | Package source or exports | `bun run build`, `bun run typecheck`, `bun run test` |
+| Rust CLI shell (`crates/scribe-cli`) | `cargo fmt --check`, `cargo clippy --all-targets --all-features --locked -- -D warnings`, `cargo test --all-targets --all-features --locked` |
 | Canonical package README/SKILL/LICENSE | `bun run docs:check` |
 | MDX or React browser behavior | `bun run test:browser:chromium`; use `bun run test:browser:firefox` when engine behavior matters |
 | CSS Modules host preservation | `bun run test:browser:next-css-modules` |
