@@ -1,5 +1,17 @@
 # @scribe-sdk/cli
 
+## 0.1.0-beta.3
+
+### Minor Changes
+
+- 4168d72: Render `scribe studio init`'s article-details collection as a real inline TUI form instead of a sequence of scrollback-append prompts: the complete bordered box (all fields, derived slug/path defaults) exists from the first frame, arrow keys and Tab/Shift+Tab move freely between fields, and the real cursor is positioned inside whichever field is focused.
+
+### Patch Changes
+
+- @scribe-sdk/react@0.1.0-beta.3
+- @scribe-sdk/styles@0.1.0-beta.3
+- @scribe-sdk/mdx@0.1.0-beta.3
+
 ## 0.1.0-beta.2
 
 ### Minor Changes
