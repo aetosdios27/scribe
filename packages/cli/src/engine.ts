@@ -567,7 +567,7 @@ async function runStudioSession(
     mode = resolution.mode;
     modeReason = resolution.reason;
   }
-  const port = params.port === undefined ? 4317 : requiredPort(params.port);
+  const port = resolveStudioPort(params.port);
   const hostCss = optionalString(params.hostCss);
   emitEvent(operationId, "task.started", { task: "Start Studio" });
   const handle = await startStudio({
@@ -576,7 +576,7 @@ async function runStudioSession(
     mode,
     modeReason,
     port,
-    strictPort: params.port !== undefined,
+    strictPort: params.port !== undefined && params.port !== null,
     open: params.noOpen !== true,
     ...(hostCss === undefined ? {} : { hostCss })
   });
@@ -622,6 +622,11 @@ function requiredPort(value: unknown): number {
     throw rpcFailure(-32_602, "port must be an integer from 1 to 65535.", "usage");
   }
   return value;
+}
+
+export function resolveStudioPort(port: unknown): number {
+  if (port === undefined || port === null) return 4317;
+  return requiredPort(port);
 }
 
 

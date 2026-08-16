@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { resolveStudioPort } from "./engine.js";
+
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(packageRoot, "../..");
 const engineSource = resolve(packageRoot, "src/engine.ts");
@@ -92,6 +94,18 @@ describe("engine protocol", () => {
     expect(object(object(initialize.result).result).protocolVersion).toBe(1);
     expect(Array.isArray(events) ? events : []).toHaveLength(3);
     expect(Array.isArray(failures) ? failures : []).toHaveLength(2);
+  });
+
+  it("uses the default Studio port when none or null is provided", () => {
+    expect(resolveStudioPort(undefined)).toBe(4317);
+    expect(resolveStudioPort(null)).toBe(4317);
+  });
+
+  it("validates explicit Studio ports", () => {
+    expect(resolveStudioPort(8080)).toBe(8080);
+    expect(() => resolveStudioPort(0)).toThrow(/integer from 1 to 65535/);
+    expect(() => resolveStudioPort(70_000)).toThrow(/integer from 1 to 65535/);
+    expect(() => resolveStudioPort("4317")).toThrow(/integer from 1 to 65535/);
   });
 });
 
