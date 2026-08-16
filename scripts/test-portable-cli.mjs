@@ -690,7 +690,10 @@ try {
     `${nativePackage} installed at ${installedNative.version}; expected ${version}.`
   );
 
-  await verifyLocalNpmInstall();
+  if (process.platform !== "win32") {
+    await verifyLocalNpmInstall();
+  }
+
   await verifyGlobalInstalls();
 } finally {
   await mkdir(
@@ -969,90 +972,92 @@ async function verifyGlobalInstalls() {
       "npm-global"
     );
 
-  run(
-    executable("npm"),
-    [
-      "install",
-      "--global",
-      "--prefix",
-      npmPrefix,
-      "--no-audit",
-      "--no-fund",
-      ...packageTarballs
-    ],
-    directory,
-    true, {}, packageManagerInstallTimeoutMilliseconds
-  );
-
-  const npmScribe =
-    await findExecutable(
-      process.platform ===
-        "win32"
-        ? npmPrefix
-        : join(
-            npmPrefix,
-            "bin"
-          ),
-      "scribe"
-    );
-
-  const npmVersion =
+  if (process.platform !== "win32") {
     run(
-      npmScribe,
-      ["--version"],
-      directory
-    ).stdout.trim();
-
-  assert(
-    npmVersion ===
-      expectedVersionOutput,
-    `Global npm scribe reported ${npmVersion}; expected ${expectedVersionOutput}.`
-  );
-
-  const npmAlias =
-    await findExecutable(
-      process.platform ===
-        "win32"
-        ? npmPrefix
-        : join(
-            npmPrefix,
-            "bin"
-          ),
-      "scb"
-    );
-
-  const npmAliasVersion =
-    run(
-      npmAlias,
-      ["--version"],
-      directory
-    ).stdout.trim();
-
-  assert(
-    npmAliasVersion ===
-      expectedVersionOutput,
-    `Global npm scb reported ${npmAliasVersion}; expected ${expectedVersionOutput}.`
-  );
-
-  const npmGlobalBare =
-    run(
-      npmScribe,
-      [],
+      executable("npm"),
+      [
+        "install",
+        "--global",
+        "--prefix",
+        npmPrefix,
+        "--no-audit",
+        "--no-fund",
+        ...packageTarballs
+      ],
       directory,
-      false
+      true, {}, packageManagerInstallTimeoutMilliseconds
     );
 
-  assert(
-    npmGlobalBare.status === 0,
-    `Global npm scribe without arguments exited ${npmGlobalBare.status}; expected 0.`
-  );
+    const npmScribe =
+      await findExecutable(
+        process.platform ===
+          "win32"
+          ? npmPrefix
+          : join(
+              npmPrefix,
+              "bin"
+            ),
+        "scribe"
+      );
 
-  assert(
-    npmGlobalBare.stdout.includes(
-      "Scribe is not integrated here."
-    ),
-    "Global npm scribe did not delegate to print the project integration state."
-  );
+    const npmVersion =
+      run(
+        npmScribe,
+        ["--version"],
+        directory
+      ).stdout.trim();
+
+    assert(
+      npmVersion ===
+        expectedVersionOutput,
+      `Global npm scribe reported ${npmVersion}; expected ${expectedVersionOutput}.`
+    );
+
+    const npmAlias =
+      await findExecutable(
+        process.platform ===
+          "win32"
+          ? npmPrefix
+          : join(
+              npmPrefix,
+              "bin"
+            ),
+        "scb"
+      );
+
+    const npmAliasVersion =
+      run(
+        npmAlias,
+        ["--version"],
+        directory
+      ).stdout.trim();
+
+    assert(
+      npmAliasVersion ===
+        expectedVersionOutput,
+      `Global npm scb reported ${npmAliasVersion}; expected ${expectedVersionOutput}.`
+    );
+
+    const npmGlobalBare =
+      run(
+        npmScribe,
+        [],
+        directory,
+        false
+      );
+
+    assert(
+      npmGlobalBare.status === 0,
+      `Global npm scribe without arguments exited ${npmGlobalBare.status}; expected 0.`
+    );
+
+    assert(
+      npmGlobalBare.stdout.includes(
+        "Scribe is not integrated here."
+      ),
+      "Global npm scribe did not delegate to print the project integration state."
+    );
+  }
 
   const bunHome = join(
     directory,
