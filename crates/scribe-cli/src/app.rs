@@ -10,8 +10,9 @@ use crate::{
     engine::{EngineClient, EngineError},
     protocol::{OperationResult, PlanEnvelope},
     terminal::{
-        BoxFrame, Capabilities, Presenter, close_frame, open_frame, prompt_confirm, prompt_text,
-        render_inline_screen, run_stage, stage_presenter, write_box_top,
+        BoxFrame, Capabilities, FormField, FormOutcome, Presenter, close_frame, open_frame,
+        prompt_confirm, render_inline_screen, run_boxed_form, run_stage, stage_presenter,
+        write_box_top,
     },
 };
 
@@ -188,11 +189,8 @@ fn run_studio_init(
     capabilities: Capabilities,
     arguments: &StudioInitArgs,
 ) -> Result<(), EngineError> {
-    let frame = open_frame(capabilities);
-    let details = collect_article_details(engine, capabilities, frame, arguments);
-    close_frame(frame).map_err(EngineError::Io)?;
-
-    let Some((title, slug, path)) = details? else {
+    let Some((title, slug, path)) = collect_article_details(engine, capabilities, arguments)?
+    else {
         return Ok(());
     };
 
@@ -220,24 +218,20 @@ fn run_studio_init(
     )
 }
 
-/// Gathers the title, slug, and path for a new article, all inside `frame`.
-/// Returns `None` if the user cancelled at any prompt.
+/// Gathers the title, slug, and path for a new article.
 ///
-/// This never closes `frame` itself: the caller does that exactly once,
-/// after this returns, so every exit path — including any engine request
-/// here failing — leaves a closed box instead of an abandoned one.
+/// Slug and path can't be derived without a final title, flag-supplied or
+/// typed alike, so this resolves in two phases: title first (its own
+/// single-field form when it needs prompting), then slug and path together
+/// as one two-field form — the pair a user is actually likely to compare
+/// and adjust side by side. Returns `None` if the user cancelled either
+/// phase.
 fn collect_article_details(
     engine: &mut EngineClient,
     capabilities: Capabilities,
-    frame: Option<BoxFrame>,
     arguments: &StudioInitArgs,
 ) -> Result<Option<(String, String, PathBuf)>, EngineError> {
-    if let Some(frame) = frame {
-        write_box_top(&mut io::stdout(), frame, "ARTICLE DETAILS").map_err(EngineError::Io)?;
-    }
-
-    let Some(title) = resolve_article_title(capabilities, frame, arguments.title.as_deref())?
-    else {
+    let Some(title) = resolve_article_title(capabilities, arguments)? else {
         return Ok(None);
     };
 
@@ -251,30 +245,15 @@ fn collect_article_details(
         |_| {},
     )?;
     let derived_slug = result_string(&defaults, "slug")?;
-    let mut default_path = result_string(&defaults, "targetPath")?;
+    let default_path = result_string(&defaults, "targetPath")?;
 
-    let Some((slug, recalculate_path)) = resolve_article_slug(
+    let Some((slug, path)) = resolve_slug_and_path(
+        engine,
         capabilities,
-        frame,
-        arguments.slug.as_deref(),
+        arguments,
+        &title,
         &derived_slug,
-        arguments.yes,
-    )?
-    else {
-        return Ok(None);
-    };
-
-    if arguments.path.is_none() && recalculate_path {
-        default_path =
-            suggested_article_path(engine, &title, &slug, arguments.content_dir.as_ref())?;
-    }
-
-    let Some(path) = resolve_article_path(
-        capabilities,
-        frame,
-        arguments.path.as_ref(),
         &default_path,
-        arguments.yes,
     )?
     else {
         return Ok(None);
@@ -283,13 +262,14 @@ fn collect_article_details(
     Ok(Some((title, slug, path)))
 }
 
+/// Resolves the article title from `--title`, or a single-field form when it
+/// needs prompting. `None` means the user cancelled.
 fn resolve_article_title(
     capabilities: Capabilities,
-    frame: Option<BoxFrame>,
-    provided: Option<&str>,
+    arguments: &StudioInitArgs,
 ) -> Result<Option<String>, EngineError> {
-    if let Some(title) = provided {
-        return Ok(Some(title.to_owned()));
+    if let Some(title) = &arguments.title {
+        return Ok(Some(title.clone()));
     }
     if !capabilities.interactive {
         return Err(EngineError::Usage(
@@ -297,75 +277,132 @@ fn resolve_article_title(
                 .to_owned(),
         ));
     }
-    let Some(title) = prompt_text("Article title", None, frame).map_err(EngineError::Io)? else {
-        cancel_in_frame(frame, capabilities, "No article was created.").map_err(EngineError::Io)?;
+
+    let mut fields = [FormField::new("Article title")];
+    let outcome = run_boxed_form(
+        "ARTICLE DETAILS",
+        &mut fields,
+        capabilities,
+        EngineError::Io,
+        |_, _| Ok(()),
+    )?;
+    let [title_field] = fields;
+
+    if outcome == FormOutcome::Cancelled || title_field.buffer.is_empty() {
+        cancel_notice(capabilities, "No article was created.").map_err(EngineError::Io)?;
         return Ok(None);
-    };
-    Ok(Some(title))
+    }
+
+    Ok(Some(title_field.buffer))
 }
 
-fn resolve_article_slug(
+/// Resolves the slug and target path, given a final `title`: from
+/// `--slug`/`--path`, from the derived defaults under `--yes`, or from a
+/// two-field form. `None` means the user cancelled.
+#[allow(clippy::too_many_arguments)]
+fn resolve_slug_and_path(
+    engine: &mut EngineClient,
     capabilities: Capabilities,
-    frame: Option<BoxFrame>,
-    provided: Option<&str>,
-    derived: &str,
-    yes: bool,
-) -> Result<Option<(String, bool)>, EngineError> {
-    if let Some(slug) = provided {
-        return Ok(Some((slug.to_owned(), slug != derived)));
-    }
-    if yes {
-        return Ok(Some((derived.to_owned(), false)));
-    }
-    if !capabilities.interactive {
-        return Err(EngineError::Usage(
-            "Re-run with --yes to accept the derived slug and article path.".to_owned(),
-        ));
-    }
-    let Some(slug) = prompt_text("Slug", Some(derived), frame).map_err(EngineError::Io)? else {
-        cancel_in_frame(frame, capabilities, "No article was created.").map_err(EngineError::Io)?;
-        return Ok(None);
-    };
-    let changed = slug != derived;
-    Ok(Some((slug, changed)))
-}
-
-fn resolve_article_path(
-    capabilities: Capabilities,
-    frame: Option<BoxFrame>,
-    provided: Option<&PathBuf>,
+    arguments: &StudioInitArgs,
+    title: &str,
+    derived_slug: &str,
     default_path: &str,
-    yes: bool,
-) -> Result<Option<PathBuf>, EngineError> {
-    if let Some(path) = provided {
-        return Ok(Some(path.clone()));
+) -> Result<Option<(String, PathBuf)>, EngineError> {
+    if let (Some(slug), Some(path)) = (&arguments.slug, &arguments.path) {
+        return Ok(Some((slug.clone(), path.clone())));
     }
-    if yes {
-        return Ok(Some(PathBuf::from(default_path)));
+
+    if arguments.yes {
+        let slug = arguments
+            .slug
+            .clone()
+            .unwrap_or_else(|| derived_slug.to_owned());
+        let path = match &arguments.path {
+            Some(path) => path.clone(),
+            None if slug == derived_slug => PathBuf::from(default_path),
+            None => PathBuf::from(suggested_article_path(
+                engine,
+                title,
+                &slug,
+                arguments.content_dir.as_ref(),
+            )?),
+        };
+        return Ok(Some((slug, path)));
     }
+
     if !capabilities.interactive {
         return Err(EngineError::Usage(
             "Re-run with --yes to accept the derived slug and article path.".to_owned(),
         ));
     }
-    let Some(path) =
-        prompt_text("Article path", Some(default_path), frame).map_err(EngineError::Io)?
-    else {
-        cancel_in_frame(frame, capabilities, "No article was created.").map_err(EngineError::Io)?;
+
+    let mut slug_field = FormField::new("Slug");
+    if let Some(slug) = &arguments.slug {
+        slug_field.buffer.clone_from(slug);
+    } else {
+        derived_slug.clone_into(&mut slug_field.placeholder);
+    }
+
+    let mut path_field = FormField::new("Article path");
+    if let Some(path) = &arguments.path {
+        path_field.buffer = path.display().to_string();
+    } else {
+        default_path.clone_into(&mut path_field.placeholder);
+    }
+
+    let mut fields = [slug_field, path_field];
+
+    let outcome = run_boxed_form(
+        "ARTICLE DETAILS",
+        &mut fields,
+        capabilities,
+        EngineError::Io,
+        |index, fields| -> Result<(), EngineError> {
+            if index != 0 || arguments.path.is_some() {
+                return Ok(());
+            }
+            let typed_slug = if fields[0].buffer.is_empty() {
+                derived_slug.to_owned()
+            } else {
+                fields[0].buffer.clone()
+            };
+            if typed_slug != derived_slug {
+                fields[1].placeholder = suggested_article_path(
+                    engine,
+                    title,
+                    &typed_slug,
+                    arguments.content_dir.as_ref(),
+                )?;
+            }
+            Ok(())
+        },
+    )?;
+
+    let [slug_field, path_field] = fields;
+
+    if outcome == FormOutcome::Cancelled {
+        cancel_notice(capabilities, "No article was created.").map_err(EngineError::Io)?;
         return Ok(None);
+    }
+
+    let slug = if slug_field.buffer.is_empty() {
+        slug_field.placeholder
+    } else {
+        slug_field.buffer
     };
-    Ok(Some(PathBuf::from(path)))
+    let path = if path_field.buffer.is_empty() {
+        path_field.placeholder
+    } else {
+        path_field.buffer
+    };
+
+    Ok(Some((slug, PathBuf::from(path))))
 }
 
-/// Writes a boxed cancellation line inside `frame` without closing it — the
-/// same one-close-site convention every boxed flow follows.
-fn cancel_in_frame(
-    frame: Option<BoxFrame>,
-    capabilities: Capabilities,
-    message: &str,
-) -> io::Result<()> {
-    stage_presenter(frame, capabilities).cancelled(message)
+fn cancel_notice(capabilities: Capabilities, message: &str) -> io::Result<()> {
+    Presenter::new(io::stdout(), capabilities).cancelled(message)
 }
+
 fn suggested_article_path(
     engine: &mut EngineClient,
     title: &str,
