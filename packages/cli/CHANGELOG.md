@@ -1,5 +1,18 @@
 # @scribe-sdk/cli
 
+## 0.1.0-beta.2
+
+### Minor Changes
+
+- 37f0b59: Render `scribe studio init` and every plan/apply command (`init`, `integrate`, `import`, `update`) inside labeled boxed panels — `ARTICLE DETAILS` around the studio-init prompts, `REVIEW & CONFIRM` around the plan summary and apply confirmation, and `RUN` around the live event stream and receipt — instead of an unbroken scroll of text. Falls back to today's plain rendering on narrow or non-interactive terminals.
+
+### Patch Changes
+
+- 37f0b59: Fix the native CLI crashing with a raw `EPIPE` stack trace when Ctrl+C was pressed during a running Studio session: the engine already shut Studio down gracefully on SIGINT, but the CLI had no signal handler of its own and died on the raw signal before the engine could finish, tearing the pipe out from under it. A second Ctrl+C still exits immediately. Also fixes long status values (like a lockfile-conflict message) breaking the label/value grid instead of wrapping with a hanging indent, and replaces the unstyled interactive prompts with ones matching the rest of the CLI's visual grammar.
+  - @scribe-sdk/react@0.1.0-beta.2
+  - @scribe-sdk/styles@0.1.0-beta.2
+  - @scribe-sdk/mdx@0.1.0-beta.2
+
 ## 0.1.0-beta.1
 
 ### Patch Changes

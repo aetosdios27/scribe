@@ -8,6 +8,7 @@
     "@scribe-sdk/styles": "0.1.0-alpha.10"
   },
   "changesets": [
+    "bold-frames-arrange",
     "brave-authors-beta",
     "bright-pages-publish",
     "calm-sites-publish",
@@ -19,6 +20,7 @@
     "polite-studios-launch",
     "precise-studios-protect",
     "quiet-code-contrasts",
+    "quiet-storms-mend",
     "safe-studios-save",
     "six-plums-relax",
     "steady-studios-close",
