@@ -146,9 +146,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: bun-deps-hoisted-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          key: bun-deps-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: |
-            bun-deps-hoisted-${{ runner.os }}-
+            bun-deps-${{ runner.os }}-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -257,9 +257,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: bun-deps-hoisted-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          key: bun-deps-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: |
-            bun-deps-hoisted-${{ runner.os }}-
+            bun-deps-${{ runner.os }}-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -330,9 +330,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: bun-deps-hoisted-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          key: bun-deps-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: |
-            bun-deps-hoisted-${{ runner.os }}-
+            bun-deps-${{ runner.os }}-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
