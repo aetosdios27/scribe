@@ -145,10 +145,10 @@ jobs:
       - name: Restore dependency cache
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: bun-deps-hp-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          path: ~/.bun/install/cache
+          key: bun-pkg-v1-${{ runner.os }}-${{ runner.arch }}-1.3.14-${{ hashFiles('bun.lock') }}
           restore-keys: |
-            bun-deps-hp-${{ runner.os }}-
+            bun-pkg-v1-${{ runner.os }}-${{ runner.arch }}-1.3.14-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -256,13 +256,40 @@ jobs:
       - name: Restore dependency cache
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: bun-deps-hp-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          path: ~/.bun/install/cache
+          key: bun-pkg-v1-${{ runner.os }}-${{ runner.arch }}-1.3.14-${{ hashFiles('bun.lock') }}
           restore-keys: |
-            bun-deps-hp-${{ runner.os }}-
+            bun-pkg-v1-${{ runner.os }}-${{ runner.arch }}-1.3.14-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Verify isolated toolchain resolution (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node -e "console.log(require.resolve('tsdown/package.json'))"
+
+          $tsdownEntry = Get-ChildItem node_modules\.bun -Directory -Filter 'tsdown@0.22.7*' |
+            Select-Object -First 1
+
+          if (-not $tsdownEntry) {
+            throw 'tsdown .bun store entry missing'
+          }
+
+          $tsdown = Join-Path $tsdownEntry.FullName 'node_modules\tsdown'
+
+          node -e @"
+          const { createRequire } = require('node:module');
+          const path = require('node:path');
+          const req = createRequire(path.resolve(process.argv[1], 'package.json'));
+          console.log('unconfig-core =>', req.resolve('unconfig-core'));
+          "@ $tsdown
+
+          if (-not (Test-Path node_modules\.bun\node_modules\unconfig-core)) {
+            throw 'hidden hoist fallback for unconfig-core missing'
+          }
+
 
       - name: Verify documentation copies
         run: bun run docs:check
@@ -329,10 +356,10 @@ jobs:
       - name: Restore dependency cache
         uses: actions/cache@v4
         with:
-          path: node_modules
-          key: bun-deps-hp-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          path: ~/.bun/install/cache
+          key: bun-pkg-v1-${{ runner.os }}-${{ runner.arch }}-1.3.14-${{ hashFiles('bun.lock') }}
           restore-keys: |
-            bun-deps-hp-${{ runner.os }}-
+            bun-pkg-v1-${{ runner.os }}-${{ runner.arch }}-1.3.14-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
