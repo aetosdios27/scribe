@@ -76,6 +76,13 @@ let operationSequence = 0;
 
 export async function runEngine(): Promise<void> {
   process.env.SCRIBE_ENGINE_PROTOCOL = "1";
+  // The native CLI's stdout pipe can close out from under a write in flight
+  // (notably when the user's parent process exits mid-shutdown). Without
+  // this listener that surfaces as an unhandled EPIPE and crashes the engine
+  // with a raw stack trace instead of letting the CLI report a clean result.
+  process.stdout.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") throw error;
+  });
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of input) {
     if (Buffer.byteLength(line, "utf8") > maxMessageBytes) {

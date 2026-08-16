@@ -4,14 +4,20 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossterm::style::{Color as CrosstermColor, ContentStyle, Stylize};
+use crossterm::{
+    cursor::MoveToColumn,
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    execute,
+    style::{Color as CrosstermColor, ContentStyle, Stylize},
+    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
+};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
 };
 
 use crate::{
@@ -47,6 +53,14 @@ const HEADER_ROWS: u16 = 3;
 /// This is deliberately outside the bordered status block. The shell therefore
 /// starts on a clean row instead of overwriting the final status lines.
 const CURSOR_ROWS: u16 = 1;
+
+/// Fixed label column width shared by every label/value row Scribe prints —
+/// the splash, plans, and receipts all line up under the same grid.
+const LABEL_WIDTH: usize = 16;
+
+/// Column a wrapped value's continuation lines hang-indent to: the label
+/// column plus the two-space separator that always follows it.
+const LABEL_GUTTER: usize = LABEL_WIDTH + 2;
 
 // -----------------------------------------------------------------------------
 // Presentation
@@ -117,9 +131,25 @@ impl<W: Write> Presenter<W> {
             if self.capabilities.columns < 48 {
                 writeln!(self.writer, "{}", self.paint(label, Tone::Dim))?;
 
-                writeln!(self.writer, "  {value}")?;
+                let width = usize::from(self.capabilities.columns)
+                    .saturating_sub(2)
+                    .max(1);
+
+                for line in wrap_value(value, 0, width) {
+                    writeln!(self.writer, "  {line}")?;
+                }
             } else {
-                writeln!(self.writer, "{label:<16}  {value}")?;
+                let width = usize::from(self.capabilities.columns);
+
+                let mut lines = wrap_value(value, LABEL_GUTTER, width).into_iter();
+
+                let first = lines.next().unwrap_or_default();
+
+                writeln!(self.writer, "{label:<LABEL_WIDTH$}  {first}")?;
+
+                for line in lines {
+                    writeln!(self.writer, "{line}")?;
+                }
             }
         }
 
@@ -264,96 +294,249 @@ impl<W: Write> Presenter<W> {
     }
 
     fn symbol(&self, tone: Tone) -> String {
-        let symbol = if self.capabilities.unicode {
-            match tone {
-                Tone::Brand => "◆",
-                Tone::Success => "✓",
-                Tone::Warning => "!",
-                Tone::Error => "×",
-                Tone::Dim => "–",
-            }
-        } else {
-            match tone {
-                Tone::Brand => "*",
-                Tone::Success => "+",
-                Tone::Warning => "!",
-                Tone::Error => "x",
-                Tone::Dim => "-",
-            }
-        };
-
-        self.paint(symbol, tone)
+        symbol(tone, self.capabilities)
     }
 
     fn paint(&self, value: &str, tone: Tone) -> String {
-        if !self.capabilities.color {
-            return value.to_owned();
+        paint(value, tone, self.capabilities.color)
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Shared row wrapping
+// -----------------------------------------------------------------------------
+
+/// Word-wraps `value` to `width` columns. The first returned line carries no
+/// indentation (the caller prepends its own label); every continuation line
+/// is padded with `gutter` spaces so it lines up under the value column
+/// instead of orphaning itself at column zero.
+fn wrap_value(value: &str, gutter: usize, width: usize) -> Vec<String> {
+    let budget = width.saturating_sub(gutter).max(1);
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+
+    for word in value.split_whitespace() {
+        let candidate_len = if current.is_empty() {
+            word.chars().count()
+        } else {
+            current.chars().count() + 1 + word.chars().count()
+        };
+
+        if !current.is_empty() && candidate_len > budget {
+            lines.push(current);
+            current = String::new();
         }
 
-        format!("{}", terminal_style(tone).apply(value))
+        if !current.is_empty() {
+            current.push(' ');
+        }
+
+        current.push_str(word);
     }
+
+    lines.push(current);
+
+    let pad = " ".repeat(gutter);
+
+    lines
+        .into_iter()
+        .enumerate()
+        .map(|(index, line)| {
+            if index == 0 {
+                line
+            } else {
+                format!("{pad}{line}")
+            }
+        })
+        .collect()
 }
 
 // -----------------------------------------------------------------------------
 // Prompts
 // -----------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditOutcome {
+    Continue,
+    Submit,
+    Cancel,
+}
+
+/// A single-line, append/backspace-at-end text buffer. Deliberately does not
+/// support mid-line cursor movement — kept as a small, fully testable state
+/// machine separate from the raw-mode I/O loop that drives it.
+#[derive(Debug, Default)]
+struct LineEditor {
+    buffer: String,
+}
+
+impl LineEditor {
+    fn apply_key(&mut self, key: KeyEvent) -> EditOutcome {
+        match key.code {
+            KeyCode::Enter => EditOutcome::Submit,
+
+            KeyCode::Esc => EditOutcome::Cancel,
+
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                EditOutcome::Cancel
+            }
+
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.buffer.clear();
+                EditOutcome::Continue
+            }
+
+            KeyCode::Backspace => {
+                self.buffer.pop();
+                EditOutcome::Continue
+            }
+
+            KeyCode::Char(character) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.buffer.push(character);
+                EditOutcome::Continue
+            }
+
+            _ => EditOutcome::Continue,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfirmOutcome {
+    Continue,
+    Yes,
+    No,
+    Cancel,
+}
+
+fn apply_confirm_key(key: KeyEvent, initial: bool) -> ConfirmOutcome {
+    match key.code {
+        KeyCode::Enter => {
+            if initial {
+                ConfirmOutcome::Yes
+            } else {
+                ConfirmOutcome::No
+            }
+        }
+
+        KeyCode::Esc => ConfirmOutcome::Cancel,
+
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            ConfirmOutcome::Cancel
+        }
+
+        KeyCode::Char(character) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            match character.to_ascii_lowercase() {
+                'y' => ConfirmOutcome::Yes,
+                'n' => ConfirmOutcome::No,
+                _ => ConfirmOutcome::Continue,
+            }
+        }
+
+        _ => ConfirmOutcome::Continue,
+    }
+}
+
+/// Redraws one prompt line in place: `◆ Label [hint]  typed-value`, matching
+/// the same Brand symbol and Dim label treatment every other Scribe surface
+/// uses.
+fn write_prompt_line(
+    stdout: &mut impl Write,
+    label: &str,
+    hint: Option<&str>,
+    value: &str,
+    capabilities: Capabilities,
+) -> io::Result<()> {
+    execute!(stdout, MoveToColumn(0), Clear(ClearType::CurrentLine))?;
+
+    let marker = symbol(Tone::Brand, capabilities);
+    let label = paint(label, Tone::Dim, capabilities.color);
+
+    match hint {
+        Some(hint) => write!(stdout, "{marker} {label} [{hint}]  {value}")?,
+        None => write!(stdout, "{marker} {label}  {value}")?,
+    }
+
+    stdout.flush()
+}
+
+fn next_key_press() -> io::Result<KeyEvent> {
+    loop {
+        if let Event::Key(key) = event::read()? {
+            if key.kind == KeyEventKind::Press {
+                return Ok(key);
+            }
+        }
+    }
+}
+
 pub fn prompt_text(label: &str, initial: Option<&str>) -> io::Result<Option<String>> {
-    let mut stdout = io::stdout().lock();
+    let capabilities = Capabilities::detect();
+    let mut stdout = io::stdout();
+    let mut editor = LineEditor::default();
 
-    match initial {
-        Some(value) => write!(stdout, "{label} [{value}]  ")?,
+    write_prompt_line(&mut stdout, label, initial, "", capabilities)?;
 
-        None => write!(stdout, "{label}  ")?,
-    }
+    enable_raw_mode()?;
 
-    stdout.flush()?;
+    let outcome = loop {
+        let key = next_key_press()?;
 
-    let mut input = String::new();
+        let outcome = editor.apply_key(key);
 
-    if io::stdin().read_line(&mut input)? == 0 {
-        return Ok(None);
-    }
+        write_prompt_line(&mut stdout, label, initial, &editor.buffer, capabilities)?;
 
-    let value = input.trim();
+        if outcome != EditOutcome::Continue {
+            break outcome;
+        }
+    };
 
-    if value.is_empty() {
-        Ok(initial.map(ToOwned::to_owned))
-    } else {
-        Ok(Some(value.to_owned()))
+    disable_raw_mode()?;
+    writeln!(stdout)?;
+
+    match outcome {
+        EditOutcome::Cancel => Ok(None),
+        EditOutcome::Submit if editor.buffer.is_empty() => Ok(initial.map(ToOwned::to_owned)),
+        EditOutcome::Submit => Ok(Some(editor.buffer)),
+        EditOutcome::Continue => unreachable!("the loop only breaks on Submit or Cancel"),
     }
 }
 
 pub fn prompt_confirm(label: &str, initial: bool) -> io::Result<Option<bool>> {
+    let capabilities = Capabilities::detect();
+    let mut stdout = io::stdout();
     let hint = if initial { "Y/n" } else { "y/N" };
 
-    let mut stdout = io::stdout().lock();
+    write_prompt_line(&mut stdout, label, Some(hint), "", capabilities)?;
 
-    write!(stdout, "{label} [{hint}]  ")?;
+    enable_raw_mode()?;
 
-    stdout.flush()?;
+    let outcome = loop {
+        let key = next_key_press()?;
 
-    let mut input = String::new();
-
-    if io::stdin().read_line(&mut input)? == 0 {
-        return Ok(None);
-    }
-
-    let value = input.trim();
-
-    if value.is_empty() {
-        return Ok(Some(initial));
-    }
-
-    match value.to_ascii_lowercase().as_str() {
-        "y" | "yes" => Ok(Some(true)),
-        "n" | "no" => Ok(Some(false)),
-
-        _ => {
-            writeln!(io::stderr(), "Expected yes or no.")?;
-
-            prompt_confirm(label, initial)
+        match apply_confirm_key(key, initial) {
+            ConfirmOutcome::Continue => {}
+            resolved => break resolved,
         }
+    };
+
+    disable_raw_mode()?;
+
+    let echoed = match outcome {
+        ConfirmOutcome::Yes => "y",
+        ConfirmOutcome::No => "n",
+        ConfirmOutcome::Cancel | ConfirmOutcome::Continue => "",
+    };
+
+    write_prompt_line(&mut stdout, label, Some(hint), echoed, capabilities)?;
+    writeln!(stdout)?;
+
+    match outcome {
+        ConfirmOutcome::Yes => Ok(Some(true)),
+        ConfirmOutcome::No => Ok(Some(false)),
+        ConfirmOutcome::Cancel => Ok(None),
+        ConfirmOutcome::Continue => unreachable!("the loop only breaks on a resolved outcome"),
     }
 }
 
@@ -525,26 +708,31 @@ fn draw_inline_frame(
                 header,
             );
 
+            // LEFT border consumes one terminal cell.
+            let content_width = usize::from(body.width.saturating_sub(1).max(1));
+
             let mut text = vec![Line::from(description), Line::default()];
 
-            text.extend(rows.iter().map(|(label, value)| {
-                Line::from(vec![
+            text.extend(rows.iter().flat_map(|(label, value)| {
+                let mut lines = wrap_value(value, LABEL_GUTTER, content_width).into_iter();
+
+                let first = Line::from(vec![
                     Span::styled(
-                        format!("{label:<14}"),
+                        format!("{label:<LABEL_WIDTH$}  "),
                         screen_style(Tone::Dim, color_enabled),
                     ),
-                    Span::raw(*value),
-                ])
+                    Span::raw(lines.next().unwrap_or_default()),
+                ]);
+
+                std::iter::once(first).chain(lines.map(Line::from))
             }));
 
             frame.render_widget(
-                Paragraph::new(Text::from(text))
-                    .block(
-                        Block::default()
-                            .borders(Borders::LEFT)
-                            .border_style(screen_style(Tone::Brand, color_enabled)),
-                    )
-                    .wrap(Wrap { trim: false }),
+                Paragraph::new(Text::from(text)).block(
+                    Block::default()
+                        .borders(Borders::LEFT)
+                        .border_style(screen_style(Tone::Brand, color_enabled)),
+                ),
                 body,
             );
 
@@ -607,10 +795,10 @@ fn inline_body_height(terminal_width: u16, description: &str, rows: &[(&str, &st
 
     let mut height = wrapped_line_count(description, content_width).saturating_add(1); // blank line after description
 
-    for (label, value) in rows {
-        let row = format!("{label:<14}{value}");
+    for (_, value) in rows {
+        let lines = wrap_value(value, LABEL_GUTTER, usize::from(content_width));
 
-        height = height.saturating_add(wrapped_line_count(&row, content_width));
+        height = height.saturating_add(u16::try_from(lines.len()).unwrap_or(u16::MAX));
     }
 
     height.max(1)
@@ -658,7 +846,7 @@ fn write_plain_inline_screen<W: Write>(
     }
 
     for (label, value) in rows {
-        writeln!(writer, "{label:<14}{value}")?;
+        writeln!(writer, "{label:<LABEL_WIDTH$}  {value}")?;
     }
 
     Ok(())
@@ -672,26 +860,11 @@ fn terminal_is_dumb() -> bool {
 // Styling
 // -----------------------------------------------------------------------------
 
-fn screen_style(tone: Tone, color_enabled: bool) -> Style {
-    if !color_enabled {
-        return Style::default();
-    }
-
+/// The single source of truth for what color a `Tone` renders as. Both the
+/// ratatui splash and the plain-text presenter/prompt paths derive their
+/// colors from this one mapping instead of keeping their own copies.
+fn tone_color(tone: Tone) -> CrosstermColor {
     match tone {
-        Tone::Brand => Style::default().fg(Color::Rgb(80, 131, 230)),
-
-        Tone::Dim => Style::default().fg(Color::DarkGray),
-
-        Tone::Success => Style::default().fg(Color::Green),
-
-        Tone::Warning => Style::default().fg(Color::Yellow),
-
-        Tone::Error => Style::default().fg(Color::Red),
-    }
-}
-
-fn terminal_style(tone: Tone) -> ContentStyle {
-    let color = match tone {
         Tone::Brand => CrosstermColor::Rgb {
             r: 80,
             g: 131,
@@ -705,9 +878,60 @@ fn terminal_style(tone: Tone) -> ContentStyle {
         Tone::Warning => CrosstermColor::Yellow,
 
         Tone::Error => CrosstermColor::Red,
+    }
+}
+
+fn ratatui_color(color: CrosstermColor) -> Color {
+    match color {
+        CrosstermColor::Rgb { r, g, b } => Color::Rgb(r, g, b),
+        CrosstermColor::DarkGrey => Color::DarkGray,
+        CrosstermColor::Green => Color::Green,
+        CrosstermColor::Yellow => Color::Yellow,
+        CrosstermColor::Red => Color::Red,
+        _ => Color::Reset,
+    }
+}
+
+fn screen_style(tone: Tone, color_enabled: bool) -> Style {
+    if !color_enabled {
+        return Style::default();
+    }
+
+    Style::default().fg(ratatui_color(tone_color(tone)))
+}
+
+fn terminal_style(tone: Tone) -> ContentStyle {
+    ContentStyle::new().with(tone_color(tone))
+}
+
+fn paint(value: &str, tone: Tone, color_enabled: bool) -> String {
+    if !color_enabled {
+        return value.to_owned();
+    }
+
+    format!("{}", terminal_style(tone).apply(value))
+}
+
+fn symbol(tone: Tone, capabilities: Capabilities) -> String {
+    let raw = if capabilities.unicode {
+        match tone {
+            Tone::Brand => "◆",
+            Tone::Success => "✓",
+            Tone::Warning => "!",
+            Tone::Error => "×",
+            Tone::Dim => "–",
+        }
+    } else {
+        match tone {
+            Tone::Brand => "*",
+            Tone::Success => "+",
+            Tone::Warning => "!",
+            Tone::Error => "x",
+            Tone::Dim => "-",
+        }
     };
 
-    ContentStyle::new().with(color)
+    paint(raw, tone, capabilities.color)
 }
 
 // -----------------------------------------------------------------------------
@@ -833,5 +1057,147 @@ mod tests {
         assert_eq!(wrapped_line_count("", 80,), 1);
 
         assert_eq!(wrapped_line_count("\n", 80,), 2);
+    }
+
+    #[test]
+    fn body_height_accounts_for_wrapped_row_values() {
+        let short = inline_body_height(80, "Ready.", &[("packages", "fine")]);
+
+        let long = inline_body_height(
+            80,
+            "Ready.",
+            &[(
+                "packages",
+                "inspection failed: Conflicting package-manager lockfiles exist in \
+                 /home/aetos/dev/personal/new-portfolio: bun.lock, package-lock.json. \
+                 Remove stale lockfiles before Scribe mutates dependencies.",
+            )],
+        );
+
+        assert!(long > short);
+    }
+
+    #[test]
+    fn wrap_value_hanging_indents_continuation_lines() {
+        let lines = wrap_value("one two three four five six", 4, 12);
+
+        assert!(lines.len() > 1);
+
+        assert!(!lines[0].starts_with(' '));
+
+        for line in &lines[1..] {
+            assert!(line.starts_with("    "));
+        }
+    }
+
+    #[test]
+    fn wrap_value_keeps_short_values_on_one_line() {
+        assert_eq!(wrap_value("integrated", 18, 80), vec!["integrated"]);
+    }
+
+    #[test]
+    fn wrap_value_never_produces_zero_lines() {
+        assert_eq!(wrap_value("", 18, 80), vec![""]);
+    }
+
+    fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, modifiers)
+    }
+
+    #[test]
+    fn line_editor_appends_and_submits() {
+        let mut editor = LineEditor::default();
+
+        assert_eq!(
+            editor.apply_key(key(KeyCode::Char('h'), KeyModifiers::NONE)),
+            EditOutcome::Continue
+        );
+
+        assert_eq!(
+            editor.apply_key(key(KeyCode::Char('i'), KeyModifiers::NONE)),
+            EditOutcome::Continue
+        );
+
+        assert_eq!(editor.buffer, "hi");
+
+        assert_eq!(
+            editor.apply_key(key(KeyCode::Enter, KeyModifiers::NONE)),
+            EditOutcome::Submit
+        );
+    }
+
+    #[test]
+    fn line_editor_backspace_removes_the_last_character() {
+        let mut editor = LineEditor::default();
+
+        editor.apply_key(key(KeyCode::Char('h'), KeyModifiers::NONE));
+        editor.apply_key(key(KeyCode::Char('i'), KeyModifiers::NONE));
+        editor.apply_key(key(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert_eq!(editor.buffer, "h");
+    }
+
+    #[test]
+    fn line_editor_ctrl_c_and_esc_both_cancel() {
+        let mut esc = LineEditor::default();
+
+        assert_eq!(
+            esc.apply_key(key(KeyCode::Esc, KeyModifiers::NONE)),
+            EditOutcome::Cancel
+        );
+
+        let mut ctrl_c = LineEditor::default();
+
+        assert_eq!(
+            ctrl_c.apply_key(key(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            EditOutcome::Cancel
+        );
+    }
+
+    #[test]
+    fn confirm_key_accepts_yes_and_no_regardless_of_case() {
+        assert_eq!(
+            apply_confirm_key(key(KeyCode::Char('Y'), KeyModifiers::NONE), false),
+            ConfirmOutcome::Yes
+        );
+
+        assert_eq!(
+            apply_confirm_key(key(KeyCode::Char('n'), KeyModifiers::NONE), true),
+            ConfirmOutcome::No
+        );
+    }
+
+    #[test]
+    fn confirm_key_enter_uses_the_initial_default() {
+        assert_eq!(
+            apply_confirm_key(key(KeyCode::Enter, KeyModifiers::NONE), true),
+            ConfirmOutcome::Yes
+        );
+
+        assert_eq!(
+            apply_confirm_key(key(KeyCode::Enter, KeyModifiers::NONE), false),
+            ConfirmOutcome::No
+        );
+    }
+
+    #[test]
+    fn confirm_key_ctrl_c_and_esc_both_cancel() {
+        assert_eq!(
+            apply_confirm_key(key(KeyCode::Esc, KeyModifiers::NONE), true),
+            ConfirmOutcome::Cancel
+        );
+
+        assert_eq!(
+            apply_confirm_key(key(KeyCode::Char('c'), KeyModifiers::CONTROL), true),
+            ConfirmOutcome::Cancel
+        );
+    }
+
+    #[test]
+    fn confirm_key_ignores_unrelated_characters() {
+        assert_eq!(
+            apply_confirm_key(key(KeyCode::Char('q'), KeyModifiers::NONE), true),
+            ConfirmOutcome::Continue
+        );
     }
 }

@@ -26,6 +26,7 @@ pub fn run() -> ExitCode {
 }
 
 fn run_inner() -> Result<u8, EngineError> {
+    install_interrupt_handler();
     let cli = Cli::parse();
     let cwd = env::current_dir().map_err(EngineError::Io)?;
     let engine_entry = engine_entry()?;
@@ -351,6 +352,30 @@ fn plan_title(method: &str) -> &'static str {
     }
 }
 
+/// Installs Scribe's own Ctrl+C handling.
+///
+/// The Node engine already shuts a running Studio session down gracefully on
+/// SIGINT and writes a clean final response (see `waitForTerminationSignal`
+/// in `engine.ts`). Without a handler here, Rust's default SIGINT behavior
+/// kills this process immediately — tearing the pipe out from under the
+/// engine mid-write and crashing it with a raw `EPIPE`. Installing any
+/// handler at all suppresses that default, so the first Ctrl+C simply lets
+/// the engine's existing graceful shutdown finish and this process's normal
+/// blocking read pick up its response. A second Ctrl+C means the user wants
+/// out immediately: the engine's own SIGINT listener only lives through the
+/// first signal (it removes itself once triggered), so by the second press
+/// it dies on its own via Node's default disposition; this process exits
+/// alongside it rather than waiting any further.
+fn install_interrupt_handler() {
+    let interrupted = std::sync::atomic::AtomicBool::new(false);
+
+    let _ = ctrlc::set_handler(move || {
+        if interrupted.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            std::process::exit(130);
+        }
+    });
+}
+
 fn engine_entry() -> Result<PathBuf, EngineError> {
     if let Some(entry) = env::var_os("SCRIBE_ENGINE_ENTRY") {
         return Ok(PathBuf::from(entry));
@@ -374,7 +399,7 @@ fn recovery(error: &EngineError) -> Vec<String> {
     match error {
         EngineError::Missing(_) => vec!["Reinstall @scribe-sdk/cli for this platform.".to_owned()],
         EngineError::VersionMismatch { .. } => {
-            vec!["Install matching Scribe package versions.".to_owned()]
+            vec!["Run `scribe update` to align every installed Scribe package.".to_owned()]
         }
         EngineError::ProtocolMismatch { .. } => {
             vec!["Update the complete Scribe installation together.".to_owned()]
