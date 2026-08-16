@@ -22,7 +22,7 @@
     },
     "packages/cli": {
       "name": "@scribe-sdk/cli",
-      "version": "0.1.0-beta",
+      "version": "0.1.0-beta.0",
       "bin": {
         "scribe": "./dist/bootstrap.mjs",
         "scb": "./dist/bootstrap.mjs",
@@ -37,9 +37,9 @@
         "@mdx-js/rollup": "3.1.1",
         "@mdxeditor/editor": "4.1.1",
         "@phosphor-icons/react": "2.1.10",
-        "@scribe-sdk/mdx": "0.1.0-beta",
-        "@scribe-sdk/react": "0.1.0-beta",
-        "@scribe-sdk/styles": "0.1.0-beta",
+        "@scribe-sdk/mdx": "0.1.0-beta.0",
+        "@scribe-sdk/react": "0.1.0-beta.0",
+        "@scribe-sdk/styles": "0.1.0-beta.0",
         "@vitejs/plugin-react": "6.0.3",
         "class-variance-authority": "0.7.1",
         "clsx": "2.1.1",
@@ -59,56 +59,14 @@
       "devDependencies": {
         "@types/hast": "3.0.4",
       },
-      "optionalDependencies": {
-        "@scribe-sdk/cli-darwin-arm64": "0.1.0-beta",
-        "@scribe-sdk/cli-darwin-x64": "0.1.0-beta",
-        "@scribe-sdk/cli-linux-arm64-gnu": "0.1.0-beta",
-        "@scribe-sdk/cli-linux-arm64-musl": "0.1.0-beta",
-        "@scribe-sdk/cli-linux-x64-gnu": "0.1.0-beta",
-        "@scribe-sdk/cli-linux-x64-musl": "0.1.0-beta",
-        "@scribe-sdk/cli-win32-arm64-msvc": "0.1.0-beta",
-        "@scribe-sdk/cli-win32-x64-msvc": "0.1.0-beta",
-      },
       "peerDependencies": {
         "react": "19.2.7",
         "react-dom": "19.2.7",
       },
     },
-    "packages/cli-native/darwin-arm64": {
-      "name": "@scribe-sdk/cli-darwin-arm64",
-      "version": "0.1.0-beta",
-    },
-    "packages/cli-native/darwin-x64": {
-      "name": "@scribe-sdk/cli-darwin-x64",
-      "version": "0.1.0-beta",
-    },
-    "packages/cli-native/linux-arm64-gnu": {
-      "name": "@scribe-sdk/cli-linux-arm64-gnu",
-      "version": "0.1.0-beta",
-    },
-    "packages/cli-native/linux-arm64-musl": {
-      "name": "@scribe-sdk/cli-linux-arm64-musl",
-      "version": "0.1.0-beta",
-    },
-    "packages/cli-native/linux-x64-gnu": {
-      "name": "@scribe-sdk/cli-linux-x64-gnu",
-      "version": "0.1.0-beta",
-    },
-    "packages/cli-native/linux-x64-musl": {
-      "name": "@scribe-sdk/cli-linux-x64-musl",
-      "version": "0.1.0-beta",
-    },
-    "packages/cli-native/win32-arm64-msvc": {
-      "name": "@scribe-sdk/cli-win32-arm64-msvc",
-      "version": "0.1.0-beta",
-    },
-    "packages/cli-native/win32-x64-msvc": {
-      "name": "@scribe-sdk/cli-win32-x64-msvc",
-      "version": "0.1.0-beta",
-    },
     "packages/mdx": {
       "name": "@scribe-sdk/mdx",
-      "version": "0.1.0-beta",
+      "version": "0.1.0-beta.0",
       "dependencies": {
         "@mdx-js/mdx": "3.1.1",
         "hast-util-to-string": "3.0.1",
@@ -129,7 +87,7 @@
     },
     "packages/react": {
       "name": "@scribe-sdk/react",
-      "version": "0.1.0-beta",
+      "version": "0.1.0-beta.0",
       "dependencies": {
         "mermaid": "11.16.1",
       },
@@ -145,7 +103,7 @@
     },
     "packages/styles": {
       "name": "@scribe-sdk/styles",
-      "version": "0.1.0-beta",
+      "version": "0.1.0-beta.0",
     },
     "tests/integration/next": {
       "name": "@scribe-sdk/seam-next",
@@ -772,22 +730,6 @@
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.62.2", "", { "os": "win32", "cpu": "x64" }, "sha512-BfzEnDJOt9T8M989/lA37EcJgat01wLRnoi5dQf3QzOH7jzpqTAzdDbVfRljVr5r+jzKqpbHeyOfAaXxAd0PAA=="],
 
     "@scribe-sdk/cli": ["@scribe-sdk/cli@workspace:packages/cli"],
-
-    "@scribe-sdk/cli-darwin-arm64": ["@scribe-sdk/cli-darwin-arm64@workspace:packages/cli-native/darwin-arm64"],
-
-    "@scribe-sdk/cli-darwin-x64": ["@scribe-sdk/cli-darwin-x64@workspace:packages/cli-native/darwin-x64"],
-
-    "@scribe-sdk/cli-linux-arm64-gnu": ["@scribe-sdk/cli-linux-arm64-gnu@workspace:packages/cli-native/linux-arm64-gnu"],
-
-    "@scribe-sdk/cli-linux-arm64-musl": ["@scribe-sdk/cli-linux-arm64-musl@workspace:packages/cli-native/linux-arm64-musl"],
-
-    "@scribe-sdk/cli-linux-x64-gnu": ["@scribe-sdk/cli-linux-x64-gnu@workspace:packages/cli-native/linux-x64-gnu"],
-
-    "@scribe-sdk/cli-linux-x64-musl": ["@scribe-sdk/cli-linux-x64-musl@workspace:packages/cli-native/linux-x64-musl"],
-
-    "@scribe-sdk/cli-win32-arm64-msvc": ["@scribe-sdk/cli-win32-arm64-msvc@workspace:packages/cli-native/win32-arm64-msvc"],
-
-    "@scribe-sdk/cli-win32-x64-msvc": ["@scribe-sdk/cli-win32-x64-msvc@workspace:packages/cli-native/win32-x64-msvc"],
 
     "@scribe-sdk/mdx": ["@scribe-sdk/mdx@workspace:packages/mdx"],
 
