@@ -22,10 +22,11 @@ describe("prerelease package publisher", () => {
   it("publishes every missing package explicitly to beta without moving alpha", async () => {
     const root = await releaseFixture();
     const versions = new Map(publicPackages.map(({ name }) => [name, ["0.1.0-alpha.10"]]));
-    const tags = new Map<string, { alpha: string; beta: string }>(
+    const tags = new Map<string, { alpha: string; beta: string; latest: string }>(
       publicPackages.map(({ name }) => [name, {
         alpha: "0.1.0-alpha.10",
-        beta: "0.1.0-alpha.10"
+        beta: "0.1.0-alpha.10",
+        latest: "0.1.0-alpha.10"
       }])
     );
     const published: Array<{ name: string; tarball: string; tag: string }> = [];
@@ -38,8 +39,12 @@ describe("prerelease package publisher", () => {
         publishTarball: async (name, tarball, tag) => {
           published.push({ name, tarball, tag });
           versions.get(name)?.push("0.1.0-beta");
-          const previous = tags.get(name) as { alpha: string; beta: string };
+          const previous = tags.get(name) as { alpha: string; beta: string; latest: string };
           tags.set(name, { ...previous, beta: "0.1.0-beta" });
+        },
+        setDistTag: async (name, version, tag) => {
+          const previous = tags.get(name) as { alpha: string; beta: string; latest: string };
+          tags.set(name, { ...previous, [tag]: version });
         }
       }
     });
@@ -48,6 +53,7 @@ describe("prerelease package publisher", () => {
     expect(published.every(({ tag }) => tag === "beta")).toBe(true);
     expect(published.at(-1)?.tarball.endsWith("scribe-sdk-cli-0.1.0-beta.tgz")).toBe(true);
     expect([...tags.values()].every(({ alpha }) => alpha === "0.1.0-alpha.10")).toBe(true);
+    expect([...tags.values()].every(({ latest }) => latest === "0.1.0-beta")).toBe(true);
   });
 
   it("skips published packages and fails closed when beta never converges", async () => {
@@ -66,7 +72,8 @@ describe("prerelease package publisher", () => {
         }),
         publishTarball: async (name) => {
           published.push(name);
-        }
+        },
+        setDistTag: async () => undefined
       }
     })).rejects.toThrow("has beta=0.1.0-alpha.10; expected 0.1.0-beta");
   });
@@ -80,8 +87,9 @@ describe("prerelease package publisher", () => {
       root: alphaRoot,
       registry: {
         versions: async () => ["0.1.0-alpha.10"],
-        distTags: async () => ({ alpha: "0.1.0-alpha.10" }),
-        publishTarball: async () => undefined
+        distTags: async () => ({ alpha: "0.1.0-alpha.10", latest: "0.1.0-alpha.10" }),
+        publishTarball: async () => undefined,
+        setDistTag: async () => undefined
       }
     })).resolves.toBeUndefined();
 
@@ -95,7 +103,8 @@ describe("prerelease package publisher", () => {
         registry: {
           versions: async () => [],
           distTags: async () => ({}),
-          publishTarball: async () => undefined
+          publishTarball: async () => undefined,
+          setDistTag: async () => undefined
         }
       })).rejects.toThrow("alpha or beta prerelease mode");
     }
