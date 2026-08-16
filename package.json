@@ -13,7 +13,7 @@
     "postcss": "8.5.19"
   },
   "scripts": {
-    "build": "tsdown --workspace",
+    "build": "bun node_modules/tsdown/dist/run.mjs --workspace",
     "changeset": "changeset",
     "changeset:status": "changeset status",
     "docs:check": "node scripts/sync-package-docs.mjs --check",
