@@ -567,7 +567,7 @@ The current Scribe 0.1.0-beta matrix uses fresh packed tarballs for installation
 
 - Framework integrations: React 19.2.7, MDX 3.1.1, Vite 8.1.3, `@vitejs/plugin-react` 6.0.3, Next.js 16.2.11, `@next/mdx` 16.2.11, and `next-mdx-remote` 6.0.0.
 - Declarations: TypeScript 7.0.2 and 6.0.2 with `skipLibCheck: false`.
-- Package and CLI portability: Linux, Windows, and macOS using Bun 1.3.13 and an npm-compatible install flow.
+- Package and CLI portability: Linux, Windows, and macOS using Bun 1.3.14 and an npm-compatible install flow.
 - Browser behavior: current Playwright-managed Chromium and Firefox, including console errors, uncaught page errors, host isolation, and narrow-viewport overflow.
 
 WebKit and Safari are not verified for this prerelease. These are tested configurations, not a claim that other modern versions cannot work. Package tarballs prove installation and production-build boundaries; the browser suites exercise the same built package output through repository integration fixtures. Host fonts may rasterize differently across operating systems, so Scribe verifies structure and behavior rather than identical glyph pixels.

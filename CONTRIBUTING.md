@@ -76,7 +76,7 @@ For the reasoning behind these boundaries, read [Architecture](./docs/ARCHITECTU
 
 ## Development setup
 
-Scribe uses Bun 1.3.13 in CI. From the repository root:
+Scribe uses Bun 1.3.14 in CI. From the repository root:
 
 ```bash
 bun install --frozen-lockfile
