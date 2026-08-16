@@ -19,15 +19,10 @@ export async function stageNativeCli({ target, source, rootDirectory = root }) {
   const definition = targets[target];
   if (definition === undefined) throw new Error(`Unsupported Rust target ${target}.`);
   const [directory, binaryName] = definition;
-  const packageDirectory = join(rootDirectory, "packages/cli-native", directory);
-  const destination = join(packageDirectory, "bin", binaryName);
-  const manifestPath = join(packageDirectory, "package.json");
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const packageDirectory = join(rootDirectory, "packages/cli/native", directory);
+  const destination = join(packageDirectory, binaryName);
   const cli = JSON.parse(await readFile(join(rootDirectory, "packages/cli/package.json"), "utf8"));
-  if (manifest.version !== cli.version) {
-    throw new Error(`${manifest.name}@${manifest.version} does not match @scribe-sdk/cli@${cli.version}.`);
-  }
-  await mkdir(dirname(destination), { recursive: true });
+  await mkdir(packageDirectory, { recursive: true });
   await copyFile(resolve(source), destination);
   if (process.platform !== "win32") await chmod(destination, 0o755);
   const sha256 = createHash("sha256")
@@ -35,8 +30,8 @@ export async function stageNativeCli({ target, source, rootDirectory = root }) {
     .digest("hex");
   const gitSha = process.env.GITHUB_SHA;
   const metadata = {
-    package: manifest.name,
-    version: manifest.version,
+    package: cli.name,
+    version: cli.version,
     target,
     binary: basename(destination),
     sha256,

@@ -3,7 +3,6 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { access, readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,7 +22,7 @@ export interface RuntimePlatform {
 }
 
 export interface NativeSelection {
-  readonly packageName: string;
+  readonly directory: string;
   readonly binary: string;
 }
 
@@ -74,43 +73,11 @@ export async function resolveNativeBinary(
   readonly selection: NativeSelection;
 }> {
   const selection = selectNativePackage(runtime);
-  const require = createRequire(resolve(root, "package.json"));
-
-  const manifestPath = require.resolve(
-    `${selection.packageName}/package.json`
-  );
-
-  const packageDirectory = dirname(manifestPath);
-
-  const manifest = object(
-    JSON.parse(await readFile(manifestPath, "utf8")) as unknown
-  );
-
-  const cliManifest = object(
-    JSON.parse(
-      await readFile(resolve(root, "package.json"), "utf8")
-    ) as unknown
-  );
-
-  const version = requiredString(
-    manifest.version,
-    `${selection.packageName} version`
-  );
-
-  const cliVersion = requiredString(
-    cliManifest.version,
-    "@scribe-sdk/cli version"
-  );
-
-  if (version !== cliVersion) {
-    throw new Error(
-      `${selection.packageName}@${version} does not match @scribe-sdk/cli@${cliVersion}.`
-    );
-  }
 
   const path = resolve(
-    packageDirectory,
-    "bin",
+    root,
+    "native",
+    selection.directory,
     selection.binary
   );
 
@@ -162,7 +129,7 @@ export async function runBootstrap(
     binary = (await resolveNativeBinary()).path;
   } catch (error) {
     throw new Error(
-      `${errorMessage(error)} Reinstall @scribe-sdk/cli so npm can install the matching optional platform package.`
+      `${errorMessage(error)} The @scribe-sdk/cli package is missing the native binary for this platform.`
     );
   }
 
@@ -264,8 +231,13 @@ function native(
       ? prefix
       : `${prefix}${suffix}`;
 
+  const directory =
+    name.startsWith("cli-")
+      ? name.slice("cli-".length)
+      : name;
+
   return {
-    packageName: `@scribe-sdk/${name}`,
+    directory,
     binary
   };
 }

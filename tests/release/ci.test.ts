@@ -33,7 +33,7 @@ describe("public CI contract", () => {
     expect(workflow).not.toMatch(/^\s+- webkit$/mu);
     expect(workflow).toContain("fetch-depth: 0");
     expect(workflow).toContain("oven-sh/setup-bun@v2");
-    expect(workflow).toContain('bun-version: "1.3.13"');
+    expect(workflow).toContain('bun-version: "1.3.14"');
     expect(workflow).not.toMatch(/npm[_-]?token|NODE_AUTH_TOKEN|changesets\/action|npm publish/iu);
   });
 

@@ -2,10 +2,9 @@
   "name": "scribe-workspace",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.3.13",
+  "packageManager": "bun@1.3.14",
   "workspaces": [
     "packages/*",
-    "packages/cli-native/*",
     "tests/integration/*"
   ],
   "overrides": {

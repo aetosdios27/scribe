@@ -9,15 +9,17 @@ const packages = [
   { name: "@scribe-sdk/mdx", directory: "mdx", runtime: "dist/" },
   { name: "@scribe-sdk/react", directory: "react", runtime: "dist/" },
   { name: "@scribe-sdk/styles", directory: "styles", runtime: "default.css" },
-  { name: "@scribe-sdk/cli", directory: "cli", runtime: "dist/bootstrap.mjs" },
-  { name: "@scribe-sdk/cli-linux-x64-gnu", directory: "cli-native/linux-x64-gnu", runtime: "bin/scribe-cli", native: true },
-  { name: "@scribe-sdk/cli-linux-x64-musl", directory: "cli-native/linux-x64-musl", runtime: "bin/scribe-cli", native: true },
-  { name: "@scribe-sdk/cli-linux-arm64-gnu", directory: "cli-native/linux-arm64-gnu", runtime: "bin/scribe-cli", native: true },
-  { name: "@scribe-sdk/cli-linux-arm64-musl", directory: "cli-native/linux-arm64-musl", runtime: "bin/scribe-cli", native: true },
-  { name: "@scribe-sdk/cli-darwin-x64", directory: "cli-native/darwin-x64", runtime: "bin/scribe-cli", native: true },
-  { name: "@scribe-sdk/cli-darwin-arm64", directory: "cli-native/darwin-arm64", runtime: "bin/scribe-cli", native: true },
-  { name: "@scribe-sdk/cli-win32-x64-msvc", directory: "cli-native/win32-x64-msvc", runtime: "bin/scribe-cli.exe", native: true },
-  { name: "@scribe-sdk/cli-win32-arm64-msvc", directory: "cli-native/win32-arm64-msvc", runtime: "bin/scribe-cli.exe", native: true }
+  { name: "@scribe-sdk/cli", directory: "cli", runtime: "dist/bootstrap.mjs" }
+];
+const nativeRuntimes = [
+  ["linux-x64-gnu", "scribe-cli"],
+  ["linux-x64-musl", "scribe-cli"],
+  ["linux-arm64-gnu", "scribe-cli"],
+  ["linux-arm64-musl", "scribe-cli"],
+  ["darwin-x64", "scribe-cli"],
+  ["darwin-arm64", "scribe-cli"],
+  ["win32-x64-msvc", "scribe-cli.exe"],
+  ["win32-arm64-msvc", "scribe-cli.exe"]
 ];
 const forbidden = /(^|\/)(src|tests?|fixtures?|screenshots?|playwright-report|coverage|\.changeset|\.env|\.git)(\/|$)|\.(png|snap|map)$/u;
 const repositoryOnlyDocuments = new Set(["RELEASING.md", "RELEASE_NOTES.md", "CHANGELOG.md"]);
@@ -30,9 +32,7 @@ for (const expected of packages) {
   const file = `${artifactName}-${version}.tgz`;
   const archiveEntries = readTarball(await readFile(join(directory, file)));
   const entries = archiveEntries.map((entry) => entry.path.replace(/^package\//u, ""));
-  const requiredEntries = expected.native === true
-    ? ["package.json", "LICENSE", expected.runtime, "build-metadata.json"]
-    : ["package.json", "README.md", "SKILL.md", "LICENSE", expected.runtime];
+  const requiredEntries = ["package.json", "README.md", "SKILL.md", "LICENSE", expected.runtime];
   for (const required of requiredEntries) {
     if (!entries.some((entry) => entry === required || entry.startsWith(required))) {
       throw new Error(`${file} is missing ${required}.`);
@@ -60,21 +60,23 @@ for (const expected of packages) {
     if (!executable || (executable.mode & 0o111) === 0) {
       throw new Error(`${file}:dist/bootstrap.mjs is not executable.`);
     }
-  }
-  if (expected.native === true) {
-    for (const required of ["build-metadata.json", expected.runtime]) {
-      if (!entries.includes(required)) throw new Error(`${file} is missing ${required}.`);
+
+    for (const [nativeDirectory, binary] of nativeRuntimes) {
+      const binaryPath = `native/${nativeDirectory}/${binary}`;
+      if (!entries.includes(binaryPath)) throw new Error(`${file} is missing bundled binary ${binaryPath}.`);
+      const binaryEntry = archiveEntries.find((entry) => entry.path === `package/${binaryPath}`);
+      if (!binaryEntry || (!binaryPath.endsWith(".exe") && (binaryEntry.mode & 0o111) === 0)) {
+        throw new Error(`${file}:${binaryPath} is not executable.`);
+      }
+      const metadataPath = `native/${nativeDirectory}/build-metadata.json`;
+      if (!entries.includes(metadataPath)) throw new Error(`${file} is missing ${metadataPath}.`);
+      const metadata = JSON.parse(entryText(archiveEntries, `package/${metadataPath}`, file));
+      if (metadata.package !== manifest.name || metadata.version !== manifest.version) {
+        throw new Error(`${file} contains mismatched native build metadata for ${nativeDirectory}.`);
+      }
+      const digest = createHash("sha256").update(binaryEntry.content).digest("hex");
+      if (metadata.sha256 !== digest) throw new Error(`${file}:${binaryPath} has a mismatched digest.`);
     }
-    const executable = archiveEntries.find((entry) => entry.path === `package/${expected.runtime}`);
-    if (!executable || (!expected.runtime.endsWith(".exe") && (executable.mode & 0o111) === 0)) {
-      throw new Error(`${file}:${expected.runtime} is not executable.`);
-    }
-    const metadata = JSON.parse(entryText(archiveEntries, "package/build-metadata.json", file));
-    if (metadata.package !== manifest.name || metadata.version !== manifest.version) {
-      throw new Error(`${file} contains mismatched native build metadata.`);
-    }
-    const digest = createHash("sha256").update(executable.content).digest("hex");
-    if (metadata.sha256 !== digest) throw new Error(`${file} contains a native binary with a mismatched digest.`);
   }
   const declarationEntries = entries.filter((entry) => entry.endsWith(".d.mts"));
   for (const entry of declarationEntries) {

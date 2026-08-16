@@ -1,0 +1,4 @@
+[install]
+linker = "isolated"
+globalStore = false
+hoistPattern = ["*"]

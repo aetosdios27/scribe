@@ -2,38 +2,9 @@ import { spawnSync } from "node:child_process";
 
 run("bunx", ["changeset", "version"]);
 run("bun", ["install"]);
-const version = await alignNativePackages();
-await alignRustCrate(version);
+await alignRustCrate();
 
-
-async function alignNativePackages() {
-  const { readFile, writeFile } = await import("node:fs/promises");
-  const { join } = await import("node:path");
-  const root = process.cwd();
-  const cli = JSON.parse(await readFile(join(root, "packages/cli/package.json"), "utf8"));
-  const directories = [
-    "linux-x64-gnu",
-    "linux-x64-musl",
-    "linux-arm64-gnu",
-    "linux-arm64-musl",
-    "darwin-x64",
-    "darwin-arm64",
-    "win32-x64-msvc",
-    "win32-arm64-msvc"
-  ];
-  for (const directory of directories) {
-    const path = join(root, "packages/cli-native", directory, "package.json");
-    const manifest = JSON.parse(await readFile(path, "utf8"));
-    manifest.version = cli.version;
-    cli.optionalDependencies[manifest.name] = cli.version;
-    await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`);
-  }
-  await writeFile(join(root, "packages/cli/package.json"), `${JSON.stringify(cli, null, 2)}\n`);
-  run("bun", ["install"]);
-  return cli.version;
-}
-
-async function alignRustCrate(version) {
+async function alignRustCrate() {
   // The release job that runs this script does not install a Rust
   // toolchain, so keep Cargo.toml and Cargo.lock in sync with plain
   // text edits instead of shelling out to `cargo`. scribe-cli is the
@@ -43,6 +14,9 @@ async function alignRustCrate(version) {
   const { readFile, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const root = process.cwd();
+
+  const cli = JSON.parse(await readFile(join(root, "packages/cli/package.json"), "utf8"));
+  const version = cli.version;
 
   const cargoTomlPath = join(root, "Cargo.toml");
   const cargoToml = await readFile(cargoTomlPath, "utf8");
