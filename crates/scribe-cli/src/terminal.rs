@@ -14,7 +14,7 @@ use crossterm::{
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
@@ -331,7 +331,7 @@ pub fn open_frame(capabilities: Capabilities) -> Option<BoxFrame> {
         return None;
     }
 
-    let interior = usize::from(capabilities.columns).saturating_sub(4).min(74);
+    let interior = usize::from(capabilities.columns).saturating_sub(4).min(62);
 
     Some(BoxFrame {
         interior,
@@ -653,52 +653,6 @@ fn wrap_value(value: &str, gutter: usize, width: usize) -> Vec<String> {
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EditOutcome {
-    Continue,
-    Submit,
-    Cancel,
-}
-
-/// A single-line, append/backspace-at-end text buffer. Deliberately does not
-/// support mid-line cursor movement — kept as a small, fully testable state
-/// machine separate from the raw-mode I/O loop that drives it.
-#[derive(Debug, Default)]
-struct LineEditor {
-    buffer: String,
-}
-
-impl LineEditor {
-    fn apply_key(&mut self, key: KeyEvent) -> EditOutcome {
-        match key.code {
-            KeyCode::Enter => EditOutcome::Submit,
-
-            KeyCode::Esc => EditOutcome::Cancel,
-
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                EditOutcome::Cancel
-            }
-
-            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.buffer.clear();
-                EditOutcome::Continue
-            }
-
-            KeyCode::Backspace => {
-                self.buffer.pop();
-                EditOutcome::Continue
-            }
-
-            KeyCode::Char(character) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.buffer.push(character);
-                EditOutcome::Continue
-            }
-
-            _ => EditOutcome::Continue,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConfirmOutcome {
     Continue,
     Yes,
@@ -775,49 +729,6 @@ fn next_key_press() -> io::Result<KeyEvent> {
     }
 }
 
-pub fn prompt_text(
-    label: &str,
-    initial: Option<&str>,
-    frame: Option<BoxFrame>,
-) -> io::Result<Option<String>> {
-    let capabilities = Capabilities::detect();
-    let mut stdout = io::stdout();
-    let mut editor = LineEditor::default();
-
-    write_prompt_line(&mut stdout, label, initial, "", capabilities, frame)?;
-
-    enable_raw_mode()?;
-
-    let outcome = loop {
-        let key = next_key_press()?;
-
-        let outcome = editor.apply_key(key);
-
-        write_prompt_line(
-            &mut stdout,
-            label,
-            initial,
-            &editor.buffer,
-            capabilities,
-            frame,
-        )?;
-
-        if outcome != EditOutcome::Continue {
-            break outcome;
-        }
-    };
-
-    disable_raw_mode()?;
-    writeln!(stdout)?;
-
-    match outcome {
-        EditOutcome::Cancel => Ok(None),
-        EditOutcome::Submit if editor.buffer.is_empty() => Ok(initial.map(ToOwned::to_owned)),
-        EditOutcome::Submit => Ok(Some(editor.buffer)),
-        EditOutcome::Continue => unreachable!("the loop only breaks on Submit or Cancel"),
-    }
-}
-
 pub fn prompt_confirm(
     label: &str,
     initial: bool,
@@ -857,6 +768,268 @@ pub fn prompt_confirm(
         ConfirmOutcome::Cancel => Ok(None),
         ConfirmOutcome::Continue => unreachable!("the loop only breaks on a resolved outcome"),
     }
+}
+
+// -----------------------------------------------------------------------------
+// Boxed multi-field form
+// -----------------------------------------------------------------------------
+//
+// `prompt_text`/`prompt_confirm` above are a scrollback-append trick: each
+// field commits a real newline before the next field's prompt even exists,
+// so a box drawn around a sequence of them only ever reveals its own shape
+// one committed Enter at a time, and the terminal cursor is just wherever
+// the last redraw left it — never a cursor genuinely positioned inside a
+// drawn structure. That's fine for a single field. It reads as broken for
+// several, because several fields is a form, and a form needs the whole box
+// to exist from the first frame and its fields to be navigable, not just
+// sequential.
+//
+// This reuses the exact `Viewport::Inline` + `Terminal::draw` mechanism
+// `draw_inline_frame` already established for the splash: a fixed-height
+// region redrawn atomically every frame against the terminal's *current*
+// size, with the real cursor placed via `set_cursor_position`. The splash
+// never edits itself, so it only ever draws once (or through a fixed
+// animation); a form redraws on every keystroke and every focus change.
+
+pub struct FormField {
+    pub label: &'static str,
+    pub buffer: String,
+    pub placeholder: String,
+}
+
+impl FormField {
+    pub fn new(label: &'static str) -> Self {
+        Self {
+            label,
+            buffer: String::new(),
+            placeholder: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormOutcome {
+    Submitted,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormAction {
+    Type(char),
+    Backspace,
+    Clear,
+    FocusNext,
+    FocusPrev,
+    Cancel,
+    Continue,
+}
+
+fn form_action(key: KeyEvent) -> FormAction {
+    match key.code {
+        KeyCode::Esc => FormAction::Cancel,
+
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => FormAction::Cancel,
+
+        KeyCode::Up | KeyCode::BackTab => FormAction::FocusPrev,
+
+        KeyCode::Down | KeyCode::Tab | KeyCode::Enter => FormAction::FocusNext,
+
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => FormAction::Clear,
+
+        KeyCode::Backspace => FormAction::Backspace,
+
+        KeyCode::Char(character) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            FormAction::Type(character)
+        }
+
+        _ => FormAction::Continue,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormStep {
+    Edit,
+    Advance(usize),
+    Submit,
+    Cancel,
+}
+
+/// Pure focus-transition logic: what a key's `FormAction` means given where
+/// focus currently is and how many fields exist. Separated from the
+/// raw-mode I/O loop so it's directly testable, the same way `LineEditor`'s
+/// key handling already is.
+fn form_step(action: FormAction, focused: usize, field_count: usize) -> FormStep {
+    match action {
+        FormAction::Cancel => FormStep::Cancel,
+
+        FormAction::FocusPrev => FormStep::Advance(focused.saturating_sub(1)),
+
+        FormAction::FocusNext => {
+            if focused + 1 < field_count {
+                FormStep::Advance(focused + 1)
+            } else {
+                FormStep::Submit
+            }
+        }
+
+        FormAction::Type(_) | FormAction::Backspace | FormAction::Clear | FormAction::Continue => {
+            FormStep::Edit
+        }
+    }
+}
+
+/// Runs `fields` as one inline-viewport form: every field's row is visible
+/// from the first frame, arrow keys (or Tab/Shift+Tab) move focus between
+/// already-reachable fields freely, and the real cursor tracks whichever
+/// field is focused. `Enter`/`Tab`/`Down` on the last field submits.
+///
+/// `on_leave_field(index, fields)` fires exactly once per field, the first
+/// time focus advances *past* it — the hook for fetching a derived default
+/// for the next field (an engine round-trip, typically). Navigating back to
+/// an already-left field and forward again does not re-fire it; there's no
+/// silent re-derivation, the user can just retype a downstream value if an
+/// earlier one changed.
+///
+/// Generic over the caller's error type via `to_error`, the same pattern
+/// `run_stage` uses, so this stays engine-agnostic.
+pub fn run_boxed_form<E>(
+    tag: &str,
+    fields: &mut [FormField],
+    capabilities: Capabilities,
+    to_error: impl Fn(io::Error) -> E,
+    mut on_leave_field: impl FnMut(usize, &mut [FormField]) -> Result<(), E>,
+) -> Result<FormOutcome, E> {
+    if fields.is_empty() {
+        return Ok(FormOutcome::Submitted);
+    }
+
+    let field_count = fields.len();
+    let height = u16::try_from(field_count)
+        .unwrap_or(u16::MAX)
+        .saturating_add(2);
+
+    let backend = CrosstermBackend::new(io::stdout());
+    let mut terminal = Terminal::with_options(
+        backend,
+        ratatui::TerminalOptions {
+            viewport: ratatui::Viewport::Inline(height),
+        },
+    )
+    .map_err(&to_error)?;
+
+    enable_raw_mode().map_err(&to_error)?;
+
+    let mut focused = 0usize;
+    let mut frontier = 0usize;
+
+    let outcome: Result<FormOutcome, E> = loop {
+        if let Err(error) = draw_form_frame(&mut terminal, tag, fields, focused, capabilities) {
+            break Err(to_error(error));
+        }
+
+        let key = match next_key_press() {
+            Ok(key) => key,
+            Err(error) => break Err(to_error(error)),
+        };
+
+        match form_step(form_action(key), focused, field_count) {
+            FormStep::Cancel => break Ok(FormOutcome::Cancelled),
+
+            FormStep::Submit => break Ok(FormOutcome::Submitted),
+
+            FormStep::Advance(next) => {
+                if next > focused && focused == frontier {
+                    if let Err(error) = on_leave_field(focused, fields) {
+                        break Err(error);
+                    }
+                    frontier = next;
+                }
+                focused = next;
+            }
+
+            FormStep::Edit => match form_action(key) {
+                FormAction::Type(character) => fields[focused].buffer.push(character),
+                FormAction::Backspace => {
+                    fields[focused].buffer.pop();
+                }
+                FormAction::Clear => fields[focused].buffer.clear(),
+                FormAction::FocusNext
+                | FormAction::FocusPrev
+                | FormAction::Cancel
+                | FormAction::Continue => {}
+            },
+        }
+    };
+
+    disable_raw_mode().map_err(&to_error)?;
+    terminal.show_cursor().map_err(&to_error)?;
+
+    outcome
+}
+
+fn draw_form_frame(
+    terminal: &mut InlineTerminal,
+    tag: &str,
+    fields: &[FormField],
+    focused: usize,
+    capabilities: Capabilities,
+) -> io::Result<()> {
+    terminal
+        .draw(|frame| {
+            let full_area = frame.area();
+            let width = full_area.width.min(66);
+            let area = Rect::new(full_area.x, full_area.y, width, full_area.height);
+
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(Span::styled(
+                    format!(" {tag} "),
+                    screen_style(Tone::Brand, capabilities.color),
+                ))
+                .border_style(screen_style(Tone::Brand, capabilities.color));
+
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![Constraint::Length(1); fields.len()])
+                .split(inner);
+
+            let mut cursor = None;
+
+            for (index, field) in fields.iter().enumerate() {
+                let label = format!("{:<LABEL_WIDTH$}  ", field.label);
+
+                let (value_text, value_style) = if field.buffer.is_empty() {
+                    (
+                        field.placeholder.as_str(),
+                        screen_style(Tone::Dim, capabilities.color),
+                    )
+                } else {
+                    (field.buffer.as_str(), Style::default())
+                };
+
+                let line = Line::from(vec![
+                    Span::styled(label.clone(), screen_style(Tone::Dim, capabilities.color)),
+                    Span::styled(value_text, value_style),
+                ]);
+
+                frame.render_widget(Paragraph::new(line), rows[index]);
+
+                if index == focused {
+                    let x = rows[index].x
+                        + u16::try_from(label.chars().count()).unwrap_or(0)
+                        + u16::try_from(field.buffer.chars().count()).unwrap_or(0);
+                    cursor = Some((x, rows[index].y));
+                }
+            }
+
+            if let Some((x, y)) = cursor {
+                frame.set_cursor_position((x, y));
+            }
+        })
+        .map(|_| ())
 }
 
 // -----------------------------------------------------------------------------
@@ -1440,56 +1613,6 @@ mod tests {
     }
 
     #[test]
-    fn line_editor_appends_and_submits() {
-        let mut editor = LineEditor::default();
-
-        assert_eq!(
-            editor.apply_key(key(KeyCode::Char('h'), KeyModifiers::NONE)),
-            EditOutcome::Continue
-        );
-
-        assert_eq!(
-            editor.apply_key(key(KeyCode::Char('i'), KeyModifiers::NONE)),
-            EditOutcome::Continue
-        );
-
-        assert_eq!(editor.buffer, "hi");
-
-        assert_eq!(
-            editor.apply_key(key(KeyCode::Enter, KeyModifiers::NONE)),
-            EditOutcome::Submit
-        );
-    }
-
-    #[test]
-    fn line_editor_backspace_removes_the_last_character() {
-        let mut editor = LineEditor::default();
-
-        editor.apply_key(key(KeyCode::Char('h'), KeyModifiers::NONE));
-        editor.apply_key(key(KeyCode::Char('i'), KeyModifiers::NONE));
-        editor.apply_key(key(KeyCode::Backspace, KeyModifiers::NONE));
-
-        assert_eq!(editor.buffer, "h");
-    }
-
-    #[test]
-    fn line_editor_ctrl_c_and_esc_both_cancel() {
-        let mut esc = LineEditor::default();
-
-        assert_eq!(
-            esc.apply_key(key(KeyCode::Esc, KeyModifiers::NONE)),
-            EditOutcome::Cancel
-        );
-
-        let mut ctrl_c = LineEditor::default();
-
-        assert_eq!(
-            ctrl_c.apply_key(key(KeyCode::Char('c'), KeyModifiers::CONTROL)),
-            EditOutcome::Cancel
-        );
-    }
-
-    #[test]
     fn confirm_key_accepts_yes_and_no_regardless_of_case() {
         assert_eq!(
             apply_confirm_key(key(KeyCode::Char('Y'), KeyModifiers::NONE), false),
@@ -1537,6 +1660,80 @@ mod tests {
     }
 
     #[test]
+    fn form_action_maps_navigation_and_editing_keys() {
+        assert_eq!(
+            form_action(key(KeyCode::Char('h'), KeyModifiers::NONE)),
+            FormAction::Type('h')
+        );
+        assert_eq!(
+            form_action(key(KeyCode::Backspace, KeyModifiers::NONE)),
+            FormAction::Backspace
+        );
+        assert_eq!(
+            form_action(key(KeyCode::Char('u'), KeyModifiers::CONTROL)),
+            FormAction::Clear
+        );
+        assert_eq!(
+            form_action(key(KeyCode::Down, KeyModifiers::NONE)),
+            FormAction::FocusNext
+        );
+        assert_eq!(
+            form_action(key(KeyCode::Tab, KeyModifiers::NONE)),
+            FormAction::FocusNext
+        );
+        assert_eq!(
+            form_action(key(KeyCode::Enter, KeyModifiers::NONE)),
+            FormAction::FocusNext
+        );
+        assert_eq!(
+            form_action(key(KeyCode::Up, KeyModifiers::NONE)),
+            FormAction::FocusPrev
+        );
+        assert_eq!(
+            form_action(key(KeyCode::BackTab, KeyModifiers::NONE)),
+            FormAction::FocusPrev
+        );
+        assert_eq!(
+            form_action(key(KeyCode::Esc, KeyModifiers::NONE)),
+            FormAction::Cancel
+        );
+        assert_eq!(
+            form_action(key(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            FormAction::Cancel
+        );
+    }
+
+    #[test]
+    fn form_step_advances_focus_within_bounds() {
+        assert_eq!(form_step(FormAction::FocusNext, 0, 3), FormStep::Advance(1));
+        assert_eq!(form_step(FormAction::FocusNext, 1, 3), FormStep::Advance(2));
+        assert_eq!(form_step(FormAction::FocusPrev, 1, 3), FormStep::Advance(0));
+    }
+
+    #[test]
+    fn form_step_clamps_focus_prev_at_the_first_field() {
+        assert_eq!(form_step(FormAction::FocusPrev, 0, 3), FormStep::Advance(0));
+    }
+
+    #[test]
+    fn form_step_submits_on_focus_next_from_the_last_field() {
+        assert_eq!(form_step(FormAction::FocusNext, 2, 3), FormStep::Submit);
+    }
+
+    #[test]
+    fn form_step_cancels_regardless_of_focus() {
+        assert_eq!(form_step(FormAction::Cancel, 1, 3), FormStep::Cancel);
+    }
+
+    #[test]
+    fn form_step_treats_editing_actions_as_edit() {
+        assert_eq!(form_step(FormAction::Type('x'), 0, 3), FormStep::Edit);
+        assert_eq!(form_step(FormAction::Backspace, 0, 3), FormStep::Edit);
+        assert_eq!(form_step(FormAction::Clear, 0, 3), FormStep::Edit);
+        assert_eq!(form_step(FormAction::Continue, 0, 3), FormStep::Edit);
+    }
+
+    #[test]
     fn should_box_requires_interactive_and_wide_enough() {
         let narrow = Capabilities {
             interactive: true,
@@ -1573,7 +1770,7 @@ mod tests {
 
         let frame = open_frame(capabilities).expect("wide enough to box");
 
-        assert_eq!(frame.interior, 74);
+        assert_eq!(frame.interior, 62);
     }
 
     #[test]
