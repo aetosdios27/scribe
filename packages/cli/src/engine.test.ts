@@ -96,6 +96,46 @@ describe("engine protocol", () => {
     expect(Array.isArray(failures) ? failures : []).toHaveLength(2);
   });
 
+  it("does not crash with a raw stack trace when its stdout pipe closes mid-write", async () => {
+    const child = spawn("bun", [engineSource, "--engine"], {
+      cwd: workspaceRoot,
+      env: { ...process.env, NO_COLOR: "1" },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    child.stdin.write(`${JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: 1,
+        cliVersion: packageVersion,
+        cwd: workspaceRoot,
+        invokedBinary: "scribe"
+      }
+    })}\n`);
+
+    await new Promise((resolveData) => child.stdout.once("data", resolveData));
+
+    // Simulate the parent process's read end disappearing mid-session, the
+    // way a native CLI's own process death used to tear the pipe out from
+    // under an in-flight engine write.
+    child.stdout.destroy();
+
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "status", params: {} })}\n`);
+    child.stdin.end();
+
+    await new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()));
+
+    expect(stderr).not.toContain("EPIPE");
+    expect(stderr).not.toContain("Emitted 'error' event");
+  });
+
   it("uses the default Studio port when none or null is provided", () => {
     expect(resolveStudioPort(undefined)).toBe(4317);
     expect(resolveStudioPort(null)).toBe(4317);
