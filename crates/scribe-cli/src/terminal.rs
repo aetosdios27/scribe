@@ -303,13 +303,288 @@ impl<W: Write> Presenter<W> {
 }
 
 // -----------------------------------------------------------------------------
+// Boxed panels
+// -----------------------------------------------------------------------------
+
+/// Geometry and style for one open labeled box. Cheap to copy around; the
+/// box itself has no live state beyond this — callers draw the top border,
+/// write framed content, then draw the bottom border explicitly, which lets
+/// a single box span multiple unrelated calls (a `Presenter` for streamed
+/// events, then a raw-mode prompt, then a `Presenter` again for a receipt).
+#[derive(Clone, Copy)]
+pub struct BoxFrame {
+    interior: usize,
+    unicode: bool,
+    color: bool,
+}
+
+/// Boxes need real room: a narrow or piped terminal gets today's plain,
+/// unboxed rendering instead.
+fn should_box(capabilities: Capabilities) -> bool {
+    capabilities.interactive && capabilities.columns >= 60
+}
+
+/// Opens a box frame if the terminal has room for one, sized to the
+/// terminal's width and capped so it stays readable on very wide terminals.
+pub fn open_frame(capabilities: Capabilities) -> Option<BoxFrame> {
+    if !should_box(capabilities) {
+        return None;
+    }
+
+    let interior = usize::from(capabilities.columns).saturating_sub(4).min(74);
+
+    Some(BoxFrame {
+        interior,
+        unicode: capabilities.unicode,
+        color: capabilities.color,
+    })
+}
+
+/// A `Presenter` writing inside a box must wrap its own long values to the
+/// box's interior width, not the full terminal width.
+fn frame_capabilities(frame: BoxFrame, capabilities: Capabilities) -> Capabilities {
+    Capabilities {
+        columns: u16::try_from(frame.interior).unwrap_or(u16::MAX),
+        ..capabilities
+    }
+}
+
+struct BoxChars {
+    tl: &'static str,
+    tr: &'static str,
+    bl: &'static str,
+    br: &'static str,
+    h: &'static str,
+    v: &'static str,
+}
+
+fn box_chars(unicode: bool) -> BoxChars {
+    if unicode {
+        BoxChars {
+            tl: "┌",
+            tr: "┐",
+            bl: "└",
+            br: "┘",
+            h: "─",
+            v: "│",
+        }
+    } else {
+        BoxChars {
+            tl: "+",
+            tr: "+",
+            bl: "+",
+            br: "+",
+            h: "-",
+            v: "|",
+        }
+    }
+}
+
+/// Counts display columns, skipping ANSI SGR escape sequences (`ESC [ ... m`)
+/// so painted content still pads to the correct box width.
+fn visible_width(text: &str) -> usize {
+    let mut width = 0;
+    let mut chars = text.chars();
+
+    while let Some(character) = chars.next() {
+        if character == '\u{1b}' {
+            if chars.next() == Some('[') {
+                for next in chars.by_ref() {
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+
+        width += 1;
+    }
+
+    width
+}
+
+/// Draws a box's top border with its tag embedded: `┌─ TAG ────────┐`.
+pub fn write_box_top(writer: &mut impl Write, frame: BoxFrame, tag: &str) -> io::Result<()> {
+    let chars = box_chars(frame.unicode);
+    let label = format!(" {tag} ");
+    let label_width = label.chars().count();
+    let fill = (frame.interior + 2).saturating_sub(1 + label_width);
+
+    let border = format!(
+        "{}{}{label}{}{}",
+        chars.tl,
+        chars.h,
+        chars.h.repeat(fill),
+        chars.tr
+    );
+
+    writeln!(writer, "{}", paint(&border, Tone::Brand, frame.color))
+}
+
+/// Draws a box's bottom border: `└──────────────┘`.
+pub fn write_box_bottom(writer: &mut impl Write, frame: BoxFrame) -> io::Result<()> {
+    let chars = box_chars(frame.unicode);
+    let border = format!(
+        "{}{}{}",
+        chars.bl,
+        chars.h.repeat(frame.interior + 2),
+        chars.br
+    );
+
+    writeln!(writer, "{}", paint(&border, Tone::Brand, frame.color))
+}
+
+/// Closes `frame` if it is open. Every early return inside a boxed command
+/// flow calls this so the box's bottom border is never left unclosed.
+pub fn close_frame(frame: Option<BoxFrame>) -> io::Result<()> {
+    match frame {
+        Some(frame) => write_box_bottom(&mut io::stdout(), frame),
+        None => Ok(()),
+    }
+}
+
+/// Writes one line of content between a box's borders, padded to the
+/// interior width. `newline` controls whether the line is committed
+/// (`Presenter` output) or left for a live redraw to overwrite in place (raw
+/// mode prompts).
+fn write_box_content(
+    writer: &mut impl Write,
+    frame: BoxFrame,
+    content: &str,
+    newline: bool,
+) -> io::Result<()> {
+    let chars = box_chars(frame.unicode);
+    let bar = paint(chars.v, Tone::Brand, frame.color);
+    let pad = " ".repeat(frame.interior.saturating_sub(visible_width(content)));
+
+    if newline {
+        writeln!(writer, "{bar} {content}{pad} {bar}")
+    } else {
+        write!(writer, "{bar} {content}{pad} {bar}")
+    }
+}
+
+/// A `Write` adapter that formats every line passed through it as boxed
+/// content. Swapping this in for a `Presenter`'s writer is enough to box any
+/// of its existing methods (`plan`, `event`, `receipt`, ...) without
+/// changing their logic at all — this only ever sees already-formatted
+/// lines and reflows them between borders.
+pub struct BoxWriter<W: Write> {
+    inner: W,
+    frame: BoxFrame,
+    pending: String,
+}
+
+impl<W: Write> BoxWriter<W> {
+    const fn wrap(inner: W, frame: BoxFrame) -> Self {
+        Self {
+            inner,
+            frame,
+            pending: String::new(),
+        }
+    }
+}
+
+impl<W: Write> Write for BoxWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let text = String::from_utf8_lossy(buf);
+        let mut remainder: &str = &text;
+
+        while let Some(index) = remainder.find('\n') {
+            self.pending.push_str(&remainder[..index]);
+            let line = std::mem::take(&mut self.pending);
+            write_box_content(&mut self.inner, self.frame, &line, true)?;
+            remainder = &remainder[index + 1..];
+        }
+
+        self.pending.push_str(remainder);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+/// Either a bare writer or one boxing its output, sharing one type so a
+/// `Presenter` doesn't need to know which it got.
+pub enum StageWriter<W: Write> {
+    Plain(W),
+    Boxed(BoxWriter<W>),
+}
+
+impl<W: Write> Write for StageWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            Self::Plain(inner) => inner.write(buf),
+            Self::Boxed(inner) => inner.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Self::Plain(inner) => inner.flush(),
+            Self::Boxed(inner) => inner.flush(),
+        }
+    }
+}
+
+/// Builds a `Presenter` that boxes its output when `frame` is set, and
+/// writes plainly otherwise. The box's own top/bottom borders are the
+/// caller's responsibility (`write_box_top` / `close_frame`), so this can be
+/// called more than once for content that shares one open box.
+pub fn stage_presenter(
+    frame: Option<BoxFrame>,
+    capabilities: Capabilities,
+) -> Presenter<StageWriter<io::Stdout>> {
+    match frame {
+        Some(frame) => Presenter::new(
+            StageWriter::Boxed(BoxWriter::wrap(io::stdout(), frame)),
+            frame_capabilities(frame, capabilities),
+        ),
+        None => Presenter::new(StageWriter::Plain(io::stdout()), capabilities),
+    }
+}
+
+/// Runs `body` inside a freshly opened box tagged `tag` (or plainly, on a
+/// narrow/non-interactive terminal), closing the box afterward regardless of
+/// whether `body` succeeded — so a failed step still leaves a clean border
+/// instead of an open one. Generic over the caller's error type (rather than
+/// tying this module to `EngineError`) via `to_error`, which every call site
+/// simply passes an `Io`-style variant constructor for.
+pub fn run_stage<T, E>(
+    capabilities: Capabilities,
+    tag: &str,
+    to_error: impl Fn(io::Error) -> E,
+    body: impl FnOnce(&mut Presenter<StageWriter<io::Stdout>>) -> Result<T, E>,
+) -> Result<T, E> {
+    let frame = open_frame(capabilities);
+    let mut presenter = stage_presenter(frame, capabilities);
+
+    if let Some(frame) = frame {
+        write_box_top(&mut io::stdout(), frame, tag).map_err(&to_error)?;
+    }
+
+    let result = body(&mut presenter);
+
+    close_frame(frame).map_err(&to_error)?;
+
+    result
+}
+
+// -----------------------------------------------------------------------------
 // Shared row wrapping
 // -----------------------------------------------------------------------------
 
 /// Word-wraps `value` to `width` columns. The first returned line carries no
 /// indentation (the caller prepends its own label); every continuation line
 /// is padded with `gutter` spaces so it lines up under the value column
-/// instead of orphaning itself at column zero.
+/// instead of orphaning itself at column zero. A single "word" wider than
+/// the budget on its own (a path or URL with no whitespace to break on,
+/// most commonly) is hard-broken at the budget rather than left to overflow
+/// — load-bearing once this can render inside a fixed-width box, where an
+/// overlong line breaks the border instead of just looking long.
 fn wrap_value(value: &str, gutter: usize, width: usize) -> Vec<String> {
     let budget = width.saturating_sub(gutter).max(1);
 
@@ -317,22 +592,43 @@ fn wrap_value(value: &str, gutter: usize, width: usize) -> Vec<String> {
     let mut current = String::new();
 
     for word in value.split_whitespace() {
-        let candidate_len = if current.is_empty() {
-            word.chars().count()
-        } else {
-            current.chars().count() + 1 + word.chars().count()
-        };
+        let mut remaining = word;
 
-        if !current.is_empty() && candidate_len > budget {
-            lines.push(current);
-            current = String::new();
+        loop {
+            let remaining_len = remaining.chars().count();
+
+            let fits = if current.is_empty() {
+                remaining_len <= budget
+            } else {
+                current.chars().count() + 1 + remaining_len <= budget
+            };
+
+            if fits {
+                if !current.is_empty() {
+                    current.push(' ');
+                }
+                current.push_str(remaining);
+                break;
+            }
+
+            if !current.is_empty() {
+                lines.push(std::mem::take(&mut current));
+                continue;
+            }
+
+            let split = remaining
+                .char_indices()
+                .nth(budget)
+                .map_or(remaining.len(), |(index, _)| index);
+
+            if split == 0 {
+                lines.push(remaining.to_owned());
+                break;
+            }
+
+            lines.push(remaining[..split].to_owned());
+            remaining = &remaining[split..];
         }
-
-        if !current.is_empty() {
-            current.push(' ');
-        }
-
-        current.push_str(word);
     }
 
     lines.push(current);
@@ -440,22 +736,30 @@ fn apply_confirm_key(key: KeyEvent, initial: bool) -> ConfirmOutcome {
 
 /// Redraws one prompt line in place: `◆ Label [hint]  typed-value`, matching
 /// the same Brand symbol and Dim label treatment every other Scribe surface
-/// uses.
+/// uses. When `frame` is set, the line is drawn inside that box's borders
+/// instead of bare, so a prompt reads as part of the same panel as the
+/// content around it.
 fn write_prompt_line(
     stdout: &mut impl Write,
     label: &str,
     hint: Option<&str>,
     value: &str,
     capabilities: Capabilities,
+    frame: Option<BoxFrame>,
 ) -> io::Result<()> {
     execute!(stdout, MoveToColumn(0), Clear(ClearType::CurrentLine))?;
 
     let marker = symbol(Tone::Brand, capabilities);
     let label = paint(label, Tone::Dim, capabilities.color);
 
-    match hint {
-        Some(hint) => write!(stdout, "{marker} {label} [{hint}]  {value}")?,
-        None => write!(stdout, "{marker} {label}  {value}")?,
+    let content = match hint {
+        Some(hint) => format!("{marker} {label} [{hint}]  {value}"),
+        None => format!("{marker} {label}  {value}"),
+    };
+
+    match frame {
+        Some(frame) => write_box_content(stdout, frame, &content, false)?,
+        None => write!(stdout, "{content}")?,
     }
 
     stdout.flush()
@@ -471,12 +775,16 @@ fn next_key_press() -> io::Result<KeyEvent> {
     }
 }
 
-pub fn prompt_text(label: &str, initial: Option<&str>) -> io::Result<Option<String>> {
+pub fn prompt_text(
+    label: &str,
+    initial: Option<&str>,
+    frame: Option<BoxFrame>,
+) -> io::Result<Option<String>> {
     let capabilities = Capabilities::detect();
     let mut stdout = io::stdout();
     let mut editor = LineEditor::default();
 
-    write_prompt_line(&mut stdout, label, initial, "", capabilities)?;
+    write_prompt_line(&mut stdout, label, initial, "", capabilities, frame)?;
 
     enable_raw_mode()?;
 
@@ -485,7 +793,14 @@ pub fn prompt_text(label: &str, initial: Option<&str>) -> io::Result<Option<Stri
 
         let outcome = editor.apply_key(key);
 
-        write_prompt_line(&mut stdout, label, initial, &editor.buffer, capabilities)?;
+        write_prompt_line(
+            &mut stdout,
+            label,
+            initial,
+            &editor.buffer,
+            capabilities,
+            frame,
+        )?;
 
         if outcome != EditOutcome::Continue {
             break outcome;
@@ -503,12 +818,16 @@ pub fn prompt_text(label: &str, initial: Option<&str>) -> io::Result<Option<Stri
     }
 }
 
-pub fn prompt_confirm(label: &str, initial: bool) -> io::Result<Option<bool>> {
+pub fn prompt_confirm(
+    label: &str,
+    initial: bool,
+    frame: Option<BoxFrame>,
+) -> io::Result<Option<bool>> {
     let capabilities = Capabilities::detect();
     let mut stdout = io::stdout();
     let hint = if initial { "Y/n" } else { "y/N" };
 
-    write_prompt_line(&mut stdout, label, Some(hint), "", capabilities)?;
+    write_prompt_line(&mut stdout, label, Some(hint), "", capabilities, frame)?;
 
     enable_raw_mode()?;
 
@@ -529,7 +848,7 @@ pub fn prompt_confirm(label: &str, initial: bool) -> io::Result<Option<bool>> {
         ConfirmOutcome::Cancel | ConfirmOutcome::Continue => "",
     };
 
-    write_prompt_line(&mut stdout, label, Some(hint), echoed, capabilities)?;
+    write_prompt_line(&mut stdout, label, Some(hint), echoed, capabilities, frame)?;
     writeln!(stdout)?;
 
     match outcome {
@@ -1100,6 +1419,22 @@ mod tests {
         assert_eq!(wrap_value("", 18, 80), vec![""]);
     }
 
+    #[test]
+    fn wrap_value_hard_breaks_a_single_word_wider_than_the_budget() {
+        let path = "/tmp/an/unusually/long/absolute/path/with/no/spaces/in/it/at/all";
+        let lines = wrap_value(path, 4, 20);
+
+        assert!(lines.len() > 1);
+
+        // Every line, gutter padding included, must fit the requested
+        // width — that's the whole point of hard-breaking.
+        for line in &lines {
+            assert!(visible_width(line) <= 20);
+        }
+
+        assert_eq!(lines.concat().replace(' ', ""), path);
+    }
+
     fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
         KeyEvent::new(code, modifiers)
     }
@@ -1199,5 +1534,140 @@ mod tests {
             apply_confirm_key(key(KeyCode::Char('q'), KeyModifiers::NONE), true),
             ConfirmOutcome::Continue
         );
+    }
+
+    #[test]
+    fn should_box_requires_interactive_and_wide_enough() {
+        let narrow = Capabilities {
+            interactive: true,
+            color: true,
+            unicode: true,
+            columns: 59,
+        };
+        let wide_noninteractive = Capabilities {
+            interactive: false,
+            color: true,
+            unicode: true,
+            columns: 100,
+        };
+        let wide_interactive = Capabilities {
+            interactive: true,
+            color: true,
+            unicode: true,
+            columns: 60,
+        };
+
+        assert!(open_frame(narrow).is_none());
+        assert!(open_frame(wide_noninteractive).is_none());
+        assert!(open_frame(wide_interactive).is_some());
+    }
+
+    #[test]
+    fn box_interior_width_is_capped_on_wide_terminals() {
+        let capabilities = Capabilities {
+            interactive: true,
+            color: false,
+            unicode: true,
+            columns: 400,
+        };
+
+        let frame = open_frame(capabilities).expect("wide enough to box");
+
+        assert_eq!(frame.interior, 74);
+    }
+
+    #[test]
+    fn visible_width_ignores_ansi_escapes() {
+        let plain = "hello";
+        let painted = paint(plain, Tone::Brand, true);
+
+        assert_ne!(plain.len(), painted.len());
+        assert_eq!(visible_width(&painted), visible_width(plain));
+        assert_eq!(visible_width(plain), 5);
+    }
+
+    #[test]
+    fn box_top_and_bottom_borders_share_one_width() {
+        let frame = BoxFrame {
+            interior: 20,
+            unicode: true,
+            color: false,
+        };
+
+        let mut top = Vec::new();
+        write_box_top(&mut top, frame, "TAG").expect("top border");
+
+        let mut bottom = Vec::new();
+        write_box_bottom(&mut bottom, frame).expect("bottom border");
+
+        let top_line = String::from_utf8(top).expect("utf8");
+        let bottom_line = String::from_utf8(bottom).expect("utf8");
+
+        assert_eq!(
+            visible_width(top_line.trim_end()),
+            visible_width(bottom_line.trim_end())
+        );
+        assert!(top_line.contains("TAG"));
+        assert!(top_line.starts_with('┌'));
+        assert!(bottom_line.starts_with('└'));
+    }
+
+    #[test]
+    fn box_border_falls_back_to_ascii_without_unicode() {
+        let frame = BoxFrame {
+            interior: 20,
+            unicode: false,
+            color: false,
+        };
+
+        let mut top = Vec::new();
+        write_box_top(&mut top, frame, "TAG").expect("top border");
+
+        let line = String::from_utf8(top).expect("utf8");
+
+        assert!(line.starts_with('+'));
+        assert!(
+            !line
+                .chars()
+                .any(|character| character == '┌' || character == '─')
+        );
+    }
+
+    #[test]
+    fn box_content_pads_to_interior_width_and_stays_bordered() {
+        let frame = BoxFrame {
+            interior: 20,
+            unicode: true,
+            color: false,
+        };
+
+        let mut output = Vec::new();
+        write_box_content(&mut output, frame, "hi", true).expect("content line");
+
+        let line = String::from_utf8(output).expect("utf8");
+
+        assert_eq!(visible_width(line.trim_end()), frame.interior + 4);
+        assert!(line.starts_with('│'));
+        assert!(line.trim_end().ends_with('│'));
+    }
+
+    #[test]
+    fn box_writer_reassembles_lines_split_across_writes() {
+        let frame = BoxFrame {
+            interior: 20,
+            unicode: true,
+            color: false,
+        };
+
+        let mut boxed = BoxWriter::wrap(Vec::new(), frame);
+        write!(boxed, "he").expect("first fragment");
+        write!(boxed, "llo\nworld\n").expect("remaining fragments");
+
+        let output = String::from_utf8(boxed.inner).expect("utf8");
+        let lines: Vec<&str> = output.lines().collect();
+
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("hello"));
+        assert!(lines[1].contains("world"));
     }
 }
