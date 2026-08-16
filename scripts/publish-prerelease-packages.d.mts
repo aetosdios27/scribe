@@ -18,19 +18,12 @@ export interface PublicPackage {
   readonly directory: "styles" | "react" | "mdx" | "cli" | NativePackageDirectory;
 }
 
-export interface NativePackage {
-  readonly name: `@scribe-sdk/cli-${NativePackageDirectory}`;
-  readonly directory: NativePackageDirectory;
-}
-
 export interface PackageRegistry {
   versions(name: PublicPackage["name"]): Promise<string[]>;
   distTags(name: PublicPackage["name"]): Promise<Record<string, string | undefined>>;
   publishTarball(name: PublicPackage["name"], tarball: string, tag: "alpha" | "beta"): Promise<void>;
-  setDistTag(name: PublicPackage["name"], version: string, tag: string): Promise<void>;
 }
 
-export const nativePackages: readonly NativePackage[];
 export const publicPackages: readonly PublicPackage[];
 
 export function isDirectExecution(moduleUrl: string, entryPath: string | undefined, cwd?: string): boolean;

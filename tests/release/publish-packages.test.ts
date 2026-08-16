@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,17 @@ import {
 } from "../../scripts/publish-prerelease-packages.mjs";
 
 describe("prerelease package publisher", () => {
+  it("never issues a second registry-mutating command that OIDC cannot authenticate", async () => {
+    const source = await readFile(
+      new URL("../../scripts/publish-prerelease-packages.mjs", import.meta.url),
+      "utf8"
+    );
+
+    expect(source).toContain('runNpm(["publish"');
+    expect(source).toContain('runNpmJson(["view", name, "dist-tags", "--json"])');
+    expect(source).not.toContain('"dist-tag"');
+  });
+
   it("recognizes the relative script path used by the root package command", () => {
     expect(isDirectExecution(
       "file:///workspace/scripts/publish-prerelease-packages.mjs",
@@ -19,7 +30,7 @@ describe("prerelease package publisher", () => {
     )).toBe(true);
   });
 
-  it("publishes every missing package explicitly to beta without moving alpha", async () => {
+  it("publishes every missing package explicitly to beta without moving alpha or latest", async () => {
     const root = await releaseFixture();
     const versions = new Map(publicPackages.map(({ name }) => [name, ["0.1.0-alpha.10"]]));
     const tags = new Map<string, { alpha: string; beta: string; latest: string }>(
@@ -41,10 +52,6 @@ describe("prerelease package publisher", () => {
           versions.get(name)?.push("0.1.0-beta");
           const previous = tags.get(name) as { alpha: string; beta: string; latest: string };
           tags.set(name, { ...previous, beta: "0.1.0-beta" });
-        },
-        setDistTag: async (name, version, tag) => {
-          const previous = tags.get(name) as { alpha: string; beta: string; latest: string };
-          tags.set(name, { ...previous, [tag]: version });
         }
       }
     });
@@ -53,7 +60,7 @@ describe("prerelease package publisher", () => {
     expect(published.every(({ tag }) => tag === "beta")).toBe(true);
     expect(published.at(-1)?.tarball.endsWith("scribe-sdk-cli-0.1.0-beta.tgz")).toBe(true);
     expect([...tags.values()].every(({ alpha }) => alpha === "0.1.0-alpha.10")).toBe(true);
-    expect([...tags.values()].every(({ latest }) => latest === "0.1.0-beta")).toBe(true);
+    expect([...tags.values()].every(({ latest }) => latest === "0.1.0-alpha.10")).toBe(true);
   });
 
   it("skips published packages and fails closed when beta never converges", async () => {
@@ -72,8 +79,7 @@ describe("prerelease package publisher", () => {
         }),
         publishTarball: async (name) => {
           published.push(name);
-        },
-        setDistTag: async () => undefined
+        }
       }
     })).rejects.toThrow("has beta=0.1.0-alpha.10; expected 0.1.0-beta");
   });
@@ -88,8 +94,7 @@ describe("prerelease package publisher", () => {
       registry: {
         versions: async () => ["0.1.0-alpha.10"],
         distTags: async () => ({ alpha: "0.1.0-alpha.10", latest: "0.1.0-alpha.10" }),
-        publishTarball: async () => undefined,
-        setDistTag: async () => undefined
+        publishTarball: async () => undefined
       }
     })).resolves.toBeUndefined();
 
@@ -103,8 +108,7 @@ describe("prerelease package publisher", () => {
         registry: {
           versions: async () => [],
           distTags: async () => ({}),
-          publishTarball: async () => undefined,
-          setDistTag: async () => undefined
+          publishTarball: async () => undefined
         }
       })).rejects.toThrow("alpha or beta prerelease mode");
     }

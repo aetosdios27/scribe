@@ -68,11 +68,9 @@ export async function publishPrereleasePackages({
     }
 
     await assertTagConverged(registry, release.name, channel, version, { attempts: distTagAttempts, delayMs: distTagDelayMs });
-    await registry.setDistTag(release.name, version, "latest");
-    await assertTagConverged(registry, release.name, "latest", version, { attempts: distTagAttempts, delayMs: distTagDelayMs });
   }
 
-  process.stdout.write(`Verified all public packages at ${channel}=${version} and latest=${version}.\n`);
+  process.stdout.write(`Verified all public packages at ${channel}=${version}.\n`);
 }
 
 const npmRegistry = {
@@ -85,9 +83,6 @@ const npmRegistry = {
   },
   async publishTarball(_name, tarball, tag) {
     runNpm(["publish", tarball, "--tag", tag, "--access", "public"], "inherit");
-  },
-  async setDistTag(name, version, tag) {
-    runNpm(["dist-tag", "add", `${name}@${version}`, tag], "inherit");
   }
 };
 
