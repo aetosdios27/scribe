@@ -6,10 +6,13 @@ use serde_json::json;
 
 use crate::{
     VERSION,
-    cli::{Cli, Command, StudioCommand, StudioInitArgs},
+    cli::{Cli, Command, StudioArgs, StudioCommand, StudioInitArgs, ValidateArgs},
     engine::{EngineClient, EngineError},
     protocol::{OperationResult, PlanEnvelope},
-    terminal::{Capabilities, Presenter, prompt_confirm, prompt_text, render_inline_screen},
+    terminal::{
+        BoxFrame, Capabilities, Presenter, close_frame, open_frame, prompt_confirm, prompt_text,
+        render_inline_screen, run_stage, stage_presenter, write_box_top,
+    },
 };
 
 pub fn run() -> ExitCode {
@@ -40,33 +43,14 @@ fn run_inner() -> Result<u8, EngineError> {
 
     match command {
         Command::Validate(arguments) => {
-            let result: OperationResult = engine.request("validate", arguments, |event| {
-                let _ = presenter.event(&event);
-            })?;
-            presenter.receipt(true, &result).map_err(EngineError::Io)?;
+            run_validate(&mut engine, capabilities, arguments)?;
         }
         Command::Studio(arguments) => match arguments.command {
-            Some(StudioCommand::Init(arguments)) => {
-                run_studio_init(&mut engine, &mut presenter, capabilities, &arguments)?;
+            Some(StudioCommand::Init(init_arguments)) => {
+                run_studio_init(&mut engine, capabilities, &init_arguments)?;
             }
             None => {
-                let Some(article) = arguments.article else {
-                    return Err(EngineError::Usage(
-                        "scribe studio requires an article path, or run `scribe studio init`."
-                            .to_owned(),
-                    ));
-                };
-                let params = json!({
-                    "article": article,
-                    "mode": arguments.mode,
-                    "hostCss": arguments.host_css,
-                    "port": arguments.port,
-                    "noOpen": arguments.no_open,
-                });
-                let result: OperationResult = engine.request("studio.start", params, |event| {
-                    let _ = presenter.event(&event);
-                })?;
-                presenter.receipt(true, &result).map_err(EngineError::Io)?;
+                run_studio_start(&mut engine, capabilities, arguments)?;
             }
         },
         Command::Init(arguments) => {
@@ -74,7 +58,7 @@ fn run_inner() -> Result<u8, EngineError> {
             let yes = arguments.yes;
             plan_and_apply(
                 &mut engine,
-                &mut presenter,
+                capabilities,
                 "init.plan",
                 "init.apply",
                 arguments,
@@ -87,7 +71,7 @@ fn run_inner() -> Result<u8, EngineError> {
             let yes = arguments.yes;
             plan_and_apply(
                 &mut engine,
-                &mut presenter,
+                capabilities,
                 "integrate.plan",
                 "integrate.apply",
                 arguments,
@@ -100,7 +84,7 @@ fn run_inner() -> Result<u8, EngineError> {
             let yes = arguments.yes;
             plan_and_apply(
                 &mut engine,
-                &mut presenter,
+                capabilities,
                 "medium.plan",
                 "medium.apply",
                 arguments,
@@ -113,7 +97,7 @@ fn run_inner() -> Result<u8, EngineError> {
             let yes = arguments.yes;
             plan_and_apply(
                 &mut engine,
-                &mut presenter,
+                capabilities,
                 "update.plan",
                 "update.apply",
                 arguments,
@@ -123,6 +107,44 @@ fn run_inner() -> Result<u8, EngineError> {
         }
     }
     Ok(0)
+}
+
+fn run_validate(
+    engine: &mut EngineClient,
+    capabilities: Capabilities,
+    arguments: ValidateArgs,
+) -> Result<(), EngineError> {
+    run_stage(capabilities, "RUN", EngineError::Io, |run| {
+        let result: OperationResult = engine.request("validate", arguments, |event| {
+            let _ = run.event(&event);
+        })?;
+        run.receipt(true, &result).map_err(EngineError::Io)
+    })
+}
+
+fn run_studio_start(
+    engine: &mut EngineClient,
+    capabilities: Capabilities,
+    arguments: StudioArgs,
+) -> Result<(), EngineError> {
+    let Some(article) = arguments.article else {
+        return Err(EngineError::Usage(
+            "scribe studio requires an article path, or run `scribe studio init`.".to_owned(),
+        ));
+    };
+    let params = json!({
+        "article": article,
+        "mode": arguments.mode,
+        "hostCss": arguments.host_css,
+        "port": arguments.port,
+        "noOpen": arguments.no_open,
+    });
+    run_stage(capabilities, "RUN", EngineError::Io, |run| {
+        let result: OperationResult = engine.request("studio.start", params, |event| {
+            let _ = run.event(&event);
+        })?;
+        run.receipt(true, &result).map_err(EngineError::Io)
+    })
 }
 
 fn show_status(
@@ -163,88 +185,15 @@ fn show_status(
 
 fn run_studio_init(
     engine: &mut EngineClient,
-    presenter: &mut Presenter<impl io::Write>,
     capabilities: Capabilities,
     arguments: &StudioInitArgs,
 ) -> Result<(), EngineError> {
-    let title = match arguments.title.clone() {
-        Some(title) => title,
-        None if !capabilities.interactive => {
-            return Err(EngineError::Usage(
-                "Article title is required in a non-interactive terminal. Pass --title and --yes."
-                    .to_owned(),
-            ));
-        }
-        None => {
-            let Some(title) = prompt_text("Article title", None).map_err(EngineError::Io)? else {
-                presenter
-                    .cancelled("No article was created.")
-                    .map_err(EngineError::Io)?;
-                return Ok(());
-            };
-            title
-        }
-    };
+    let frame = open_frame(capabilities);
+    let details = collect_article_details(engine, capabilities, frame, arguments);
+    close_frame(frame).map_err(EngineError::Io)?;
 
-    let defaults: OperationResult = engine.request(
-        "studioArticle.suggest",
-        json!({
-            "title": title,
-            "contentDirectory": arguments.content_dir,
-            "path": arguments.path,
-        }),
-        |_| {},
-    )?;
-    let derived_slug = result_string(&defaults, "slug")?;
-    let mut default_path = result_string(&defaults, "targetPath")?;
-
-    let (slug, recalculate_path) = match arguments.slug.clone() {
-        Some(slug) => {
-            let changed = slug != derived_slug;
-            (slug, changed)
-        }
-        None if arguments.yes => (derived_slug, false),
-        None if !capabilities.interactive => {
-            return Err(EngineError::Usage(
-                "Re-run with --yes to accept the derived slug and article path.".to_owned(),
-            ));
-        }
-        None => {
-            let Some(slug) = prompt_text("Slug", Some(&derived_slug)).map_err(EngineError::Io)?
-            else {
-                presenter
-                    .cancelled("No article was created.")
-                    .map_err(EngineError::Io)?;
-                return Ok(());
-            };
-            let changed = slug != derived_slug;
-            (slug, changed)
-        }
-    };
-    if arguments.path.is_none() && recalculate_path {
-        default_path =
-            suggested_article_path(engine, &title, &slug, arguments.content_dir.as_ref())?;
-    }
-
-    let path = match arguments.path.clone() {
-        Some(path) => path,
-        None if arguments.yes => PathBuf::from(default_path),
-        None if !capabilities.interactive => {
-            return Err(EngineError::Usage(
-                "Re-run with --yes to accept the derived slug and article path.".to_owned(),
-            ));
-        }
-        None => {
-            let Some(path) =
-                prompt_text("Article path", Some(&default_path)).map_err(EngineError::Io)?
-            else {
-                presenter
-                    .cancelled("No article was created.")
-                    .map_err(EngineError::Io)?;
-                return Ok(());
-            };
-            PathBuf::from(path)
-        }
+    let Some((title, slug, path)) = details? else {
+        return Ok(());
     };
 
     let params = json!({
@@ -262,13 +211,160 @@ fn run_studio_init(
     });
     plan_and_apply(
         engine,
-        presenter,
+        capabilities,
         "studioArticle.plan",
         "studioArticle.apply",
         params,
         true,
         arguments.yes,
     )
+}
+
+/// Gathers the title, slug, and path for a new article, all inside `frame`.
+/// Returns `None` if the user cancelled at any prompt.
+///
+/// This never closes `frame` itself: the caller does that exactly once,
+/// after this returns, so every exit path — including any engine request
+/// here failing — leaves a closed box instead of an abandoned one.
+fn collect_article_details(
+    engine: &mut EngineClient,
+    capabilities: Capabilities,
+    frame: Option<BoxFrame>,
+    arguments: &StudioInitArgs,
+) -> Result<Option<(String, String, PathBuf)>, EngineError> {
+    if let Some(frame) = frame {
+        write_box_top(&mut io::stdout(), frame, "ARTICLE DETAILS").map_err(EngineError::Io)?;
+    }
+
+    let Some(title) = resolve_article_title(capabilities, frame, arguments.title.as_deref())?
+    else {
+        return Ok(None);
+    };
+
+    let defaults: OperationResult = engine.request(
+        "studioArticle.suggest",
+        json!({
+            "title": title,
+            "contentDirectory": arguments.content_dir,
+            "path": arguments.path,
+        }),
+        |_| {},
+    )?;
+    let derived_slug = result_string(&defaults, "slug")?;
+    let mut default_path = result_string(&defaults, "targetPath")?;
+
+    let Some((slug, recalculate_path)) = resolve_article_slug(
+        capabilities,
+        frame,
+        arguments.slug.as_deref(),
+        &derived_slug,
+        arguments.yes,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    if arguments.path.is_none() && recalculate_path {
+        default_path =
+            suggested_article_path(engine, &title, &slug, arguments.content_dir.as_ref())?;
+    }
+
+    let Some(path) = resolve_article_path(
+        capabilities,
+        frame,
+        arguments.path.as_ref(),
+        &default_path,
+        arguments.yes,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some((title, slug, path)))
+}
+
+fn resolve_article_title(
+    capabilities: Capabilities,
+    frame: Option<BoxFrame>,
+    provided: Option<&str>,
+) -> Result<Option<String>, EngineError> {
+    if let Some(title) = provided {
+        return Ok(Some(title.to_owned()));
+    }
+    if !capabilities.interactive {
+        return Err(EngineError::Usage(
+            "Article title is required in a non-interactive terminal. Pass --title and --yes."
+                .to_owned(),
+        ));
+    }
+    let Some(title) = prompt_text("Article title", None, frame).map_err(EngineError::Io)? else {
+        cancel_in_frame(frame, capabilities, "No article was created.").map_err(EngineError::Io)?;
+        return Ok(None);
+    };
+    Ok(Some(title))
+}
+
+fn resolve_article_slug(
+    capabilities: Capabilities,
+    frame: Option<BoxFrame>,
+    provided: Option<&str>,
+    derived: &str,
+    yes: bool,
+) -> Result<Option<(String, bool)>, EngineError> {
+    if let Some(slug) = provided {
+        return Ok(Some((slug.to_owned(), slug != derived)));
+    }
+    if yes {
+        return Ok(Some((derived.to_owned(), false)));
+    }
+    if !capabilities.interactive {
+        return Err(EngineError::Usage(
+            "Re-run with --yes to accept the derived slug and article path.".to_owned(),
+        ));
+    }
+    let Some(slug) = prompt_text("Slug", Some(derived), frame).map_err(EngineError::Io)? else {
+        cancel_in_frame(frame, capabilities, "No article was created.").map_err(EngineError::Io)?;
+        return Ok(None);
+    };
+    let changed = slug != derived;
+    Ok(Some((slug, changed)))
+}
+
+fn resolve_article_path(
+    capabilities: Capabilities,
+    frame: Option<BoxFrame>,
+    provided: Option<&PathBuf>,
+    default_path: &str,
+    yes: bool,
+) -> Result<Option<PathBuf>, EngineError> {
+    if let Some(path) = provided {
+        return Ok(Some(path.clone()));
+    }
+    if yes {
+        return Ok(Some(PathBuf::from(default_path)));
+    }
+    if !capabilities.interactive {
+        return Err(EngineError::Usage(
+            "Re-run with --yes to accept the derived slug and article path.".to_owned(),
+        ));
+    }
+    let Some(path) =
+        prompt_text("Article path", Some(default_path), frame).map_err(EngineError::Io)?
+    else {
+        cancel_in_frame(frame, capabilities, "No article was created.").map_err(EngineError::Io)?;
+        return Ok(None);
+    };
+    Ok(Some(PathBuf::from(path)))
+}
+
+/// Writes a boxed cancellation line inside `frame` without closing it — the
+/// same one-close-site convention every boxed flow follows.
+fn cancel_in_frame(
+    frame: Option<BoxFrame>,
+    capabilities: Capabilities,
+    message: &str,
+) -> io::Result<()> {
+    stage_presenter(frame, capabilities).cancelled(message)
 }
 fn suggested_article_path(
     engine: &mut EngineClient,
@@ -303,42 +399,89 @@ fn result_string(result: &OperationResult, key: &str) -> Result<String, EngineEr
 
 fn plan_and_apply<P: Serialize>(
     engine: &mut EngineClient,
-    presenter: &mut Presenter<impl io::Write>,
+    capabilities: Capabilities,
     plan_method: &str,
     apply_method: &str,
     params: P,
     apply: bool,
     yes: bool,
 ) -> Result<(), EngineError> {
+    let review_frame = open_frame(capabilities);
+    let review_outcome = review_plan(
+        engine,
+        capabilities,
+        review_frame,
+        plan_method,
+        params,
+        apply,
+        yes,
+    );
+    close_frame(review_frame).map_err(EngineError::Io)?;
+
+    let Some(plan_id) = review_outcome? else {
+        return Ok(());
+    };
+
+    run_stage(capabilities, "RUN", EngineError::Io, |run| {
+        let result: OperationResult =
+            engine.request(apply_method, json!({ "planId": plan_id }), |event| {
+                let _ = run.event(&event);
+            })?;
+        run.receipt(true, &result).map_err(EngineError::Io)
+    })
+}
+
+/// Requests the plan, displays it, and — unless this is a dry run — asks
+/// for confirmation, all inside `frame`. Returns the plan id to apply, or
+/// `None` if nothing should be applied (dry run or declined).
+///
+/// This never closes `frame` itself: the caller does that exactly once,
+/// after this returns, so every exit path — including the plan request
+/// itself failing — leaves a closed box instead of an abandoned one.
+fn review_plan<P: Serialize>(
+    engine: &mut EngineClient,
+    capabilities: Capabilities,
+    frame: Option<BoxFrame>,
+    plan_method: &str,
+    params: P,
+    apply: bool,
+    yes: bool,
+) -> Result<Option<String>, EngineError> {
+    if let Some(frame) = frame {
+        write_box_top(&mut io::stdout(), frame, "REVIEW & CONFIRM").map_err(EngineError::Io)?;
+    }
+
+    let mut review = stage_presenter(frame, capabilities);
+
     let plan: PlanEnvelope = engine.request(plan_method, params, |event| {
-        let _ = presenter.event(&event);
+        let _ = review.event(&event);
     })?;
-    presenter
+    review
         .plan(plan_title(plan_method), &plan.summary)
         .map_err(EngineError::Io)?;
+
     if !apply {
-        return Ok(());
+        return Ok(None);
     }
+
     if !yes {
-        if !presenter.capabilities().interactive {
+        if !capabilities.interactive {
             return Err(EngineError::Usage(
                 "The terminal is non-interactive. Re-run with --yes after reviewing the plan."
                     .to_owned(),
             ));
         }
-        if prompt_confirm("Apply this Scribe plan?", false).map_err(EngineError::Io)? != Some(true)
+        if prompt_confirm("Apply this Scribe plan?", false, frame).map_err(EngineError::Io)?
+            != Some(true)
         {
-            presenter
+            review
                 .cancelled("Cancelled. No changes made.")
                 .map_err(EngineError::Io)?;
-            return Ok(());
+            return Ok(None);
         }
     }
-    let result: OperationResult =
-        engine.request(apply_method, json!({ "planId": plan.plan_id }), |event| {
-            let _ = presenter.event(&event);
-        })?;
-    presenter.receipt(true, &result).map_err(EngineError::Io)
+
+    Ok(Some(plan.plan_id))
 }
 
 fn plan_title(method: &str) -> &'static str {
