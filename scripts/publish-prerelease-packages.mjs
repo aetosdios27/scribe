@@ -5,21 +5,10 @@ import { fileURLToPath } from "node:url";
 
 import { spawnPortableSync } from "./lib/spawn.mjs";
 
-export const nativePackages = [
-  { name: "@scribe-sdk/cli-linux-x64-gnu", directory: "linux-x64-gnu" },
-  { name: "@scribe-sdk/cli-linux-x64-musl", directory: "linux-x64-musl" },
-  { name: "@scribe-sdk/cli-linux-arm64-gnu", directory: "linux-arm64-gnu" },
-  { name: "@scribe-sdk/cli-linux-arm64-musl", directory: "linux-arm64-musl" },
-  { name: "@scribe-sdk/cli-darwin-x64", directory: "darwin-x64" },
-  { name: "@scribe-sdk/cli-darwin-arm64", directory: "darwin-arm64" },
-  { name: "@scribe-sdk/cli-win32-x64-msvc", directory: "win32-x64-msvc" },
-  { name: "@scribe-sdk/cli-win32-arm64-msvc", directory: "win32-arm64-msvc" }
-];
 export const publicPackages = [
   { name: "@scribe-sdk/styles", directory: "styles" },
   { name: "@scribe-sdk/react", directory: "react" },
   { name: "@scribe-sdk/mdx", directory: "mdx" },
-  ...nativePackages,
   { name: "@scribe-sdk/cli", directory: "cli" }
 ];
 
@@ -48,10 +37,7 @@ export async function publishPrereleasePackages({
   );
 
   const releases = await Promise.all(publicPackages.map(async ({ name, directory }) => {
-    const native = name !== "@scribe-sdk/cli" && name.startsWith("@scribe-sdk/cli-");
-    const manifestRoot = native
-      ? join(root, "packages", "cli-native", directory)
-      : join(root, "packages", directory);
+    const manifestRoot = join(root, "packages", directory);
     const manifest = await readJson(join(manifestRoot, "package.json"));
     assert(manifest.name === name, `Expected ${name} in ${manifestRoot}.`);
     assert(

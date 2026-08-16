@@ -10,6 +10,7 @@
   },
   "files": [
     "dist",
+    "native",
     "README.md",
     "SKILL.md",
     "LICENSE"
@@ -22,16 +23,6 @@
   "scripts": {
     "build": "tsdown",
     "prepack": "node ../../scripts/sync-package-docs.mjs --check"
-  },
-  "optionalDependencies": {
-    "@scribe-sdk/cli-linux-x64-gnu": "0.1.0-beta.0",
-    "@scribe-sdk/cli-linux-x64-musl": "0.1.0-beta.0",
-    "@scribe-sdk/cli-linux-arm64-gnu": "0.1.0-beta.0",
-    "@scribe-sdk/cli-linux-arm64-musl": "0.1.0-beta.0",
-    "@scribe-sdk/cli-darwin-x64": "0.1.0-beta.0",
-    "@scribe-sdk/cli-darwin-arm64": "0.1.0-beta.0",
-    "@scribe-sdk/cli-win32-x64-msvc": "0.1.0-beta.0",
-    "@scribe-sdk/cli-win32-arm64-msvc": "0.1.0-beta.0"
   },
   "dependencies": {
     "@base-ui/react": "1.6.0",

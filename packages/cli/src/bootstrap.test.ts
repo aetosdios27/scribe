@@ -24,56 +24,56 @@ describe("native CLI package selection", () => {
       "linux",
       "x64",
       "gnu",
-      "@scribe-sdk/cli-linux-x64-gnu",
+      "linux-x64-gnu",
       "scribe-cli"
     ],
     [
       "linux",
       "x64",
       "musl",
-      "@scribe-sdk/cli-linux-x64-musl",
+      "linux-x64-musl",
       "scribe-cli"
     ],
     [
       "linux",
       "arm64",
       "gnu",
-      "@scribe-sdk/cli-linux-arm64-gnu",
+      "linux-arm64-gnu",
       "scribe-cli"
     ],
     [
       "linux",
       "arm64",
       "musl",
-      "@scribe-sdk/cli-linux-arm64-musl",
+      "linux-arm64-musl",
       "scribe-cli"
     ],
     [
       "darwin",
       "x64",
       undefined,
-      "@scribe-sdk/cli-darwin-x64",
+      "darwin-x64",
       "scribe-cli"
     ],
     [
       "darwin",
       "arm64",
       undefined,
-      "@scribe-sdk/cli-darwin-arm64",
+      "darwin-arm64",
       "scribe-cli"
     ],
     [
       "win32",
       "x64",
       undefined,
-      "@scribe-sdk/cli-win32-x64-msvc",
+      "win32-x64-msvc",
       "scribe-cli.exe"
     ],
     [
       "win32",
       "arm64",
       undefined,
-      "@scribe-sdk/cli-win32-arm64-msvc",
+      "win32-arm64-msvc",
       "scribe-cli.exe"
     ]
   ] as const)(
@@ -82,7 +82,7 @@ describe("native CLI package selection", () => {
       platform,
       arch,
       libc,
-      packageName,
+      directory,
       binary
     ) => {
       expect(
@@ -94,7 +94,7 @@ describe("native CLI package selection", () => {
             : { libc })
         })
       ).toEqual({
-        packageName,
+        directory,
         binary
       });
     }

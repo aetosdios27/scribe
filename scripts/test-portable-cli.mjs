@@ -66,12 +66,6 @@ const expectedVersionOutput =
 const nativePackage =
   currentNativePackage();
 
-const nativeTarballName =
-  `${nativePackage.replace(
-    "@scribe-sdk/",
-    "scribe-sdk-"
-  )}-${version}.tgz`;
-
 const directory = await mkdtemp(
   join(
     tmpdir(),
@@ -120,36 +114,22 @@ try {
     const filename =
       `scribe-sdk-${name}-${version}.tgz`;
 
-    await copyFile(
-      join(
-        release,
-        filename
-      ),
-      join(
-        tarballDirectory,
-        filename
-      )
-    );
-
-    dependencies[
-      `@scribe-sdk/${name}`
-    ] =
-      `file:./tarballs/${filename}`;
-  }
-
-  await copyFile(
+await copyFile(
     join(
       release,
-      nativeTarballName
+      filename
     ),
     join(
       tarballDirectory,
-      nativeTarballName
+      filename
     )
   );
 
-  dependencies[nativePackage] =
-    `file:./tarballs/${nativeTarballName}`;
+  dependencies[
+    `@scribe-sdk/${name}`
+  ] =
+    `file:./tarballs/${filename}`;
+  }
 
   await write(
     join(
@@ -669,26 +649,29 @@ try {
     );
   }
 
-  const installedNative =
-    JSON.parse(
-      await readFile(
-        join(
-          directory,
-          "node_modules",
-          ...nativePackage.split(
-            "/"
-          ),
-          "package.json"
-        ),
-        "utf8"
-      )
+  const nativeDirectory =
+    nativePackage.replace(
+      "@scribe-sdk/cli-",
+      ""
     );
 
-  assert(
-    installedNative.version ===
-      version,
-    `${nativePackage} installed at ${installedNative.version}; expected ${version}.`
+  const nativeBinary =
+    process.platform ===
+      "win32"
+      ? "scribe-cli.exe"
+      : "scribe-cli";
+
+  const installedNative = join(
+    directory,
+    "node_modules",
+    "@scribe-sdk",
+    "cli",
+    "native",
+    nativeDirectory,
+    nativeBinary
   );
+
+  await access(installedNative);
 
   if (process.platform !== "win32") {
     await verifyLocalNpmInstall();
@@ -871,10 +854,6 @@ async function verifyLocalNpmInstall() {
             version +
             ".tgz",
 
-          [nativePackage]:
-            "file:../tarballs/" +
-            nativeTarballName,
-
           react:
             "19.2.7",
 
@@ -958,13 +937,6 @@ async function verifyGlobalInstalls() {
           `scribe-sdk-${name}-${version}.tgz`
         )
     );
-
-  packageTarballs.push(
-    join(
-      tarballDirectory,
-      nativeTarballName
-    )
-  );
 
   const npmPrefix =
     join(

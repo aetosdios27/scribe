@@ -84,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.target }}
-          path: packages/cli-native
+          path: packages/cli/native
           if-no-files-found: error
           retention-days: 7
 
@@ -139,7 +139,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: native-*
-          path: packages/cli-native
+          path: packages/cli/native
           merge-multiple: true
 
       - name: Restore dependency cache
@@ -250,7 +250,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: native-*
-          path: packages/cli-native
+          path: packages/cli/native
           merge-multiple: true
 
       - name: Restore dependency cache

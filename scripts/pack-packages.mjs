@@ -16,8 +16,11 @@ const packageDirectories = [
   ["packages", "mdx"],
   ["packages", "react"],
   ["packages", "styles"],
-  ["packages", "cli"],
-  ...[
+  ["packages", "cli"]
+];
+
+const nativePackageDirectories =
+  [
     "linux-x64-gnu",
     "linux-x64-musl",
     "linux-arm64-gnu",
@@ -28,13 +31,10 @@ const packageDirectories = [
     "win32-arm64-msvc"
   ].map((directory) => [
     "packages",
-    "cli-native",
+    "cli",
+    "native",
     directory
-  ])
-];
-
-const nativePackageDirectories =
-  packageDirectories.slice(4);
+  ]);
 
 const hostSupportsPosixModes =
   process.platform !== "win32";
@@ -64,7 +64,6 @@ async function prepareNativePackage(directory) {
 
   const binary = join(
     packageRoot,
-    "bin",
     windowsPackage
       ? "scribe-cli.exe"
       : "scribe-cli"

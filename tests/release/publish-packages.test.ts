@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   isDirectExecution,
-  nativePackages,
   publicPackages,
   publishPrereleasePackages
 } from "../../scripts/publish-prerelease-packages.mjs";
@@ -112,11 +111,8 @@ async function releaseFixture(
   await mkdir(join(root, ".scribe-release"), { recursive: true });
   await writeFile(join(root, ".changeset", "pre.json"), JSON.stringify(pre));
 
-  const nativeNames = new Set<string>(nativePackages.map(({ name }) => name));
   for (const { name, directory } of publicPackages) {
-    const packageRoot = nativeNames.has(name)
-      ? join(root, "packages", "cli-native", directory)
-      : join(root, "packages", directory);
+    const packageRoot = join(root, "packages", directory);
     await mkdir(packageRoot, { recursive: true });
     await writeFile(join(packageRoot, "package.json"), JSON.stringify({
       name,
