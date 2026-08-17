@@ -501,6 +501,34 @@
     overflow-wrap: anywhere;
   }
 
+  :where(.scribe .scribe-wrap-toggle-button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: var(--scribe-control-size);
+    min-block-size: var(--scribe-control-size);
+    border: 1px solid transparent;
+    border-radius: calc(var(--scribe-radius) * 0.62);
+    color: var(--scribe-muted);
+    background: transparent;
+    cursor: pointer;
+    transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+  }
+
+  :where(.scribe .scribe-wrap-toggle-button:hover) {
+    border-color: var(--scribe-border);
+    color: var(--scribe-foreground);
+    background: var(--scribe-surface-strong);
+  }
+
+  :where(.scribe .scribe-wrap-toggle-button svg) {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.45;
+  }
+
   :where(.scribe .scribe-wrap-toggle-button[data-state="wrapped"]) {
     color: var(--scribe-foreground);
     background: var(--scribe-surface-strong);
@@ -886,7 +914,7 @@
       font-size: 10.5pt;
     }
 
-    :where(.scribe .scribe-copy-button) {
+    :where(.scribe .scribe-copy-button, .scribe .scribe-wrap-toggle-button) {
       display: none;
     }
 
