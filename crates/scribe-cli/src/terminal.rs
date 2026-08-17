@@ -904,9 +904,16 @@ pub fn run_boxed_form<E>(
     }
 
     let field_count = fields.len();
+    // Borders (2) + one field row each + a dedicated blank row *below* the
+    // box, reserved the same way the splash reserves `CURSOR_ROWS`: without
+    // it, the real terminal cursor is left wherever the last focused field
+    // was — inside the box — and whatever renders next (another form, the
+    // next boxed panel) starts from there instead of a clean line below,
+    // producing overlapping borders.
     let height = u16::try_from(field_count)
         .unwrap_or(u16::MAX)
-        .saturating_add(2);
+        .saturating_add(2)
+        .saturating_add(CURSOR_ROWS);
 
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::with_options(
@@ -923,7 +930,9 @@ pub fn run_boxed_form<E>(
     let mut frontier = 0usize;
 
     let outcome: Result<FormOutcome, E> = loop {
-        if let Err(error) = draw_form_frame(&mut terminal, tag, fields, focused, capabilities) {
+        if let Err(error) =
+            draw_form_frame(&mut terminal, tag, fields, focused, capabilities, false)
+        {
             break Err(to_error(error));
         }
 
@@ -961,6 +970,13 @@ pub fn run_boxed_form<E>(
         }
     };
 
+    // One last draw with the cursor moved to the reserved resting row below
+    // the box, so whatever writes next starts from a clean, known line
+    // instead of wherever the last focused field happened to be. Best
+    // effort: `outcome` is already decided, and failing to tidy the cursor
+    // shouldn't mask that result.
+    let _ = draw_form_frame(&mut terminal, tag, fields, focused, capabilities, true);
+
     disable_raw_mode().map_err(&to_error)?;
     terminal.show_cursor().map_err(&to_error)?;
 
@@ -973,12 +989,16 @@ fn draw_form_frame(
     fields: &[FormField],
     focused: usize,
     capabilities: Capabilities,
+    resting: bool,
 ) -> io::Result<()> {
     terminal
         .draw(|frame| {
             let full_area = frame.area();
             let width = full_area.width.min(66);
-            let area = Rect::new(full_area.x, full_area.y, width, full_area.height);
+            let box_height = u16::try_from(fields.len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(2);
+            let area = Rect::new(full_area.x, full_area.y, width, box_height);
 
             let block = Block::default()
                 .borders(Borders::ALL)
@@ -996,7 +1016,7 @@ fn draw_form_frame(
                 .constraints(vec![Constraint::Length(1); fields.len()])
                 .split(inner);
 
-            let mut cursor = None;
+            let mut focus_cursor = None;
 
             for (index, field) in fields.iter().enumerate() {
                 let label = format!("{:<LABEL_WIDTH$}  ", field.label);
@@ -1021,9 +1041,15 @@ fn draw_form_frame(
                     let x = rows[index].x
                         + u16::try_from(label.chars().count()).unwrap_or(0)
                         + u16::try_from(field.buffer.chars().count()).unwrap_or(0);
-                    cursor = Some((x, rows[index].y));
+                    focus_cursor = Some((x, rows[index].y));
                 }
             }
+
+            let cursor = if resting {
+                Some((area.x, area.y + area.height))
+            } else {
+                focus_cursor
+            };
 
             if let Some((x, y)) = cursor {
                 frame.set_cursor_position((x, y));
