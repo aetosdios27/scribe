@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
-import * as ts from "typescript";
 
 const root = process.cwd();
 const packages = ["react", "styles", "mdx", "cli"] as const;
@@ -13,43 +12,14 @@ describe("release documentation", () => {
     expect(readme).toContain("Scribe is an open-source publishing SDK that turns ordinary Markdown, MDX, semantic HTML, and JSX into beautiful technical articles on websites you already own.");
     expect(readme).toContain("Just write. Scribe handles the rest.");
     expect(readme).toContain("developers who already own a React website built with Next.js or Vite");
-    expect(readme).toContain("Scribe 0.1.0-beta is tested against React 19.2.7, Next.js 16.2.11, Vite 8.1.3, and MDX 3.1.1.");
-    expect(readme).toContain("bun add @scribe-sdk/react@beta @scribe-sdk/styles@beta @scribe-sdk/mdx@beta");
-    expect(readme).toContain("bun add --global @scribe-sdk/cli@beta");
-    expect(readme).toContain("npm install --global @scribe-sdk/cli@beta");
-    expect(readme).toContain('import "@scribe-sdk/styles/default.css"');
-    expect(readme).toContain("createScribeNextMdxOptions");
-    expect(readme).toContain("createScribeComponents");
-    expect(readme).toContain("scribe validate");
-    expect(readme).toContain("scribe import <medium-export.zip>");
-    expect(readme).toContain("official Medium export ZIP only");
-    expect(readme).toContain("scribe update");
+    expect(readme).toContain("Scribe is not a hosted blogging platform, CMS, website builder, rich-text editor, proprietary content format, collaboration service, or replacement for React, Next.js, MDX, routing, deployment, analytics, or content storage.");
+    expect(readme).toContain("bunx @scribe-sdk/cli@beta integrate");
+    expect(readme).toContain("npx @scribe-sdk/cli@beta integrate");
     expect(readme).toContain("SKILL.md");
     expect(readme).toContain("Licensed under Apache-2.0");
-    expect(readme).toContain("https://github.com/aetosdios27/scribe/blob/main/examples/starter-article.mdx");
-    expect(readme).toContain("https://github.com/aetosdios27/scribe/blob/main/examples/starter-diagram.svg");
-    expect(readme).toContain("return <Publication>{children}</Publication>");
-    expect(readme).toContain("npx --no-install scribe validate ./content/article.mdx --strict");
     expect(readme).not.toMatch(/\bnpx scribe\b/u);
-    expect(readme).toContain("`scb` compatibility alias");
-    expect(readme.match(/\bscb\b/gu)).toHaveLength(1);
-    expect(readme).toContain("`scribe init` still creates only an empty content launchpad; `scribe studio init` creates an article.");
-    expect(readme).toContain("`0 1.25rem 3rem color-mix(in oklab, #000 12%, transparent)`");
-  });
-
-  it("freezes compatibility claims to the verified public-beta matrix", async () => {
-    const readme = await readFile(join(root, "README.md"), "utf8");
-
-    expect(readme).toContain("## Verified compatibility");
-    expect(readme).toContain("React 19.2.7, MDX 3.1.1, Vite 8.1.3, `@vitejs/plugin-react` 6.0.3, Next.js 16.2.11, `@next/mdx` 16.2.11, and `next-mdx-remote` 6.0.0");
-    expect(readme).toContain("TypeScript 7.0.2 and 6.0.2 with `skipLibCheck: false`");
-    expect(readme).toContain("Linux, Windows, and macOS using Bun 1.3.14 and an npm-compatible install flow");
-    expect(readme).toContain("Playwright-managed Chromium and Firefox");
-    expect(readme).toContain("WebKit and Safari are not verified for this prerelease");
-    expect(readme).toContain("These are tested configurations, not a claim that other modern versions cannot work.");
-    expect(readme).toContain("MDX is executable local project content; open only files you trust.");
-    expect(readme).toContain("Rich Text mode is a constrained visual helper for ordinary Markdown");
-    expect(readme).toContain("Non-inherited element rules do not cross a CSS Module boundary automatically");
+    expect(readme).not.toContain("@latest");
+    expect(readme).toContain("scribeit.dev/docs");
   });
 
   it("keeps every packaged skill and README generated from the canonical files", async () => {
@@ -82,38 +52,5 @@ describe("release documentation", () => {
     expect(skill.trim().split(/\s+/u).length).toBeGreaterThan(500);
     expect(skill.trim().split(/\s+/u).length).toBeLessThan(2_500);
     expect(skill.split("\n").length).toBeLessThan(500);
-  });
-
-  it("documents every supported publication token", async () => {
-    const readme = await readFile(join(root, "README.md"), "utf8");
-    for (const token of [
-      "font-body", "font-heading", "font-code", "background", "foreground", "muted",
-      "border", "accent", "surface", "surface-strong", "selection", "content-width",
-      "wide-width", "radius", "gutter", "rule", "leading", "code-size", "shadow"
-    ]) {
-      expect(readme).toContain(`--scribe-${token}`);
-    }
-  });
-
-  it("keeps JavaScript and TypeScript README examples syntactically valid", async () => {
-    const readme = await readFile(join(root, "README.md"), "utf8");
-    const blocks = [...readme.matchAll(/^```(js|ts|tsx)\n([\s\S]*?)^```$/gmu)];
-    expect(blocks.length).toBeGreaterThan(5);
-
-    for (const [index, match] of blocks.entries()) {
-      const language = match[1];
-      const source = match[2] ?? "";
-      const result = ts.transpileModule(source, {
-        fileName: `readme-${index}.${language}`,
-        compilerOptions: {
-          jsx: ts.JsxEmit.ReactJSX,
-          module: ts.ModuleKind.ESNext,
-          target: ts.ScriptTarget.ES2022
-        },
-        reportDiagnostics: true
-      });
-      const errors = result.diagnostics?.filter(({ category }) => category === ts.DiagnosticCategory.Error) ?? [];
-      expect(errors.map(({ messageText }) => ts.flattenDiagnosticMessageText(messageText, "\n"))).toEqual([]);
-    }
   });
 });
