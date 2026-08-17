@@ -1,5 +1,14 @@
 # @scribe-sdk/cli
 
+## 0.1.0-beta.5
+
+### Patch Changes
+
+- Updated dependencies [9b0047a]
+  - @scribe-sdk/styles@0.1.0-beta.5
+  - @scribe-sdk/react@0.1.0-beta.5
+  - @scribe-sdk/mdx@0.1.0-beta.5
+
 ## 0.1.0-beta.4
 
 ### Patch Changes

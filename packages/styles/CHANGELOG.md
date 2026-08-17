@@ -1,5 +1,11 @@
 # @scribe-sdk/styles
 
+## 0.1.0-beta.5
+
+### Patch Changes
+
+- 9b0047a: Fix the code frame's line-wrap toggle button rendering as an unstyled black glyph in `default.css` and `foundation.css`. `WrapToggleButton`'s icon had no base rule, so its `<svg>` fell back to the browser's default `fill: black` instead of the outlined stroke icon used everywhere else in the code frame.
+
 ## 0.1.0-beta.4
 
 ## 0.1.0-beta.3
